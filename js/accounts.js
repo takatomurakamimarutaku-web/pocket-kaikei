@@ -121,6 +121,7 @@ export const HINTS = {
   misc_loss: '雑損失',
   // 決算書（法人）で使う
   allowance_doubtful: '貸倒引当金',
+  income_taxes_payable: '未払法人税等',
   capital_reserve: '資本準備金',
   legal_reserve: '利益準備金',
   // 製造原価（法人）
@@ -138,7 +139,10 @@ export const HINTS = {
   closing_finished: '期末製品棚卸高',
 };
 
-/** 法人だけの目印（勘定科目内訳明細書・決算書の注記と株主資本等変動計算書で使う）。個人のテンプレートには付けない */
+/**
+ * 勘定科目内訳明細書・決算書の注記と株主資本等変動計算書で使う目印（法人）。
+ * 個人のテンプレートには、経営分析・キャッシュフローでも使う手形・有価証券・貸付金・借入金だけ付ける
+ */
 export const BREAKDOWN_HINTS = ['notes_receivable', 'other_receivable', 'securities', 'investment_securities', 'supplies', 'advance_paid', 'suspense_paid', 'short_loan', 'long_loan', 'building', 'land', 'notes_payable', 'short_borrowings', 'long_borrowings', 'accrued_expenses', 'advance_received', 'deposits_received', 'suspense_received', 'officer_compensation', 'salaries', 'bonuses', 'rent', 'mfg_rent', 'interest_income', 'interest_expense', 'misc_income', 'misc_loss', 'allowance_doubtful', 'capital_reserve', 'legal_reserve'];
 
 /** 事業者ごとに必ず存在する役割 */
@@ -197,7 +201,7 @@ const CORPORATION = [
   ['305', '前受金', 'current_liabilities', N, { hint: 'advance_received' }],
   ['306', '預り金', 'current_liabilities', N, { hint: 'deposits_received' }],
   ['307', '仮受金', 'current_liabilities', N, { hint: 'suspense_received' }],
-  ['308', '未払法人税等', 'current_liabilities', N],
+  ['308', '未払法人税等', 'current_liabilities', N, { hint: 'income_taxes_payable' }],
   ['309', '未払消費税等', 'current_liabilities', N, { hint: 'consumption_tax_payable' }],
   ['350', '長期借入金', 'fixed_liabilities', N, { hint: 'long_borrowings' }],
   ['351', '役員借入金', 'fixed_liabilities', N, { hint: 'officer_loan' }],
@@ -259,7 +263,7 @@ const INDIVIDUAL = [
   ['130', '有価証券', 'current_assets', N, { hint: 'securities' }],
   ['140', '商品', 'current_assets', N, { hint: 'inventory' }],
   ['150', '前払金', 'current_assets', N],
-  ['151', '貸付金', 'current_assets', N],
+  ['151', '貸付金', 'current_assets', N, { hint: 'short_loan' }],
   ['152', '未収入金', 'current_assets', N],
   ['200', '建物', 'tangible_fixed_assets', T],
   ['201', '建物附属設備', 'tangible_fixed_assets', T],
@@ -272,7 +276,7 @@ const INDIVIDUAL = [
   ['290', '事業主貸', 'owner_drawings', N, { role: 'owner_drawings' }],
   ['300', '支払手形', 'current_liabilities', N, { hint: 'notes_payable' }],
   ['301', '買掛金', 'current_liabilities', N, { hint: 'payable' }],
-  ['302', '借入金', 'current_liabilities', N],
+  ['302', '借入金', 'current_liabilities', N, { hint: 'short_borrowings' }],
   ['303', '未払金', 'current_liabilities', N, { hint: 'accrued' }],
   ['304', '前受金', 'current_liabilities', N],
   ['305', '預り金', 'current_liabilities', N],

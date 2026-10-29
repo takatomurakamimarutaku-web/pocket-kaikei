@@ -15,6 +15,8 @@ const GROUPS = [
     ['#/reports/financial', '決算書（計算書類）', '貸借対照表・損益計算書・販管費内訳・株主資本等変動計算書・個別注記表を1冊に', 'form', 'corporation'],
     ['#/reports/pl', '損益計算書', '売上から利益（所得）まで。前期との比較も', 'pl'],
     ['#/reports/bs', '貸借対照表', '期末の資産・負債・純資産。期首（前期末）との比較も', 'bs'],
+    ['#/reports/cash-flow', 'キャッシュフロー計算書', '営業・投資・財務の資金の動き（間接法）', 'cashbook'],
+    ['#/reports/cash-plan', '資金繰り表', '月ごとの収入・支出と残高。来月からは定型仕訳から予定を出す', 'calendar'],
     ['#/reports/analysis', '経営分析', '利益率・流動比率・自己資本比率・回転期間・損益分岐点を前期と並べる', 'chart'],
     ['#/reports/manufacturing', '製造原価報告書', '材料費・労務費・製造経費から当期製品製造原価まで。月次推移も', 'factory', 'manufacturing'],
     ['#/reports/monthly', '月次推移表', '月ごとの損益・月末残高と売上・利益のグラフ', 'chart'],
