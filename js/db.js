@@ -477,7 +477,8 @@ export class Repository {
   restoreJournal(journal) {
     return this.run(['journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
       if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
-      tx.objectStore('journals').put(journal);
+      // 同期で削除履歴より新しいと判断されるよう、更新日時を今にする
+      tx.objectStore('journals').put({ ...journal, updatedAt: now() });
       tx.objectStore('tombstones').delete(journal.id);
     });
   }

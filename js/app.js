@@ -25,6 +25,7 @@ import * as openingView from './views/opening.js';
 import * as backupView from './views/backup.js';
 import * as periodsView from './views/periods.js';
 import * as closingView from './views/closing.js';
+import * as syncView from './views/sync.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先
 const routes = [
@@ -51,6 +52,7 @@ const routes = [
   { path: '/opening', view: openingView, title: '期首残高', tab: 'more', back: '#/more' },
   { path: '/periods', view: periodsView, title: '会計期間', tab: 'more', back: '#/more' },
   { path: '/closing', view: closingView, title: '決算・繰越', tab: 'more', back: '#/more' },
+  { path: '/sync', view: syncView, title: 'Googleドライブ同期', tab: 'more', back: '#/more' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
 ];
 
