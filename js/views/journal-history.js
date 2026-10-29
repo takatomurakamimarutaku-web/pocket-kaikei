@@ -69,7 +69,7 @@ export async function render({ app, outlet, query }) {
     put(
       list,
       h('p', { class: 'list-meta', text: `${items.length}件（新しい順）` }),
-      items.length ? h('ul', { class: 'history-list' }, items.map((e) => historyItem(e, { accountById, subById }))) : emptyState(all.length ? '条件に合う履歴はありません' : 'この期間の履歴はまだありません'),
+      items.length ? h('ul', { class: 'history-list' }, items.map((e) => historyItem(e, { accountById, subById }))) : emptyState(all.length ? '条件に合う履歴はありません' : 'この期間の履歴はまだありません', null, { face: null }),
     );
   }
 
