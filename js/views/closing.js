@@ -43,7 +43,7 @@ export async function render({ app, outlet }) {
       if (goods < 0) return put(errorsEl, errorBox([`「${inv.goods.name}」の残高がマイナスです。先に仕訳を確認してください`]));
       const lines = inventoryLines({ accounts, goodsBalance: goods, closingAmount: p.value });
       if (!lines.length) return put(errorsEl, errorBox(['期首・期末とも在庫がないため、仕訳は不要です']));
-      const journal = createJournal({ periodId: period.id, date: period.endDate, lines });
+      const journal = createJournal({ periodId: period.id, date: period.endDate, lines, source: 'inventory' });
       const errors = validateJournal(journal, { accounts, subAccounts, period });
       if (errors.length) return put(errorsEl, errorBox(errors));
       try {

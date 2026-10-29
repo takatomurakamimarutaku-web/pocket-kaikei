@@ -111,3 +111,18 @@ export function assetsCsv(register, { accountById, individual }) {
   }
   return toCsv(rows);
 }
+
+/**
+ * 月次推移の試算表（monthly.monthlyTrialBalance の結果）。区分の行は【区分名】、科目の行は先頭に全角空白
+ * @param {{ entityType: string, includeZero?: boolean }} opts
+ */
+export function monthlyTrialCsv(mtb, { entityType, includeZero = false }) {
+  const rows = [['勘定科目', ...mtb.columns.map((c) => c.label)]];
+  for (const g of mtb.groups) {
+    const lines = g.rows.filter((r) => includeZero || r.values.some((v) => v !== 0));
+    if (!lines.length) continue;
+    rows.push([`【${groupLabel(g.group, entityType)}】`, ...g.values]);
+    for (const r of lines) rows.push([`　${r.account.name}`, ...r.values]);
+  }
+  return toCsv(rows);
+}

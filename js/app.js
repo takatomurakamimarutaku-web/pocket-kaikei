@@ -18,6 +18,7 @@ import * as reportsView from './views/reports.js';
 import * as ledgerView from './views/ledger.js';
 import * as trialView from './views/trial.js';
 import * as monthlyView from './views/monthly.js';
+import * as trialMonthlyView from './views/trial-monthly.js';
 import * as statementsView from './views/statements.js';
 import * as taxView from './views/tax.js';
 import * as taxReturnView from './views/tax-return.js';
@@ -49,6 +50,7 @@ const routes = [
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
   { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/trial-monthly', view: trialMonthlyView, title: '月次推移試算表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/monthly', view: monthlyView, title: '月次推移表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports', print: true },

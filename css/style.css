@@ -582,3 +582,8 @@ details.panel > summary { cursor: pointer; list-style: revert; }
   .blue-return th .block { display: inline; margin-left: 6px; }
   .notice { border-color: #999; }
 }
+/* 月次推移試算表 */
+.option-bar { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--sp-3); }
+.mtb .mt-col-quarter, .mtb .mt-col-half, .mtb .mt-col-adjust, .mtb .mt-col-total { background: var(--surface-2); font-weight: 600; }
+.mtb .mt-col-opening { color: var(--muted); }
+.adjusting-check { display: flex; margin: 0 0 var(--sp-3); }

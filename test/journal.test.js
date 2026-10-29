@@ -97,3 +97,13 @@ test('複製は明細だけを写し、元の仕訳と共有しない', () => {
   assert.equal(jn.lines[0].amount, 100);
   assert.equal(copy.id, undefined);
 });
+
+test('決算整理仕訳の指定は真偽値だけ', async () => {
+  const { makeBook } = await import('./helpers.js');
+  const { validateJournal } = await import('../js/journal.js');
+  const b = makeBook('individual');
+  const j = b.j('2026-12-31', [['消耗品費', 100]], [['現金', 100]]);
+  const ctx = { accounts: b.accounts, subAccounts: [], period: b.period };
+  assert.deepEqual(validateJournal({ ...j, adjusting: true }, ctx), []);
+  assert.match(validateJournal({ ...j, adjusting: 'yes' }, ctx).join(), /決算整理/);
+});

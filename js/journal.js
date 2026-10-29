@@ -51,6 +51,7 @@ export function validateJournal(journal, { accounts, subAccounts, period, origin
     if (!isTaxCategory(l.taxCategory)) errors.push(`${at}：税区分が不正です`);
     if (String(l.memo ?? '').length > MAX_MEMO) errors.push(`${at}：摘要は${MAX_MEMO}文字以内にしてください`);
   });
+  if (journal.adjusting !== undefined && typeof journal.adjusting !== 'boolean') errors.push('決算整理仕訳の指定が不正です');
   const { diff } = journalTotals(lines);
   if (diff !== 0) errors.push(`借方と貸方の合計が一致しません（差額 ${Math.abs(diff).toLocaleString('ja-JP')}円）`);
   return errors;
