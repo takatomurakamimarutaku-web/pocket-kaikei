@@ -44,6 +44,7 @@ js/statements.js   損益計算書・貸借対照表（純粋関数）
 js/tax.js          税区分と消費税集計（純粋関数）
 js/backup.js       バックアップの書き出し・検証・復元
 js/csv.js          CSV 出力（純粋関数）
+js/changelog.js    更新履歴（利用者向けの更新内容）と抜けの検証
 js/ui.js           共通 UI 部品
 js/views/*.js      画面
 scripts/check-pwa.js  PWA 構成チェック
@@ -60,6 +61,11 @@ test/*.test.js
   - 画面を変えたら、スマホ幅（390×844）のスクリーンショットで確認する（Playwright。`shots/` に保存）
 - 作業ブランチで開発し、テストが通ってから main に反映する（main は GitHub Pages で公開される）
 - ファイルを追加・変更したら `sw.js` の `PRECACHE_URLS` と `CACHE_VERSION` を更新する（チェックで検出される）
+- 版を上げるときは3か所をそろえ、更新履歴を必ず書く（`npm test` と `npm run check` で抜け・食い違いを検出する）
+  - `package.json` の `version` と `js/version.js` の `APP_VERSION`
+  - `js/changelog.js` の `CHANGELOG` の先頭に、同じバージョン・公開日・題名・更新内容を足す。
+    内容は利用者向けの平易な言葉で書く（内部の名前・ファイル名・DB の番号は書かない）。アプリの「その他 › 更新履歴」に出る
+  - main を取り込んで版が重なったら、番号を上げ直し、更新履歴の項目も新しい番号に移す
 - IndexedDB のスキーマを変えるときは `DB_VERSION` を上げ、`migrate()` に `if (oldVersion < N)` を足し、移行テストを書く
 - バックアップ形式を変えるときは `BACKUP_VERSION` を上げ、旧形式からの変換とテストを書く
 - 事実と推測を区別し、計算式と判断の根拠を示す
