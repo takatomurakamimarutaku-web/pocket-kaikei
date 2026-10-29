@@ -121,9 +121,9 @@ export function breakdownStatements({ accounts, subAccounts = [], period, journa
       if (!r.subs.length) return r.closing ? [make(r, null, r.closing)] : [];
       return subs.map((s) => make(r, s.subAccount ? subName(s) : null, s.closing));
     });
-  const form = (id, columns, rows, { note = '', sumKey = 'amount', extraTotals = {} } = {}) => {
+  const form = (id, columns, rows, { note = '', sumKey = 'amount', extraTotals = {}, carry = [] } = {}) => {
     const def = BREAKDOWN_BY_ID[id];
-    const listed = summarize(rows, showAll ? 0 : def.threshold, sumKey, columns);
+    const listed = summarize(rows, showAll ? 0 : def.threshold, sumKey, columns, carry);
     return { ...def, columns, rows: listed, total: rows.reduce((s, r) => s + (r[sumKey] || 0), 0), extraTotals, note };
   };
 
@@ -256,6 +256,7 @@ export function breakdownStatements({ accounts, subAccounts = [], period, journa
     ),
     form('misc', [COL.account, { key: 'memo', label: '取引の内容' }, COL.party, { key: 'amount', label: '金額', num: true }], misc, {
       note: '雑収入・雑損失の仕訳を1件ずつ出し、10万円未満はまとめます。所在地は記入してください。',
+      carry: ['kind'],
     }),
   ];
 
@@ -271,7 +272,7 @@ export function breakdownStatements({ accounts, subAccounts = [], period, journa
   }
 }
 
-/** 雑収入・雑損失の仕訳の行（1明細ずつ。金額は科目の向き：雑収入は貸方、雑損失は借方をプラス） */
+/** 雑収入・雑損失の仕訳の行（1明細ずつ。金額は科目の向き：雑収入は貸方、雑損失は借方をプラス。kind：income 雑益等・loss 雑損失等） */
 export function miscLines({ accounts, subAccounts = [], period, journals }) {
   const target = new Map(accounts.filter((a) => a.hint === 'misc_income' || a.hint === 'misc_loss').map((a) => [a.id, a]));
   const subById = new Map(subAccounts.map((s) => [s.id, s]));
@@ -282,7 +283,7 @@ export function miscLines({ accounts, subAccounts = [], period, journals }) {
       const a = target.get(l.accountId);
       if (!a) continue;
       const amount = l.side === a.normalSide ? l.amount : -l.amount;
-      out.push({ account: a.name, memo: l.memo || '', party: l.subAccountId ? subById.get(l.subAccountId)?.name ?? '' : '', amount, date: j.date, sortOrder: a.sortOrder ?? 0 });
+      out.push({ account: a.name, kind: a.hint === 'misc_loss' ? 'loss' : 'income', memo: l.memo || '', party: l.subAccountId ? subById.get(l.subAccountId)?.name ?? '' : '', amount, date: j.date, sortOrder: a.sortOrder ?? 0 });
     }
   }
   return out.sort((x, y) => x.sortOrder - y.sortOrder || (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
@@ -292,8 +293,9 @@ export function miscLines({ accounts, subAccounts = [], period, journals }) {
  * 金額基準で行をまとめる。基準以上（絶対値）の行はそのまま、未満は科目ごとに「その他（N件）」の1行にする
  * @param {Array} rows
  * @param {number} threshold 0 ならまとめない
+ * @param {string[]} carry まとめた行にも残す値の名前（値が違えば別の行にまとめる）
  */
-export function summarize(rows, threshold, sumKey = 'amount', columns = []) {
+export function summarize(rows, threshold, sumKey = 'amount', columns = [], carry = []) {
   if (!threshold) return rows;
   const keep = [];
   const rest = new Map();
@@ -301,16 +303,16 @@ export function summarize(rows, threshold, sumKey = 'amount', columns = []) {
   for (const r of rows) {
     if (Math.abs(r[sumKey] || 0) >= threshold) keep.push(r);
     else {
-      const k = hasAccount ? r.account : '';
-      const e = rest.get(k) || { count: 0, sums: {} };
+      const k = JSON.stringify([hasAccount ? r.account : '', ...carry.map((c) => r[c] ?? null)]);
+      const e = rest.get(k) || { count: 0, sums: {}, account: r.account, carried: Object.fromEntries(carry.map((c) => [c, r[c]])) };
       e.count += 1;
       for (const c of columns) if (c.num) e.sums[c.key] = (e.sums[c.key] || 0) + (r[c.key] || 0);
       rest.set(k, e);
     }
   }
-  for (const [account, e] of rest) {
-    const row = { ...e.sums, party: `その他（${e.count}件）`, memo: '', other: true };
-    if (hasAccount) row.account = account;
+  for (const e of rest.values()) {
+    const row = { ...e.carried, ...e.sums, party: `その他（${e.count}件）`, memo: '', other: true };
+    if (hasAccount) row.account = e.account;
     keep.push(row);
   }
   return keep;
