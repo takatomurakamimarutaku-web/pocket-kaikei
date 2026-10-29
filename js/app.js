@@ -7,6 +7,7 @@ import { h, showToast } from './ui.js';
 import { friendlyError } from './errors.js';
 import { APP_VERSION } from './version.js';
 import { isDesktopApp } from './install.js';
+import { renderSidebar } from './sidebar.js';
 import { formatPeriod, todayString, monthRange } from './period.js';
 import { docHead } from './print-forms.js';
 import { captureBlocks, capturedRange } from './print-capture.js';
@@ -153,7 +154,7 @@ const routes = [
   { path: '/reports/breakdown', view: breakdownView, title: '勘定科目内訳明細書', tab: 'reports', back: '#/reports', print: true },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },
-  { path: '/books', view: booksView, title: '帳簿の切替', tab: 'more', back: '#/more' },
+  { path: '/books', view: booksView, title: '事業所の切替', tab: 'more', back: '#/more' },
   { path: '/lock', view: lockSettingsView, title: '画面ロック', tab: 'more', back: '#/more' },
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },
   { path: '/account/new', view: accountEditView, title: '科目の追加', tab: 'more', back: '#/accounts' },
@@ -178,6 +179,7 @@ const titleEl = document.getElementById('title');
 const backBtn = document.getElementById('back');
 const headerEl = document.querySelector('.app-header');
 const tabbar = document.querySelector('.tabbar');
+const sidebar = document.getElementById('sidebar');
 const printBtn = document.getElementById('print');
 const printHead = document.getElementById('print-head');
 
@@ -213,7 +215,7 @@ async function start() {
     refreshLock: async () => {
       lock = await device.getLock();
     },
-    /** 帳簿を切り替える（今の帳簿のデータベースを閉じて、切り替えた帳簿のデータベースを開く） */
+    /** 事業所（帳簿）を切り替える（今の帳簿のデータベースを閉じて、切り替えた帳簿のデータベースを開く） */
     switchBook: async (id, hash = '#/home') => {
       const next = await device.switchBook(id);
       const nextDb = await openDB({ name: next.dbName });
@@ -268,10 +270,10 @@ async function start() {
         router.navigate('#/home', { replace: true });
         return null;
       }
-      // 帳簿の一覧に出す名前（事業者名）を覚えておく
-      if (settings && settings.businessName !== app.book.label) {
+      // 事業所の一覧に出す名前（事業者名）と個人・法人の別を覚えておく
+      if (settings && (settings.businessName !== app.book.label || settings.entityType !== app.book.entityType)) {
         device
-          .setBookLabel(app.book.id, settings.businessName)
+          .setBookInfo(app.book.id, { label: settings.businessName, entityType: settings.entityType })
           .then((b) => b && (app.book = b))
           .catch(() => {});
       }
@@ -284,6 +286,14 @@ async function start() {
       if (route.print) fillPrintHead(route.title).catch(() => {});
       headerEl.classList.toggle('is-root', !route.back);
       tabbar.hidden = Boolean(route.setup);
+      sidebar.hidden = Boolean(route.setup);
+      if (settings) {
+        db.getCurrentPeriod()
+          .then((period) => !isStale() && renderSidebar(sidebar, { settings, period, hash: location.hash }))
+          .catch(() => {});
+      }
+      // PC 幅の画面は、画面ごとに幅や並べ方を変える（css/desktop.css）
+      outlet.dataset.route = route.path;
       for (const a of document.querySelectorAll('.tabbar a')) {
         if (a.dataset.tab === route.tab) a.setAttribute('aria-current', 'page');
         else a.removeAttribute('aria-current');

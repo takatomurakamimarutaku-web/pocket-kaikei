@@ -4,6 +4,7 @@ import { formatYen } from '../money.js';
 import { formatPeriod, todayString, addDays } from '../period.js';
 import { buildStatements, closingRows } from '../statements.js';
 import { monthlyIncome } from '../monthly.js';
+import { barLineChart } from '../chart.js';
 import { shouldRemindBackup } from '../backup.js';
 import { currentInstallState } from '../install.js';
 import { ENTITY_LABELS, TAX_STATUS_LABELS } from '../models.js';
@@ -100,7 +101,14 @@ export async function render({ app, outlet }) {
     h(
       'section',
       { class: 'hero' },
-      h('div', { class: 'hero-top' }, h('h2', { class: 'hero-name', text: settings.businessName }), h('a', { href: '#/settings', class: 'hero-edit', 'aria-label': '事業者の設定' }, icon('settings'))),
+      h(
+        'div',
+        { class: 'hero-top' },
+        h('h2', { class: 'hero-name', text: settings.businessName }),
+        // 弥生会計の事業所データのように、ほかの事業所（会社）へ切り替える
+        h('a', { href: '#/books', class: 'hero-switch', 'aria-label': '事業所の切替' }, icon('books'), h('span', { text: '切替' })),
+        h('a', { href: '#/settings', class: 'hero-edit', 'aria-label': '事業者の設定' }, icon('settings')),
+      ),
       h('div', { class: 'hero-tags' }, h('span', { class: 'tag', text: individual ? '個人事業主' : '法人' }), h('span', { class: 'tag', text: TAX_STATUS_LABELS[settings.taxStatus] }), period.closed ? h('span', { class: 'tag', text: '締め済み' }) : null),
       h(
         'div',
@@ -129,10 +137,24 @@ export async function render({ app, outlet }) {
       action('#/cashbook', '出納帳', 'cashbook'),
       action('#/reports', '帳票', 'chart'),
     ),
+    // PC 幅だけ：月別の売上と利益のグラフ
+    monthly
+      ? h(
+          'section',
+          { class: 'card-section home-chart desktop-only' },
+          h('div', { class: 'card-title-row' }, h('h2', { class: 'card-title', text: '月別の売上と利益' }), h('a', { href: '#/reports/monthly', class: 'link small', text: '月次推移表' })),
+          barLineChart({
+            labels: monthly.months.map((m) => `${Number(m.slice(5))}月`),
+            bar: { label: individual ? '売上(収入)金額' : '売上高', values: monthly.sales },
+            line: { label: individual ? '所得金額（控除前）' : '当期純利益', values: monthly.netIncome },
+            title: '月別の売上と利益',
+          }),
+        )
+      : null,
     todos.length
       ? h(
           'section',
-          { class: 'card-section' },
+          { class: 'card-section home-todo' },
           h('h2', { class: 'card-title', text: 'やること' }),
           charaSay(todos.some((t) => t.level === 'warn') ? 'keily-caution' : 'keily-normal', `やることが${todos.length}件あります。順番に片づけていきましょう。`, { who: 'ケイリー' }),
           h(
@@ -147,7 +169,7 @@ export async function render({ app, outlet }) {
     recent.length
       ? h(
           'section',
-          { class: 'card-section' },
+          { class: 'card-section home-recent' },
           h('div', { class: 'card-title-row' }, h('h2', { class: 'card-title', text: '最近の仕訳' }), h('a', { href: '#/journals', class: 'link small', text: 'すべて見る' })),
           h(
             'ul',
