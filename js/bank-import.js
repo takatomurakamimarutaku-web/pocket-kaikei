@@ -158,14 +158,57 @@ function guessFromValues(rows) {
   return cols;
 }
 
+// ---- クレジットカードの利用明細 ----
+// 利用金額はプラスが利用（未払金が増える）、マイナスが返品・取消。取り込むときは符号を逆にして
+// 銀行の「出金」と同じ向き（相手科目が借方、カードの未払金が貸方）にする
+
+/** カードの明細で使う列の役割 */
+export const CARD_COLUMN_KINDS = [
+  { id: 'date', label: '利用日' },
+  { id: 'memo', label: '利用先（店名・内容）' },
+  { id: 'memo2', label: '内容2（あれば）' },
+  { id: 'amount', label: '利用金額（返品・取消はマイナス）' },
+];
+
+const CARD_WORDS = {
+  date: /利用日|ご利用日|利用年月日|取引日|売上日|日付/,
+  memo: /利用店|ご利用店|利用先|ご利用先|店名|加盟店|利用内容|ご利用内容|摘要|内容|商品/,
+  // 「利用金額」を優先し、無ければ請求・支払の金額
+  amount: [/^(ご)?利用金額/, /^金額|^(ご)?請求金額|^(今回|当月)?(ご)?(支払|請求)(金)?額/],
+};
+
+/**
+ * カードの明細の見出し行と列を推定する
+ * @returns {{ headerRow: number, columns: object, negate: true }}
+ */
+export function detectCardColumns(rows) {
+  const empty = { date: -1, memo: -1, memo2: -1, deposit: -1, withdrawal: -1, amount: -1, balance: -1 };
+  const clean = (v) => String(v).normalize('NFKC').replace(/\s/g, '');
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const header = rows[i].map(clean);
+    const cols = { ...empty };
+    cols.date = header.findIndex((v) => CARD_WORDS.date.test(v));
+    for (const re of CARD_WORDS.amount) {
+      if (cols.amount >= 0) break;
+      cols.amount = header.findIndex((v, k) => k !== cols.date && re.test(v));
+    }
+    const memoCols = header.map((v, k) => (k !== cols.date && k !== cols.amount && CARD_WORDS.memo.test(v) && !/利用者|会員/.test(v) ? k : -1)).filter((k) => k >= 0);
+    cols.memo = memoCols[0] ?? -1;
+    cols.memo2 = memoCols[1] ?? -1;
+    if (cols.date >= 0 && cols.amount >= 0) return { headerRow: i, columns: cols, negate: true };
+  }
+  const guessed = guessFromValues(rows);
+  return { headerRow: -1, columns: { ...guessed, balance: -1 }, negate: true };
+}
+
 /**
  * 明細を取り出す
  * @param {string[][]} rows
- * @param {{ headerRow: number, columns: object }} mapping
+ * @param {{ headerRow: number, columns: object, negate?: boolean }} mapping negate：カードの明細（利用金額のプラスを出金にする）
  * @returns {Array<{ row: number, date: string|null, memo: string, amount: number, balance: number|null, error: string|null }>}
  *   row：CSVの行番号（1始まり）、amount：入金はプラス・出金はマイナス
  */
-export function extractTransactions(rows, { headerRow, columns: c }) {
+export function extractTransactions(rows, { headerRow, columns: c, negate = false }) {
   const out = [];
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i];
@@ -182,6 +225,8 @@ export function extractTransactions(rows, { headerRow, columns: c }) {
       bad = Number.isNaN(dep) || Number.isNaN(wd);
       if (!bad && (dep || wd)) amount = (dep || 0) - Math.abs(wd || 0);
     }
+    // カードの明細：利用（プラス）を出金の向きにする
+    if (negate && !bad && amount) amount = -amount;
     const balance = c.balance >= 0 ? parseAmount(get(c.balance)) : null;
     // 日付が読めない行（合計行・注記など）は飛ばす。金額の無い行（繰越など）も飛ばす
     if (!date) continue;
