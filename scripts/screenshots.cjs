@@ -98,6 +98,59 @@ mkdirSync(OUT, { recursive: true });
   await page.getByRole('button', { name: '登録する' }).click();
   await page.waitForTimeout(300);
 
+  // かんたん入力
+  const slot = (label) => page.locator('.qslot').filter({ hasText: label });
+  const quick = async (kind, date, amountValue, memo, choose) => {
+    await go(`#/quick/${kind}`);
+    await page.fill('#q-date', date);
+    await page.dispatchEvent('#q-date', 'change');
+    await page.fill('#q-amount', String(amountValue));
+    await page.fill('#q-memo', memo);
+    await choose();
+  };
+  const register = async () => {
+    await page.getByRole('button', { name: '登録する' }).click();
+    await page.waitForTimeout(300);
+  };
+  await go('#/entry');
+  await shot('17-entry-menu', true);
+  await quick('sale', '2026-04-15', 33000, '〇〇様 デザイン料', () => slot('受け取り方').getByRole('radio', { name: '普通預金', exact: true }).click());
+  await page.locator('#q-memo').blur();
+  await shot('18-quick-sale', true);
+  await register();
+  await quick('expense', '2026-04-16', 1200, '電車代 打合せ', async () => {
+    await slot('経費の科目').locator('.acc-btn').click();
+    await page.fill('.sheet input[type=search]', '旅費');
+    await page.locator('.picker-item', { hasText: '旅費交通費' }).first().click();
+  });
+  await page.locator('#q-memo').blur();
+  await shot('19-quick-expense', true);
+  await register();
+  await quick('transfer', '2026-04-20', 20000, 'ATM 引き出し', () => slot('出した元').getByRole('radio', { name: '普通預金', exact: true }).click());
+  await register();
+  // 同じ科目どうしは登録できない
+  await quick('transfer', '2026-04-20', 100, '', () => slot('出した元').getByRole('radio', { name: '現金', exact: true }).click());
+  await page.getByRole('button', { name: '登録する' }).click();
+  await page.waitForTimeout(200);
+  if (!(await page.locator('.errors-wrap').innerText()).includes('同じ科目')) errors.push('同じ科目の預け入れが拒否されない');
+  // 出納帳
+  await go('#/cashbook?month=2026-04');
+  await shot('20-cashbook', true);
+  await page.getByRole('link', { name: '− 出金を記録' }).click();
+  await page.waitForTimeout(400);
+  await page.fill('#q-date', '2026-04-30');
+  await page.dispatchEvent('#q-date', 'change');
+  await page.fill('#q-amount', '50000');
+  await slot('相手の科目').locator('.acc-btn').click();
+  await page.fill('.sheet input[type=search]', '消耗品');
+  await page.locator('.picker-item', { hasText: '消耗品費' }).first().click();
+  await page.locator('#q-amount').blur();
+  await shot('21-quick-cash-out', true);
+  await register();
+  await go('#/cashbook?month=2026-04');
+  await shot('22-cashbook-negative', true);
+  if (!(await page.locator('.notice').count())) errors.push('現金のマイナス残高の注意が出ない');
+
   await go('#/journals?month=2026-04');
   await shot('06-journals', true);
   await go('#/reports');

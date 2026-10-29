@@ -24,6 +24,7 @@ export function createAccount(fields = {}, now = new Date()) {
     name: '',
     group: 'sga',
     role: null,
+    hint: null,
     normalSide: 'debit',
     defaultTaxCategory: 'none',
     active: true,

@@ -196,3 +196,18 @@ export function carriedLabel(period, from) {
   return from <= period.startDate ? '前期繰越' : '前月繰越';
 }
 
+
+/**
+ * 日末の残高（残高側）がマイナスになる最初の日（現金出納帳の注意用）。無ければ null
+ * 同じ日の中の順番は入力順にすぎないため、日の終わりの残高で判定する
+ */
+export function firstNegativeDate({ accountId, subAccountId = null, accounts, subAccounts = [], period, journals }) {
+  const lg = generalLedger({ accountId, subAccountId, accounts, subAccounts, period, journals });
+  if (lg.carried < 0) return period.startDate;
+  for (let i = 0; i < lg.rows.length; i++) {
+    const r = lg.rows[i];
+    if (lg.rows[i + 1]?.date === r.date) continue;
+    if (r.balance < 0) return r.date;
+  }
+  return null;
+}
