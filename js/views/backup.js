@@ -3,6 +3,7 @@ import { h, put, showToast, confirmDialog, saveFile } from '../ui.js';
 import { createBackup, parseBackup, backupFileName, BackupError } from '../backup.js';
 import { APP_VERSION } from '../version.js';
 import { errorText } from '../errors.js';
+import { samplePanel } from './sample-load.js';
 
 export async function render({ app, outlet }) {
   const counts = await app.db.counts();
@@ -28,6 +29,7 @@ export async function render({ app, outlet }) {
       h('button', { type: 'button', class: 'btn btn-block', text: 'ファイルを選んで復元', onclick: () => file.click() }),
       file,
     ),
+    samplePanel({ app, journals: counts.journals }),
   );
 
   async function exportBackup() {
