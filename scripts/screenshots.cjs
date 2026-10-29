@@ -248,12 +248,26 @@ mkdirSync(OUT, { recursive: true });
   if ((await page.locator('.asset-row').count()) !== 3) errors.push('固定資産を登録できない');
   await shot('35-assets-list', true);
 
+  // 振り分けルール（ひらがなで登録しても半角カナの摘要に当たる）
+  await go('#/import/bank/rules');
+  await page.fill('#rule-keyword', 'どこも');
+  await page.locator('#rule-account').click();
+  await page.fill('.sheet input[type=search]', '通信費');
+  await page.locator('.picker-item', { hasText: '通信費' }).first().click();
+  await page.waitForTimeout(200);
+  await shot('36a-bank-rules-form', true);
+  await page.getByRole('button', { name: '追加する' }).click();
+  await page.waitForTimeout(500);
+  await shot('36b-bank-rules', true);
+  if (!(await page.locator('.rule-row', { hasText: 'どこも' }).count())) errors.push('振り分けルールを登録できない');
+
   // 銀行明細CSVの取り込み（Shift_JIS・三菱UFJ銀行に似せた形式）
   await go('#/import/bank');
   await page.selectOption('#bi-account', { label: '普通預金' });
   await page.setInputFiles('#bi-file', join(__dirname, '..', 'test', 'fixtures', 'bank-sample-sjis.csv'));
   await page.waitForTimeout(500);
   await shot('36-bank-import', true);
+  if (!(await page.locator('.bi-row', { hasText: 'ドコモ' }).getByText('ルール「どこも」').count())) errors.push('振り分けルールが取り込みに使われない');
   const pickFor = async (memo, name) => {
     await page.locator('.bi-row', { hasText: memo }).first().locator('.acc-btn').click();
     await page.fill('.sheet input[type=search]', name);

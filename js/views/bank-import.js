@@ -9,6 +9,7 @@ import {
   balanceMismatches,
   buildCounterIndex,
   suggestCounter,
+  matchRule,
   markDuplicates,
   importLines,
   headerSignature,
@@ -53,10 +54,11 @@ export async function render({ app, outlet, query }) {
     if (recentIds.length >= 12) break;
   }
   const index = buildCounterIndex(journals, (id) => isCashAccount(accountById.get(id)));
+  const rules = settings.bankRules || [];
 
   let file = null; // { name, encoding, rows, signature }
   let mapping = null;
-  let items = []; // { tx, include, counter: {accountId, subAccountId, taxCategory}|null, duplicate, outside, suggested }
+  let items = []; // { tx, include, counter: {accountId, subAccountId, taxCategory}|null, duplicate, outside, source }  source：候補の出どころ（ルール・過去の仕訳）
 
   const accSelect = h(
     'select',
@@ -91,9 +93,12 @@ export async function render({ app, outlet, query }) {
     items = txs.map((tx, i) => {
       const prev = before.get(tx.row);
       const outside = !isInPeriod(tx.date, period);
-      const suggested = prev ? prev.suggested : suggestCounter(tx.memo, index);
-      const counter = prev?.counter ?? (suggested ? { ...suggested } : null);
-      return { tx, duplicate: dup[i], outside, suggested: Boolean(suggested), counter, include: prev ? prev.include : !dup[i] && !outside && !tx.error };
+      // 相手科目の候補：振り分けルール → 過去の仕訳の摘要
+      const ruled = prev ? null : matchRule(tx, rules, { accounts });
+      const learned = prev || ruled ? null : suggestCounter(tx.memo, index);
+      const source = prev ? prev.source : ruled ? `ルール「${ruled.rule.keyword}」` : learned ? '過去の仕訳から' : null;
+      const counter = prev?.counter ?? (ruled ? ruled.counter : learned ? { ...learned } : null);
+      return { tx, duplicate: dup[i], outside, source, counter, include: prev ? prev.include : !dup[i] && !outside && !tx.error };
     });
     paintMapping();
     paintList();
@@ -140,6 +145,7 @@ export async function render({ app, outlet, query }) {
   function setCounter(item, accountId) {
     const acc = accountById.get(accountId);
     item.counter = { accountId, subAccountId: null, taxCategory: acc.defaultTaxCategory };
+    item.source = null;
     item.include = !item.tx.error && !item.outside;
     // 同じ摘要で相手科目が未定の明細にも同じ科目を入れる
     const key = normalize(item.tx.memo);
@@ -180,7 +186,7 @@ export async function render({ app, outlet, query }) {
           tx.error ? h('span', { class: 'badge badge-warn', text: tx.error }) : null,
           item.outside ? h('span', { class: 'badge badge-warn', text: '会計期間外' }) : null,
           item.duplicate ? h('span', { class: 'badge badge-warn', text: '登録済みかも' }) : null,
-          item.suggested && item.counter ? h('span', { class: 'badge', text: '過去の仕訳から' }) : null,
+          item.source && item.counter ? h('span', { class: 'badge', text: item.source }) : null,
         ),
         disabled
           ? null
@@ -283,6 +289,7 @@ export async function render({ app, outlet, query }) {
       h('h2', { class: 'section-title', text: '1. 口座とファイル' }),
       options.length ? field('取り込む口座', accSelect, { hint: '現金・預金の科目（補助科目ごとにも選べます）' }) : h('p', { class: 'notice', text: '現金・預金の科目がありません' }),
       h('div', { class: 'field' }, h('label', { class: 'btn btn-block', for: 'bi-file', text: 'CSVファイルを選ぶ' }), fileInput, fileLabel),
+      h('p', { class: 'small' }, h('a', { class: 'link', href: '#/import/bank/rules', text: '振り分けルール' }), h('span', { class: 'muted', text: `（${rules.length}件）：摘要の言葉ごとに相手科目を決めておくと、取り込むときに自動で入ります` })),
     ),
     mappingEl,
     listEl,

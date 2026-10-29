@@ -414,6 +414,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .acc-title { font-weight: 700; }
 .acc-tags { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .acc-row.asset-row, .acc-row.asset-plain { grid-template-columns: 1fr; }
+/* 振り分けルール */
+.rule-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 0; }
+.menu-group li.rule-row + li.rule-row { border-top: 1px solid var(--separator); }
+.rule-main { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; padding: 8px 4px 8px 16px; border: 0; background: none; color: inherit; font: inherit; }
+.rule-kw { font-weight: 700; overflow-wrap: anywhere; }
+.rule-acc { font-size: 0.9rem; }
 .carry-box { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3) 0; margin: 0 0 var(--sp-4); }
 .carry-box[hidden] { display: none; }
 .carry-box legend { padding: 0 6px; font-size: var(--fs-footnote); font-weight: 700; color: var(--muted); }

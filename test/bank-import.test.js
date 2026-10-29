@@ -14,6 +14,8 @@ import {
   markDuplicates,
   importLines,
   headerSignature,
+  validateRule,
+  matchRule,
 } from '../js/bank-import.js';
 import { makeBook } from './helpers.js';
 import { openDB, ValidationError } from '../js/db.js';
@@ -188,4 +190,34 @@ test('Shift_JIS のCSVファイル（見出しの前に口座情報）を最後�
   assert.equal(txs[0].memo, '振込 フリコミ カ)マルタク');
   assert.equal(txs[4].memo, '振込手数料');
   assert.deepEqual(balanceMismatches(txs), []);
+});
+
+test('振り分けルール：言葉を含み向きが合うルールのうち、言葉の長いものを使う（ひらがな・全角半角は区別しない）', () => {
+  const b = makeBook('individual');
+  const id = (n) => b.byName[n].id;
+  const rules = [
+    { id: 'r1', keyword: 'アマゾン', direction: 'out', accountId: id('消耗品費'), taxCategory: 'purchase_10' },
+    { id: 'r2', keyword: 'アマゾン ウエブ', direction: 'out', accountId: id('通信費'), taxCategory: 'purchase_10' },
+    { id: 'r3', keyword: 'ふりこみ', direction: 'in', accountId: id('売掛金'), taxCategory: 'none' },
+  ];
+  const ctx = { accounts: b.accounts };
+  assert.equal(matchRule({ memo: 'ｶｰﾄﾞ ｱﾏｿﾞﾝ ｼﾞﾔﾊﾟﾝ', amount: -3280 }, rules, ctx).rule.id, 'r1');
+  assert.equal(matchRule({ memo: 'カード アマゾン ウエブ サービス', amount: -1200 }, rules, ctx).rule.id, 'r2');
+  assert.deepEqual(matchRule({ memo: '振込 フリコミ カ)マルタク', amount: 55000 }, rules, ctx).counter, { accountId: id('売掛金'), subAccountId: null, taxCategory: 'none' });
+  assert.equal(matchRule({ memo: 'フリコミ 返金', amount: -100 }, rules, ctx), null); // 入金だけのルールは出金に使わない
+  // 無効にした科目のルールは使わない
+  const off = b.accounts.map((a) => (a.id === id('消耗品費') ? { ...a, active: false } : a));
+  assert.equal(matchRule({ memo: 'アマゾン', amount: -1 }, rules, { accounts: off }), null);
+});
+
+test('振り分けルール：検証', () => {
+  const b = makeBook('individual');
+  const ctx = { accounts: b.accounts, isBankAccount: (aid) => ['cash', 'deposit'].includes(b.accounts.find((a) => a.id === aid)?.role) };
+  const ok = { keyword: 'NTT', direction: 'any', accountId: b.byName['通信費'].id, taxCategory: 'purchase_10' };
+  assert.deepEqual(validateRule(ok, ctx), {});
+  assert.match(validateRule({ ...ok, keyword: '  ' }, ctx).keyword, /言葉/);
+  assert.match(validateRule({ ...ok, keyword: 'あ'.repeat(31) }, ctx).keyword, /30文字/);
+  assert.match(validateRule({ ...ok, accountId: b.byName['普通預金'].id }, ctx).accountId, /現金・預金/);
+  assert.match(validateRule({ ...ok, direction: 'x' }, ctx).direction, /向き/);
+  assert.match(validateRule({ ...ok, taxCategory: 'x' }, ctx).taxCategory, /税区分/);
 });
