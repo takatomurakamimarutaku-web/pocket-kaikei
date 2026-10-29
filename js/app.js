@@ -10,6 +10,7 @@ import * as setupView from './views/setup.js';
 import * as homeView from './views/home.js';
 import * as journalsView from './views/journals.js';
 import * as journalFormView from './views/journal-form.js';
+import * as journalHistoryView from './views/journal-history.js';
 import * as entryView from './views/entry.js';
 import * as quickEntryView from './views/quick-entry.js';
 import * as cashbookView from './views/cashbook.js';
@@ -36,6 +37,7 @@ import * as accountsView from './views/accounts.js';
 import * as accountEditView from './views/account-edit.js';
 import * as openingView from './views/opening.js';
 import * as backupView from './views/backup.js';
+import * as ebookView from './views/e-book.js';
 import * as periodsView from './views/periods.js';
 import * as closingView from './views/closing.js';
 import * as assetsView from './views/assets.js';
@@ -47,6 +49,7 @@ const routes = [
   { path: '/setup', view: setupView, title: '初期設定', tab: null, setup: true },
   { path: '/home', view: homeView, title: 'ホーム', tab: 'home' },
   { path: '/journals', view: journalsView, title: '仕訳帳', tab: 'journals', print: true },
+  { path: '/journals/history', view: journalHistoryView, title: '訂正・削除の履歴', tab: 'journals', back: '#/journals', print: true },
   { path: '/entry', view: entryView, title: '入力', tab: 'entry' },
   { path: '/quick/:kind', view: quickEntryView, title: 'かんたん入力', tab: 'entry', back: '#/entry' },
   { path: '/cashbook', view: cashbookView, title: '出納帳', tab: 'entry', back: '#/entry', print: true },
@@ -83,6 +86,7 @@ const routes = [
   { path: '/asset/:id', view: assetFormView, title: '固定資産の編集', tab: 'more', back: '#/assets' },
   { path: '/asset/:id/dispose', view: assetDisposeView, title: '固定資産の売却・除却', tab: 'more', back: '#/assets' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
+  { path: '/e-book', view: ebookView, title: '電子帳簿保存', tab: 'more', back: '#/more', print: true },
 ];
 
 const outlet = document.getElementById('view');

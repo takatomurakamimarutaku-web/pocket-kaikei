@@ -8,13 +8,13 @@ import { openingDiff } from './ledger.js';
 import { validateAsset } from './depreciation.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory'];
 
 /** バックアップの内容（JSON にする前のオブジェクト） */
 export function createBackup(data, { appVersion = '', exportedAt = new Date() } = {}) {
@@ -45,11 +45,13 @@ const hasBase = (r) => isObj(r) && isStr(r.id) && r.id && isStr(r.createdAt) && 
 const UPGRADES = {
   // 1 → 2：固定資産台帳（assets）を追加
   1: (obj) => ({ ...obj, version: 2, assets: [] }),
+  // 2 → 3：仕訳の訂正・削除の履歴（journalHistory）を追加
+  2: (obj) => ({ ...obj, version: 3, journalHistory: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -127,6 +129,10 @@ export function parseBackup(text) {
     unique(a, '固定資産');
   }
   for (const t of obj.tombstones) if (!isObj(t) || !isStr(t.id) || !STORES.includes(t.store)) bad('削除履歴');
+  for (const e of obj.journalHistory) {
+    if (!hasBase(e) || !isStr(e.journalId) || !isStr(e.at) || !['create', 'update', 'delete', 'restore'].includes(e.action) || !(isObj(e.before) || isObj(e.after))) bad('仕訳の変更履歴');
+    unique(e, '仕訳の変更履歴');
+  }
 
   return {
     settings: s,
