@@ -232,6 +232,10 @@ export function validateAsset(asset, { entityType, accounts }) {
     if (asset.disposalType === 'sell' && (!isYen(asset.salePrice) || asset.salePrice < 0)) e.disposedOn = '売却額は0円以上の整数にしてください';
   }
   if (asset.salePrice != null && asset.disposalType !== 'sell') e.disposedOn = '売却額は売却した資産だけに入れます';
+  // v0.23.0 で追加した償却資産申告書の項目（任意。js/property-tax.js）
+  if (asset.ptInclude != null && !['yes', 'no'].includes(asset.ptInclude)) e.ptInclude = '申告の対象かどうかが正しくありません';
+  if (asset.ptKind != null && !(Number.isInteger(asset.ptKind) && asset.ptKind >= 1 && asset.ptKind <= 6)) e.ptKind = '償却資産の種類を選んでください';
+  if (asset.ptLife != null && !(Number.isInteger(asset.ptLife) && asset.ptLife >= MIN_LIFE && asset.ptLife <= MAX_LIFE)) e.ptLife = `耐用年数は${MIN_LIFE}〜${MAX_LIFE}年で入力してください`;
   return e;
 }
 
