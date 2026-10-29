@@ -85,6 +85,11 @@ const RULES = {
   },
 };
 
+/** 扶養親族などの合計所得金額の要件（計算できない年分は null） */
+export function dependentIncomeLimit(year) {
+  return RULES[year]?.dependentIncome ?? null;
+}
+
 /** 年末調整を計算できる年分 */
 export function supportedYearEndYears() {
   return Object.keys(RULES).map(Number);
@@ -445,7 +450,7 @@ export function yearEndDraft(employee, year, prev = null) {
     person: prev ? structuredClone(prev.person) : { disability: 'none', widow: 'none', student: false, otherIncome: 0 },
     spouse: prev?.spouse ? structuredClone(prev.spouse) : null,
     dependents: prev ? structuredClone(prev.dependents || []) : [],
-    insurance: { lifeNew: 0, lifeOld: 0, care: 0, pensionNew: 0, pensionOld: 0, earthquake: 0, oldLongTerm: 0, socialDeclared: 0, smallBusiness: 0 },
+    insurance: { lifeNew: 0, lifeOld: 0, care: 0, pensionNew: 0, pensionOld: 0, earthquake: 0, oldLongTerm: 0, socialDeclared: 0, nationalPension: 0, smallBusiness: 0 },
     housingLoan: 0,
     previous: { name: '', pay: 0, social: 0, tax: 0, retiredOn: '' },
     note: '',
@@ -468,6 +473,7 @@ const INSURANCE_KEYS = [
   ['earthquake', '地震保険料'],
   ['oldLongTerm', '旧長期損害保険料'],
   ['socialDeclared', '申告による社会保険料'],
+  ['nationalPension', '国民年金保険料等'],
   ['smallBusiness', '小規模企業共済等掛金'],
 ];
 
@@ -499,6 +505,8 @@ export function validateYearEnd(ye) {
   }
   const ins = ye.insurance || {};
   for (const [k, label] of INSURANCE_KEYS) if (!isAmount(ins[k] ?? 0)) errors.push(`${label}は0以上の整数で入力してください`);
+  // 国民年金保険料等（所得税法第196条第2項の書類を添付した社会保険料）は、申告による社会保険料の内数（源泉徴収票の「国民年金保険料等の金額」）
+  if (isAmount(ins.nationalPension ?? 0) && (ins.nationalPension ?? 0) > (ins.socialDeclared ?? 0)) errors.push('国民年金保険料等は申告による社会保険料のうちの金額です（申告による社会保険料以下にしてください）');
   if (!isAmount(ye.housingLoan ?? 0)) errors.push('住宅借入金等特別控除の額は0以上の整数で入力してください');
   const prev = ye.previous || {};
   for (const [k, label] of [

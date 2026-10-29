@@ -1,9 +1,10 @@
-// 給与の設定：給与・通勤手当・預り金・支払口座などの科目、預り金の補助科目、源泉所得税の納期の特例
+// 給与の設定：給与・通勤手当・預り金・支払口座などの科目、預り金の補助科目、源泉所得税の納期の特例、源泉徴収票の支払者
 import { h, put, field, showToast, errorBox } from '../ui.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { compareAccounts } from '../accounts.js';
-import { PAYROLL_ACCOUNT_FIELDS, DEPOSIT_KINDS, resolvePayrollSettings } from '../payroll.js';
+import { PAYROLL_ACCOUNT_FIELDS, DEPOSIT_KINDS, PAYER_FIELDS, resolvePayrollSettings } from '../payroll.js';
+import { payerInfo } from '../withholding-slip.js';
 
 const HINTS = {
   salary: '従業員の給与（課税の支給額）',
@@ -47,6 +48,9 @@ export async function render({ app, outlet }) {
   selects.deposit.addEventListener('change', paintSubs);
   paintSubs();
   const special = h('input', { id: 'payset-special', type: 'checkbox', checked: cfg.special });
+  // 支払者：空欄なら請求書の発行元・事業者名を使う（入力欄の薄い字で見せる）
+  const fallback = payerInfo({ ...settings, payroll: undefined });
+  const payerInputs = Object.fromEntries(PAYER_FIELDS.map((f) => [f.key, h('input', { id: `payset-payer-${f.key}`, type: f.key === 'phone' ? 'tel' : 'text', value: cfg.payer[f.key], maxlength: f.max, autocomplete: 'off', placeholder: fallback[f.key] || '' })]));
 
   async function save() {
     try {
@@ -54,6 +58,7 @@ export async function render({ app, outlet }) {
         accounts: Object.fromEntries(fields.map((f) => [f.key, selects[f.key].value])),
         subs: Object.fromEntries(DEPOSIT_KINDS.map((k) => [k.key, subSelects[k.key].value || null])),
         special: special.checked,
+        payer: Object.fromEntries(PAYER_FIELDS.map((f) => [f.key, payerInputs[f.key].value])),
       });
       showToast('給与の設定を保存しました');
       app.goBack('#/payroll');
@@ -77,6 +82,11 @@ export async function render({ app, outlet }) {
       h('h2', { class: 'section-title', text: '預り金の補助科目' }),
       subsHint,
       ...DEPOSIT_KINDS.map((k) => field(k.label, subSelects[k.key])),
+      h('h2', { class: 'section-title', text: '源泉徴収票の支払者' }),
+      h('p', { class: 'field-hint', text: '源泉徴収票・給与支払報告書の「支払者」の欄に載ります。空欄なら、請求書の設定の発行元・事業者名を使います。' }),
+      field('氏名又は名称', payerInputs.name),
+      field('住所（居所）又は所在地', payerInputs.address),
+      field('電話番号', payerInputs.phone),
       h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: '保存する' }),
     ),
   );

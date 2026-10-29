@@ -89,7 +89,7 @@ export async function render({ app, outlet, query }) {
               h('div', {}, h('dt', { text: '還付する額' }), h('dd', { class: 'num', text: `${formatYen(sum((d) => Math.max(0, -d)))}円` })),
             ),
             h('ul', { class: 'pay-list' }, list.map(card)),
-            done.length ? h('div', { class: 'report-tools no-print' }, h('button', { type: 'button', class: 'btn', text: 'この年分の結果をCSVで書き出す', onclick: csv })) : null,
+            done.length ? h('div', { class: 'report-tools no-print' }, h('button', { type: 'button', class: 'btn', text: 'この年分の結果をCSVで書き出す', onclick: csv }), h('a', { class: 'btn', href: `#/payroll/slips?year=${year}`, text: '源泉徴収票を作る' })) : null,
           )
         : emptyState(`${year}年に給与を支払った人がいません。`, null, { title: '年末調整' }),
     );

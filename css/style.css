@@ -1132,3 +1132,46 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .ye-status { margin-bottom: var(--sp-3); padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); }
 .ye-status > p { margin: 4px 0; }
 .ye-status .btn { margin-top: 6px; }
+
+/* 源泉徴収票・給与支払報告書 */
+.ws-tools { margin-bottom: var(--sp-3); }
+.ws-warn { margin-bottom: var(--sp-3); }
+.ws-warn ul { margin: 4px 0 0; padding-left: 1.2em; }
+.ws-warn-title { margin: 0; font-weight: 800; }
+.ws-papers { display: grid; gap: var(--sp-4); margin-bottom: var(--sp-3); }
+.ws-paper { padding: 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); color: var(--text); font-size: 0.8rem; line-height: 1.4; }
+.ws-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 2px solid var(--text); }
+.ws-title { margin: 0; font-size: 1rem; font-weight: 800; }
+.ws-copy { margin: 0; font-size: 0.75rem; }
+.ws-block { margin-top: 6px; }
+.ws-block-title { margin: 0 0 2px; font-size: 0.72rem; font-weight: 700; color: var(--muted); }
+.ws-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--text); border-left: 1px solid var(--text); }
+.ws-cell { display: flex; flex-direction: column; min-width: 0; min-height: 3.1em; padding: 2px 5px; border-right: 1px solid var(--text); border-bottom: 1px solid var(--text); }
+.ws-l { font-size: 0.66rem; color: var(--muted); line-height: 1.25; }
+.ws-sub { font-size: 0.66rem; color: var(--muted); align-self: flex-end; }
+.ws-v { margin-top: auto; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ws-cell.num { white-space: normal; text-align: left; }
+.ws-cell.num .ws-v { text-align: right; white-space: nowrap; }
+.ws-strong .ws-v { font-weight: 800; }
+.ws-wide { grid-column: 1 / -1; }
+.ws-half, .ws-name { grid-column: span 1; }
+@media (min-width: 560px) {
+  .ws-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ws-half { grid-column: span 2; }
+}
+.ws-remarks { min-height: 3.6em; }
+.ws-remarks .ws-v { white-space: pre-wrap; font-weight: 400; }
+.report.ws-totals th[scope="row"], .report.ws-cities th[scope="row"] { min-width: 9em; }
+@media print {
+  body:has(.ws-paper) .print-head { display: none !important; }
+  .ws-papers { display: block; }
+  .ws-paper { border: 0; padding: 0; border-radius: 0; font-size: 8.5pt; break-after: page; }
+  .ws-paper:last-child { break-after: auto; }
+  .ws-title { font-size: 13pt; }
+  .ws-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .ws-half { grid-column: span 3; }
+  .ws-name { grid-column: span 2; }
+  .ws-l, .ws-sub { font-size: 6.5pt; color: #333; }
+  .ws-block-title { color: #333; }
+  .ws-cell { min-height: 2.8em; }
+}

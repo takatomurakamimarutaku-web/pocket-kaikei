@@ -23,7 +23,7 @@ import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js'
 import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
 import { validateInvoice, validateInvoiceSettings, normalizeRegistrationNo, isDuplicateNumber, invoiceJournal, postingDate, compareInvoices, INVOICE_KINDS } from './invoices.js';
-import { validateEmployee, validatePayroll, validatePayrollSettings, payrollJournal, paymentJournal, compareEmployees, comparePayrolls, PayrollSetupError, PAYMENT_KINDS, DEPOSIT_KINDS, PAYROLL_ACCOUNT_FIELDS } from './payroll.js';
+import { validateEmployee, validatePayroll, validatePayrollSettings, payrollJournal, paymentJournal, compareEmployees, comparePayrolls, PayrollSetupError, PAYMENT_KINDS, DEPOSIT_KINDS, PAYROLL_ACCOUNT_FIELDS, PAYER_FIELDS } from './payroll.js';
 import { validateYearEnd, yearEndCalc, yearEndSnapshot, snapshotChanges } from './year-end.js';
 
 export const DB_NAME = 'pocket-kaikei';
@@ -303,6 +303,14 @@ function cleanEmployee(e, stamps) {
     deductions: cleanItems(e.deductions),
     note: cleanText(e.note),
     active: e.active !== false,
+    address: cleanText(e.address),
+    birthDate: e.birthDate || '',
+    joinedOn: e.joinedOn || '',
+    retiredOn: e.retiredOn || '',
+    residentCity: cleanText(e.residentCity),
+    residentCollection: e.residentCollection === 'ordinary' ? 'ordinary' : 'special',
+    foreigner: e.foreigner === true,
+    deceased: e.deceased === true,
     sortOrder: e.sortOrder ?? 0,
     ...stamps,
   };
@@ -367,7 +375,7 @@ function cleanYearEnd(ye, stamps) {
     person: { disability: person.disability || 'none', widow: person.widow || 'none', student: !!person.student, otherIncome: amountOr0(person.otherIncome) },
     spouse: ye.spouse ? cleanFamily(ye.spouse) : null,
     dependents: (Array.isArray(ye.dependents) ? ye.dependents : []).map(cleanFamily),
-    insurance: Object.fromEntries(['lifeNew', 'lifeOld', 'care', 'pensionNew', 'pensionOld', 'earthquake', 'oldLongTerm', 'socialDeclared', 'smallBusiness'].map((k) => [k, amountOr0(ins[k])])),
+    insurance: Object.fromEntries(['lifeNew', 'lifeOld', 'care', 'pensionNew', 'pensionOld', 'earthquake', 'oldLongTerm', 'socialDeclared', 'nationalPension', 'smallBusiness'].map((k) => [k, amountOr0(ins[k])])),
     housingLoan: amountOr0(ye.housingLoan),
     previous: { name: cleanText(prev.name), pay: amountOr0(prev.pay), social: amountOr0(prev.social), tax: amountOr0(prev.tax), retiredOn: prev.retiredOn || '' },
     note: cleanText(ye.note),
@@ -1610,6 +1618,7 @@ export class Repository {
         accounts: Object.fromEntries(PAYROLL_ACCOUNT_FIELDS.map((f) => [f.key, patch.accounts?.[f.key] || ''])),
         subs: Object.fromEntries(DEPOSIT_KINDS.map((k) => [k.key, patch.subs?.[k.key] || null])),
         special: patch.special === true,
+        payer: Object.fromEntries(PAYER_FIELDS.map((f) => [f.key, cleanText(patch.payer ? patch.payer[f.key] : cur.payroll?.payer?.[f.key])])),
       };
       const errors = validatePayrollSettings(payroll, { accounts: await req(tx.objectStore('accounts').getAll()), subAccounts: await req(tx.objectStore('subAccounts').getAll()) });
       if (errors.length) throw new ValidationError(errors);

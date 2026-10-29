@@ -110,9 +110,10 @@ export async function render({ app, outlet, params, query }) {
     ['earthquake', '地震保険料', ''],
     ['oldLongTerm', '旧長期損害保険料', '平成18年12月31日以前に契約した長期の損害保険'],
     ['socialDeclared', '社会保険料（申告分）', '本人が直接払った国民年金・国民健康保険など（給与から引いた分は自動で入ります）'],
+    ['nationalPension', 'うち国民年金保険料等', '上の申告分のうち、国民年金保険料と国民年金基金の掛金（源泉徴収票の「国民年金保険料等の金額」に載ります）'],
     ['smallBusiness', '小規模企業共済等掛金', 'iDeCo（個人型確定拠出年金）・小規模企業共済など'],
   ];
-  const ins = Object.fromEntries(insKeys.map(([k]) => [k, amountInput(`ye-ins-${k}`, ye.insurance[k])]));
+  const ins = Object.fromEntries(insKeys.map(([k]) => [k, amountInput(`ye-ins-${k}`, ye.insurance[k] ?? 0)]));
 
   /** 配偶者・扶養親族の入力欄 */
   function familyCard(x, { spouse = false, index = 0, onRemove = null } = {}) {
