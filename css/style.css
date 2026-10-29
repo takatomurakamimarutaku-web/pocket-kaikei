@@ -870,3 +870,16 @@ div.menu-row.ar-row::after { visibility: hidden; }
 .ar-total span { font-weight: 800; }
 .stat.is-warn .stat-value { color: var(--warn-text); }
 .ar-settled > summary { margin: 4px 4px 8px; }
+
+/* 消費税の申告計算：税額の計算 */
+.tr-fixed { margin: 0; padding: 10px 0; color: var(--muted); }
+
+/* 内訳書：対象の科目 */
+.bd-targets { padding-left: 0; list-style: none; gap: 0; }
+.bd-target { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--separator); }
+.bd-target:last-child { border-bottom: 0; }
+.bd-target-title { font-weight: 600; }
+.bd-pick { display: grid; gap: 4px; max-height: 50vh; overflow: auto; }
+.bd-pick-group { margin: 8px 0 0; font-weight: 700; }
+.bd-pick .check { margin-bottom: 0; min-height: 40px; }
+.bd-pick-sub { padding-left: 1.6em; }

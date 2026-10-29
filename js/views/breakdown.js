@@ -1,7 +1,8 @@
 // 勘定科目内訳明細書（法人）：帳簿の残高・補助科目から各内訳書を作る。弥生会計・勘定奉行の内訳書作成を参考にした
 // 帳簿に無い欄（所在地・利率など）は、CSV に書き出してから記入する前提
-import { h, put, amountCell, saveFile } from '../ui.js';
-import { breakdownStatements } from '../breakdown.js';
+import { h, put, amountCell, saveFile, confirmDialog, showToast } from '../ui.js';
+import { breakdownStatements, BREAKDOWN_TARGETS, BREAKDOWN_BY_ID, cleanBreakdownTargets } from '../breakdown.js';
+import { compareAccounts, groupLabel } from '../accounts.js';
 import { breakdownCsv, csvFileName } from '../csv.js';
 import { formatPeriod } from '../period.js';
 
@@ -10,7 +11,12 @@ export async function render({ app, outlet }) {
   if (settings.entityType !== 'corporation') return put(outlet, h('p', { class: 'notice', text: '勘定科目内訳明細書は法人だけで使えます。' }));
   let showAll = false;
   let showEmpty = false;
+  // ⑫・⑮（権利金等・工業所有権等の使用料）の対象の科目（補助科目）
+  let targets = cleanBreakdownTargets(settings.breakdownTargets || {}, { accounts, subAccounts });
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const subById = new Map(subAccounts.map((x) => [x.id, x]));
   const body = h('div');
+  const targetsEl = h('div');
   const index = h('div', { class: 'chip-row no-print' });
 
   const check = (label, onChange) => {
@@ -37,8 +43,81 @@ export async function render({ app, outlet }) {
     return h('div', { class: 'table-wrap' }, h('table', { class: 'report breakdown', 'aria-label': f.title }, h('thead', {}, head), h('tbody', {}, rows, f.rows.length ? totalRow : null)));
   }
 
+  const targetText = (list) =>
+    list.length ? list.map((t) => `${accountById.get(t.accountId)?.name ?? ''}${t.subAccountId ? `（${subById.get(t.subAccountId)?.name ?? ''}）` : ''}`).join('、') : '未設定';
+
+  function paintTargets() {
+    put(
+      targetsEl,
+      h(
+        'section',
+        { class: 'panel no-print' },
+        h('h2', { class: 'section-title', text: '対象の科目を選ぶ内訳書' }),
+        h('p', { class: 'muted small', text: '決まった科目が無い内訳書は、選んだ科目（補助科目）の仕訳から作ります。' }),
+        h(
+          'ul',
+          { class: 'plain-list bd-targets' },
+          Object.keys(BREAKDOWN_TARGETS).map((id) => {
+            const f = BREAKDOWN_BY_ID[id];
+            return h(
+              'li',
+              { class: 'bd-target' },
+              h('div', {}, h('span', { class: 'bd-target-title', text: `${f.no}${f.title.replace(/の内訳書$/, '')}` }), h('span', { class: 'muted small block', text: targetText(targets[id]) })),
+              h('button', { type: 'button', class: 'btn btn-small', text: '選ぶ', 'aria-label': `${f.title}の対象の科目を選ぶ`, onclick: () => pickTargets(id) }),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  async function pickTargets(id) {
+    const def = BREAKDOWN_TARGETS[id];
+    const f = BREAKDOWN_BY_ID[id];
+    const cands = accounts.filter((a) => a.active !== false && def.groups.includes(a.group)).sort(compareAccounts);
+    const isOn = (accountId, subId) => targets[id].some((t) => t.accountId === accountId && (t.subAccountId || null) === (subId || null));
+    const boxes = [];
+    const box = (a, sub, label, cls) => {
+      const input = h('input', { type: 'checkbox', checked: isOn(a.id, sub?.id) });
+      boxes.push({ input, accountId: a.id, subAccountId: sub?.id ?? null });
+      return h('label', { class: `check small ${cls}` }, input, label);
+    };
+    const list = h(
+      'div',
+      { class: 'bd-pick' },
+      def.groups.map((g) => {
+        const accs = cands.filter((a) => a.group === g);
+        if (!accs.length) return null;
+        return [
+          h('p', { class: 'bd-pick-group muted small', text: groupLabel(g, settings.entityType) }),
+          accs.map((a) => {
+            const subs = subAccounts.filter((x) => x.accountId === a.id && x.active !== false);
+            return [box(a, null, subs.length ? `${a.name}（すべて）` : a.name, ''), subs.map((x) => box(a, x, x.name, 'bd-pick-sub'))];
+          }),
+        ];
+      }),
+    );
+    const ok = await confirmDialog({
+      title: `${f.no}${f.title}`,
+      body: h('div', {}, h('p', { class: 'muted small', text: `${def.hint}を選んでください。補助科目を選ぶと、その補助科目の仕訳だけを使います。` }), list),
+      buttons: [
+        { label: 'キャンセル', value: false },
+        { label: '決める', value: true, variant: 'primary' },
+      ],
+    });
+    if (!ok) return;
+    const chosen = boxes.filter((b) => b.input.checked).map(({ accountId, subAccountId }) => ({ accountId, subAccountId }));
+    // 科目全体を選んだときは、その科目の補助科目の選択は要らない
+    const whole = new Set(chosen.filter((c) => !c.subAccountId).map((c) => c.accountId));
+    targets = { ...targets, [id]: chosen.filter((c) => !c.subAccountId || !whole.has(c.accountId)) };
+    await app.db.saveBreakdownTargets(targets);
+    showToast(`${f.title.replace(/の内訳書$/, '')}の対象を${targets[id].length ? `${targets[id].length}件にしました` : '外しました'}`);
+    paintTargets();
+    paint();
+  }
+
   function paint() {
-    const forms = breakdownStatements({ accounts, subAccounts, period, journals, showAll });
+    const forms = breakdownStatements({ accounts, subAccounts, period, journals, showAll, targets });
     const visible = forms.filter((f) => showEmpty || f.rows.length);
     const sections = visible.map((f) =>
       h(
@@ -69,6 +148,7 @@ export async function render({ app, outlet }) {
       check('金額基準でまとめずにすべて表示', (v) => ((showAll = v), paint())),
       check('残高の無い内訳書も表示', (v) => ((showEmpty = v), paint())),
     ),
+    targetsEl,
     index,
     body,
     h(
@@ -76,9 +156,10 @@ export async function render({ app, outlet }) {
       { class: 'panel small muted' },
       h('p', { text: '相手先・金融機関・銘柄・氏名・貸主は、各科目の補助科目で分けて出します。補助科目を使っていない科目は科目の合計の1行になります。' }),
       h('p', {}, '補助科目は ', h('a', { href: '#/accounts', class: 'link', text: '勘定科目' }), ' の画面で追加できます。所在地・法人との関係・利率など帳簿に無い欄は、CSV に書き出してから記入してください。'),
-      h('p', { text: '対応していない内訳書：⑫土地の売上高等、⑬売上高等の事業所別、⑮-2・⑮-3（権利金等・工業所有権等の使用料）。テンプレートにない科目を追加した場合、その科目は内訳書に入りません。' }),
+      h('p', { text: '⑫土地の売上高等と⑮権利金等の期中支払・工業所有権等の使用料は、上で選んだ科目の仕訳から作ります。⑬売上高等の事業所別は、事業所を帳簿で分けていないため合計の1行です。テンプレートにない科目を追加した場合、その科目は（⑫・⑮の対象に選ばない限り）内訳書に入りません。' }),
       h('p', { text: '出典：国税庁 勘定科目内訳明細書の標準フォーム（令和6年3月1日以後終了事業年度分）、記載内容の簡素化（e-Tax）' }),
     ),
   );
+  paintTargets();
   paint();
 }

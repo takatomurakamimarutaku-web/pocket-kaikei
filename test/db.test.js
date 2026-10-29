@@ -259,6 +259,13 @@ test('消費税の申告設定：按分の方法を保存し（省略は一括�
   assert.equal((await repo.saveTaxReturnSettings(period.id, base)).taxReturn.allocation, 'proportional');
   assert.equal((await repo.saveTaxReturnSettings(period.id, { ...base, allocation: 'individual' })).taxReturn.allocation, 'individual');
   await assert.rejects(repo.saveTaxReturnSettings(period.id, { ...base, allocation: 'x' }), ValidationError);
+  // 税額の計算：省略は割戻し計算・切り捨て。売上だけ積上げ、仕入の切り上げは保存しない
+  const saved = (await repo.saveTaxReturnSettings(period.id, base)).taxReturn;
+  assert.deepEqual([saved.salesCalc, saved.purchaseCalc, saved.salesRounding, saved.purchaseRounding], ['gross', 'gross', 'floor', 'floor']);
+  const stacked = (await repo.saveTaxReturnSettings(period.id, { ...base, salesCalc: 'stacked', purchaseCalc: 'stacked', salesRounding: 'ceil', purchaseRounding: 'round' })).taxReturn;
+  assert.deepEqual([stacked.salesCalc, stacked.purchaseCalc, stacked.salesRounding, stacked.purchaseRounding], ['stacked', 'stacked', 'ceil', 'round']);
+  await assert.rejects(repo.saveTaxReturnSettings(period.id, { ...base, salesCalc: 'stacked', purchaseCalc: 'gross' }), (e) => e instanceof ValidationError && /仕入も積上げ/.test(e.errors[0]));
+  await assert.rejects(repo.saveTaxReturnSettings(period.id, { ...base, purchaseCalc: 'stacked', purchaseRounding: 'ceil' }), ValidationError);
   // 仕入の用途区分を使う設定
   assert.equal((await repo.updateSettings({ taxUseSplit: true })).taxUseSplit, true);
   repo.close();

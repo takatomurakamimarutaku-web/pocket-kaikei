@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidDate, addMonths, individualPeriod, defaultCorporateEnd, validatePeriod, isInPeriod, monthsInPeriod, monthRange } from '../js/period.js';
+import { isValidDate, addMonths, individualPeriod, defaultCorporateEnd, validatePeriod, isInPeriod, monthsInPeriod, monthRange, periodMonths, daysBetween } from '../js/period.js';
 
 test('isValidDate：実在しない日付を拒否する（うるう年を含む）', () => {
   assert.equal(isValidDate('2024-02-29'), true);
@@ -39,4 +39,15 @@ test('期間内判定・月の列挙・月範囲', () => {
   assert.deepEqual(monthRange(p, '2026-05', '2026-06'), { from: '2026-05-01', to: '2026-06-30' });
   assert.deepEqual(monthRange(p), { from: '2026-04-01', to: '2027-03-31' });
   assert.deepEqual(monthRange({ startDate: '2026-06-15', endDate: '2026-08-10' }, '2026-06', '2026-08'), { from: '2026-06-15', to: '2026-08-10' });
+});
+
+test('期間の月数：暦に従って数え、1か月に満たない端数は1か月（月末の応当日は民法143条）', () => {
+  assert.equal(periodMonths({ startDate: '2026-04-01', endDate: '2027-03-31' }), 12);
+  assert.equal(periodMonths({ startDate: '2026-01-01', endDate: '2026-12-31' }), 12);
+  assert.equal(periodMonths({ startDate: '2026-06-15', endDate: '2027-03-31' }), 10);
+  assert.equal(periodMonths({ startDate: '2026-10-20', endDate: '2027-03-31' }), 6);
+  assert.equal(periodMonths({ startDate: '2026-06-15', endDate: '2026-06-20' }), 1);
+  assert.equal(periodMonths({ startDate: '2026-01-31', endDate: '2026-02-28' }), 1);
+  assert.equal(periodMonths({ startDate: '2026-01-31', endDate: '2026-03-01' }), 2);
+  assert.equal(daysBetween('2026-01-31', '2026-03-01'), 29);
 });

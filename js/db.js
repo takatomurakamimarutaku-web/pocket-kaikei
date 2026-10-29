@@ -13,6 +13,7 @@ import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId, createAccount, createBudget, createSubAccount } from './models.js';
 import { validatePaymentTerms } from './receivables.js';
+import { validateBreakdownTargets } from './breakdown.js';
 import { validateAsset } from './depreciation.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
@@ -328,6 +329,14 @@ export class Repository {
     });
   }
 
+  /** 勘定科目内訳明細書の⑫・⑮（権利金等・工業所有権等の使用料）の対象の科目。設定に持つためバックアップに入る */
+  async saveBreakdownTargets(targets) {
+    const err = validateBreakdownTargets(targets);
+    if (err) throw new ValidationError([err]);
+    const clean = Object.fromEntries(Object.entries(targets).map(([id, list]) => [id, list.map((t) => ({ accountId: t.accountId, subAccountId: t.subAccountId || null }))]));
+    return this.updateSettings({ breakdownTargets: clean });
+  }
+
   /**
    * 製造原価を使う・使わない（法人だけ）。使うときは製造原価の科目（材料費・労務費・製造経費・仕掛品、原材料・仕掛品・製品）を追加する
    * 使わないにしても科目は残す（仕訳で使っているかもしれないため。不要なら勘定科目の画面で無効・削除する）
@@ -417,7 +426,8 @@ export class Repository {
 
   /**
    * 消費税の申告計算の設定（計算の方法・事業区分・中間納付税額）を期間に保存する
-   * @param {{ method: string, businessType: number, allocation?: 'individual'|'proportional', interimNational: number, interimLocal: number }} taxReturn
+   * @param {{ method: string, businessType: number, allocation?: 'individual'|'proportional', interimNational: number, interimLocal: number,
+   *   baseSales?: number|null, salesCalc?: 'gross'|'stacked', purchaseCalc?: 'gross'|'stacked', salesRounding?: 'floor'|'round'|'ceil', purchaseRounding?: 'floor'|'round' }} taxReturn
    */
   saveTaxReturnSettings(periodId, taxReturn) {
     return this.run(['periods'], 'readwrite', async (tx) => {
@@ -431,9 +441,13 @@ export class Repository {
       if (taxReturn.allocation !== undefined && !['individual', 'proportional'].includes(taxReturn.allocation)) errors.push('個別対応方式か一括比例配分方式を選んでください');
       for (const k of ['interimNational', 'interimLocal']) if (!isYen(taxReturn[k]) || taxReturn[k] < 0) errors.push('中間納付税額は0以上の整数で入力してください');
       if (taxReturn.baseSales != null && (!isYen(taxReturn.baseSales) || taxReturn.baseSales < 0)) errors.push('基準期間の課税売上高は0以上の整数で入力してください');
+      const { salesCalc = 'gross', purchaseCalc = 'gross', salesRounding = 'floor', purchaseRounding = 'floor' } = taxReturn;
+      if (![salesCalc, purchaseCalc].every((c) => ['gross', 'stacked'].includes(c))) errors.push('割戻し計算か積上げ計算を選んでください');
+      if (salesCalc === 'stacked' && purchaseCalc !== 'stacked') errors.push('売上を積上げ計算にしたときは、仕入も積上げ計算にしてください');
+      if (!['floor', 'round', 'ceil'].includes(salesRounding) || !['floor', 'round'].includes(purchaseRounding)) errors.push('積上げ計算の端数処理を選んでください');
       if (errors.length) throw new ValidationError([...new Set(errors)]);
       const { method, businessType, interimNational, interimLocal, allocation = 'proportional', baseSales = null } = taxReturn;
-      const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal, baseSales }, updatedAt: now() };
+      const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal, baseSales, salesCalc, purchaseCalc, salesRounding, purchaseRounding }, updatedAt: now() };
       store.put(next);
       return next;
     });
