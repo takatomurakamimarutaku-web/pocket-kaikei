@@ -50,6 +50,15 @@ export async function render({ app, outlet, params, query }) {
     return { accountId: init[side], subAccountId: side === fixedSide ? fixedSub : '', taxCategory: acc ? acc.defaultTaxCategory : 'none' };
   };
   const state = { date: defaultDate(), amount: '', memo: '', debit: sideState('debit'), credit: sideState('credit') };
+  // 売掛金・買掛金の画面から開いたとき：回収（支払）する科目・補助科目・金額・摘要を入れておく
+  const partyAccount = accountById.get(query.partyAccount);
+  if (partyAccount && partyAccount.active !== false) {
+    const side = ['debit', 'credit'].find((x) => x !== fixedSide && slotCandidates(template[x], accounts).some((a) => a.id === partyAccount.id));
+    if (side) state[side] = { accountId: partyAccount.id, subAccountId: subById.get(query.partySub)?.accountId === partyAccount.id ? query.partySub : '', taxCategory: partyAccount.defaultTaxCategory };
+  }
+  const preset = query.amount ? parseYen(query.amount) : null;
+  if (preset?.ok) state.amount = String(preset.value);
+  if (query.memo) state.memo = String(query.memo).slice(0, 100);
   let dirty = false;
 
   const recentIds = [];
@@ -70,6 +79,7 @@ export async function render({ app, outlet, params, query }) {
     inputmode: 'numeric',
     class: 'amount-input amount-large',
     placeholder: '0',
+    value: state.amount ? formatYen(Number(state.amount)) : '',
     oninput: (e) => ((state.amount = e.target.value), touch()),
     onblur: (e) => {
       const p = parseYen(e.target.value);
@@ -88,6 +98,7 @@ export async function render({ app, outlet, params, query }) {
     type: 'text',
     maxlength: 100,
     placeholder: template.memoPlaceholder,
+    value: state.memo,
     oninput: (e) => ((state.memo = e.target.value), touch()),
   });
   const slotEls = { debit: h('div', { class: 'qslot' }), credit: h('div', { class: 'qslot' }) };

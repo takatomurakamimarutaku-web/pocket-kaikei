@@ -26,6 +26,11 @@ export function addDays(s, days) {
   return fromUTC(d);
 }
 
+/** from から to までの日数（to のほうが後なら正） */
+export function daysBetween(from, to) {
+  return Math.round((toUTC(to) - toUTC(from)) / 86400000);
+}
+
 /**
  * n か月後の同じ日（無い日は月末）。例：2026-01-31 + 1か月 → 2026-02-28
  */

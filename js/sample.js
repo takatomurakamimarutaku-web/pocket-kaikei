@@ -13,11 +13,14 @@ function day(month, d) {
   return `${month}-${String(Math.min(d, last)).padStart(2, '0')}`;
 }
 
+// 支払条件：末日締め 翌月末日払い
+const MONTH_END = { closingDay: 31, months: 1, payDay: 31 };
+
 function book(entityType, { manufacturing = false, subs = [] } = {}) {
   const base = templateAccounts(entityType);
   const accounts = [...base, ...(manufacturing ? manufacturingAccounts(base) : [])].map((a) => createAccount(a));
   const byName = Object.fromEntries(accounts.map((a) => [a.name, a]));
-  const subAccounts = subs.map(([accountName, name], i) => createSubAccount({ accountId: byName[accountName].id, name, sortOrder: i }));
+  const subAccounts = subs.map(([accountName, name, paymentTerms], i) => createSubAccount({ accountId: byName[accountName].id, name, sortOrder: i, ...(paymentTerms ? { paymentTerms: { ...paymentTerms } } : {}) }));
   const subId = (accountName, name) => subAccounts.find((s) => s.accountId === byName[accountName].id && s.name === name)?.id ?? null;
   const journals = [];
   /** 行は [科目名, 金額, 税区分?, 補助科目名?]。税区分を省くと科目の初期値 */
@@ -38,7 +41,7 @@ function finish(period, journals) {
 }
 
 function individualSample(year) {
-  const { accounts, byName, subAccounts, subId, journals, j } = book('individual', { subs: [['普通預金', 'みらい銀行'], ['売掛金', 'A社'], ['売掛金', 'B社']] });
+  const { accounts, byName, subAccounts, subId, journals, j } = book('individual', { subs: [['普通預金', 'みらい銀行'], ['売掛金', 'A社', { closingDay: 31, months: 1, payDay: 25 }], ['売掛金', 'B社', MONTH_END]] });
   const period = createPeriod({ startDate: `${year}-01-01`, endDate: `${year}-12-31` });
   const ob = (name, amount, sub) => ({ accountId: byName[name].id, subAccountId: sub ? subId(name, sub) : null, amount });
   const assets = 50000 + 1200000 + 330000 + 150000;
@@ -85,7 +88,7 @@ function individualSample(year) {
 }
 
 function corporationSample(year) {
-  const { accounts, byName, subAccounts, subId, journals, j } = book('corporation', { manufacturing: true, subs: [['普通預金', 'さくら銀行'], ['売掛金', '東和機工'], ['売掛金', '北斗精密'], ['買掛金', '中央金属'], ['役員報酬', '佐藤一郎'], ['地代家賃', '城南不動産'], ['地代家賃（製造）', '城南不動産']] });
+  const { accounts, byName, subAccounts, subId, journals, j } = book('corporation', { manufacturing: true, subs: [['普通預金', 'さくら銀行'], ['売掛金', '東和機工', MONTH_END], ['売掛金', '北斗精密', MONTH_END], ['買掛金', '中央金属', MONTH_END], ['役員報酬', '佐藤一郎'], ['地代家賃', '城南不動産'], ['地代家賃（製造）', '城南不動産']] });
   const period = createPeriod({ startDate: `${year}-04-01`, endDate: `${year + 1}-03-31` });
   const ob = (name, amount, sub) => ({ accountId: byName[name].id, subAccountId: sub ? subId(name, sub) : null, amount });
   const debit = 4000000 + 3080000 + 300000 + 200000 + 400000 + 50000;

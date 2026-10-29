@@ -849,3 +849,24 @@ input.budget-input { text-align: right; font-variant-numeric: tabular-nums; padd
 .ti-note { margin: 0; color: var(--warn-text); }
 .ti-ok > summary { margin: 4px 4px 8px; }
 .ti-points li + li { margin-top: 4px; }
+
+/* 売掛金・買掛金 */
+.menu-row.ar-row { grid-template-columns: 1fr 12px; }
+div.menu-row.ar-row::after { visibility: hidden; }
+.ar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.ar-head .menu-label { overflow-wrap: anywhere; }
+.ar-amount { font-weight: 700; }
+.ar-row .bi-tags { margin-top: 4px; }
+.ar-bar { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.ar-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--primary); }
+.ar-sched { padding-left: 0; list-style: none; gap: 0; }
+.ar-sched-row { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--separator); }
+.ar-sched-row:last-child { border-bottom: 0; }
+.ar-warn { color: var(--warn-text); font-weight: 700; }
+.ar-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.ar-term { display: grid; gap: 4px; min-width: 0; }
+.ar-terms select { min-width: 0; }
+.ar-terms-edit { margin-top: 10px; }
+.ar-total span { font-weight: 800; }
+.stat.is-warn .stat-value { color: var(--warn-text); }
+.ar-settled > summary { margin: 4px 4px 8px; }

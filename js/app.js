@@ -45,6 +45,7 @@ import * as backupView from './views/backup.js';
 import * as ebookView from './views/e-book.js';
 import * as attachmentsView from './views/attachments.js';
 import * as transferView from './views/transfer.js';
+import * as receivablesView from './views/receivables.js';
 import * as periodsView from './views/periods.js';
 import * as closingView from './views/closing.js';
 import * as assetsView from './views/assets.js';
@@ -70,6 +71,8 @@ const routes = [
   { path: '/template/:id', view: journalFormView, kind: 'template', title: '定型仕訳の編集', tab: 'entry', back: '#/templates' },
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
   { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports', print: true },
+  { path: '/receivables', view: receivablesView, title: '売掛金・買掛金', tab: 'reports', back: '#/reports' },
+  { path: '/receivables/party', view: receivablesView, kind: 'party', title: '取引先', tab: 'reports', back: '#/receivables' },
   { path: '/reports/checks', view: checksView, title: '仕訳のチェック', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/trial-monthly', view: trialMonthlyView, title: '月次推移試算表', tab: 'reports', back: '#/reports', print: true },
