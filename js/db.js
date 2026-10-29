@@ -9,6 +9,7 @@ import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId, createAccount } from './models.js';
 import { validateAsset } from './depreciation.js';
+import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 
 export const DB_NAME = 'pocket-kaikei';
 export const DB_VERSION = 2;
@@ -388,6 +389,22 @@ export class Repository {
       if (errors.length) throw new ValidationError([...new Set(errors)]);
       const { method, businessType, interimNational, interimLocal, allocation = 'proportional', baseSales = null } = taxReturn;
       const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal, baseSales }, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 事業税の入力を期間に保存する（締めた期間も保存できる） */
+  saveEnterpriseTax(periodId, input) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const value = { ...DEFAULT_ENTERPRISE_TAX, ...input };
+      const errors = validateEnterpriseTax(value);
+      if (errors.length) throw new ValidationError(errors);
+      const picked = Object.fromEntries(Object.keys(DEFAULT_ENTERPRISE_TAX).map((k) => [k, value[k]]));
+      const next = { ...period, enterpriseTax: picked, updatedAt: now() };
       store.put(next);
       return next;
     });

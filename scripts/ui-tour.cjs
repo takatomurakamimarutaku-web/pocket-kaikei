@@ -33,6 +33,8 @@ const PAGES = [
   ['19-tax-return', '#/reports/tax-return'],
   ['21-breakdown', '#/reports/breakdown'],
   ['22-financial', '#/reports/financial'],
+  ['23-enterprise-tax', '#/reports/enterprise-tax'],
+  ['24-property-tax', '#/reports/property-tax?year=2027'],
   ['20-tax-return-form', '#/reports/tax-return?view=form'],
 ].filter(([name]) => !process.env.ONLY || process.env.ONLY.split(',').some((p) => name.startsWith(p)));
 

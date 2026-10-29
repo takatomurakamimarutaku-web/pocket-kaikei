@@ -24,6 +24,8 @@ const GROUPS = [
   ['申告', 'data', [
     ['#/reports/blue-return', '青色申告決算書', '個人の決算書4ページの各欄（転記用）', 'form', 'individual'],
     ['#/reports/breakdown', '勘定科目内訳明細書', '預貯金・売掛金・買掛金・借入金・役員給与・地代家賃など。補助科目ごと', 'list', 'corporation'],
+    ['#/reports/enterprise-tax', '事業税', '法人：第六号様式の所得割・特別法人事業税／個人：個人事業税の見込み', 'calc'],
+    ['#/reports/property-tax', '償却資産申告書', '固定資産台帳から種類別明細書と申告書の集計。評価額・税額の見込み', 'asset'],
   ]],
 ];
 
