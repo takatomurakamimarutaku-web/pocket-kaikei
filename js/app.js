@@ -4,6 +4,7 @@ import { createRouter } from './router.js';
 import { h, showToast } from './ui.js';
 import { friendlyError } from './errors.js';
 import { APP_VERSION } from './version.js';
+import { isDesktopApp } from './install.js';
 import { formatPeriod, todayString } from './period.js';
 import * as setupView from './views/setup.js';
 import * as homeView from './views/home.js';
@@ -253,6 +254,8 @@ async function requestPersistence() {
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+  // Windows 版（exe）はファイルを同梱しているので Service Worker は使わない。更新は新しい exe を入れて行う
+  if (isDesktopApp()) return;
   const banner = document.getElementById('update-banner');
   let updateRequested = false;
   let reloading = false;

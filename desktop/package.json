@@ -1,0 +1,15 @@
+{
+  "name": "pocket-kaikei-desktop",
+  "private": true,
+  "description": "Pocket会計の Windows 版（Tauri）。PWA のファイルをそのまま包む",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "prepare-web": "node scripts/copy-web.js",
+    "icon": "tauri icon ../icons/icon-512.png",
+    "build": "npm run prepare-web && npm run icon && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

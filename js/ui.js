@@ -2,6 +2,7 @@
 import { suggest } from './search.js';
 import { formatYen } from './money.js';
 import { TAX_CATEGORIES, TAX_GROUPS } from './tax.js';
+import { isDesktopApp } from './install.js';
 
 /** 要素を作る。attrs: class, text, html禁止, on*, dataset, その他の属性 */
 export function h(tag, attrs = {}, ...children) {
@@ -264,10 +265,10 @@ export function amountCell(tag, n, { blankZero = false, cls = '' } = {}) {
   return h(tag, { class: `num ${n < 0 ? 'neg' : ''} ${cls}`.trim(), text });
 }
 
-/** ファイルの保存（iPhone では共有シートを使い、使えなければダウンロード） */
+/** ファイルの保存（iPhone では共有シートを使い、使えなければダウンロード。Windows 版は保存ダイアログ） */
 export async function saveFile(blob, fileName) {
   const file = typeof File === 'function' ? new File([blob], fileName, { type: blob.type }) : null;
-  if (file && navigator.canShare?.({ files: [file] })) {
+  if (file && !isDesktopApp() && navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: fileName });
       return 'shared';

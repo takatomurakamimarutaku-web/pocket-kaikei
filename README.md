@@ -15,6 +15,17 @@ HTML / CSS / JavaScript（ES Modules）だけで作られており、ビルド�
 6. 「帳票」で残高試算表・総勘定元帳・損益計算書・貸借対照表・消費税集計を見る
 7. 「その他」→「バックアップ」で定期的に書き出す（端末間の受け渡しもこのファイルで行います）
 
+## Windows 版（exe）
+
+PC では Windows 用のアプリ（exe）でも使えます。中身はこの PWA と同じファイルで、[Tauri](https://tauri.app/) で包んでいます。
+
+1. [Releases](https://github.com/takatomurakamimarutaku-web/pocket-kaikei/releases) から `Pocket会計_x.y.z_x64-setup.exe` をダウンロードして実行する（管理者権限は不要）
+2. 署名していないため「WindowsによってPCが保護されました」と出たら、「詳細情報」→「実行」で進める
+3. データはこの PC の中（`%LOCALAPPDATA%\io.github.takatomurakamimarutaku-web.pocket-kaikei`）だけに保存されます。ブラウザ版やスマホとはバックアップファイル（JSON）で受け渡してください
+4. 新しい版は Releases から入れ直すと上書きされ、データは引き継がれます
+
+ビルドは GitHub Actions（`.github/workflows/desktop.yml`）で行います。`v0.23.0` のようなタグを push すると Releases に下書きができるので、確認してから公開します。詳細は `docs/spec-phase2-windows.md`。
+
 ## 画面
 
 | ハッシュ | 画面 |
