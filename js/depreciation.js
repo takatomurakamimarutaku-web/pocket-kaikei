@@ -235,8 +235,8 @@ export function periodMonths(range) {
   return Math.min(12, monthsBetween(range.startDate, range.endDate));
 }
 
-/** 償却費の科目にできる区分 */
-export const EXPENSE_GROUPS = ['sga', 'mfg_overhead'];
+/** 償却費の科目にできる区分（不動産所得の資産は不動産経費の「減価償却費（不動産）」） */
+export const EXPENSE_GROUPS = ['sga', 'mfg_overhead', 're_expenses'];
 
 /**
  * 資産の検証
@@ -282,7 +282,7 @@ export function validateAsset(asset, { entityType, accounts }) {
   // 償却費の科目（任意。空なら「減価償却費」。製造業の工場の機械などは製造経費の科目にする）
   if (asset.expenseAccountId) {
     const ex = accounts.find((a) => a.id === asset.expenseAccountId);
-    if (!ex || !EXPENSE_GROUPS.includes(ex.group) || ex.normalSide !== 'debit') e.expenseAccountId = '償却費の科目は販売費及び一般管理費か製造経費の科目を選んでください';
+    if (!ex || !EXPENSE_GROUPS.includes(ex.group) || ex.normalSide !== 'debit') e.expenseAccountId = '償却費の科目は経費（販売費及び一般管理費）・製造経費・不動産経費の科目を選んでください';
   }
   if (entityType === 'individual') {
     if (!Number.isInteger(asset.businessRatio) || asset.businessRatio < 1 || asset.businessRatio > 100) e.businessRatio = '事業で使う割合は1〜100%で入力してください';

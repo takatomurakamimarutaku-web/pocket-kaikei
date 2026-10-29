@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { QUICK_TEMPLATES, QUICK_BY_ID, quickTemplatesFor, slotCandidates, quickDefaults, buildQuickLines, simplePair, isCashAccount } from '../js/quick.js';
-import { fillHints, findByHint, HINTS, templateAccounts, TEMPLATES, manufacturingAccounts, BREAKDOWN_HINTS } from '../js/accounts.js';
+import { fillHints, findByHint, HINTS, templateAccounts, TEMPLATES, manufacturingAccounts, realEstateAccounts, BREAKDOWN_HINTS } from '../js/accounts.js';
 import { validateJournal } from '../js/journal.js';
 import { firstNegativeDate } from '../js/ledger.js';
 import { createJournal } from '../js/models.js';
@@ -14,11 +14,14 @@ test('テンプレートの目印：個人・法人とも使う目印の科目�
     const base = templateAccounts(entityType);
     const mfg = manufacturingAccounts(base);
     const mfgHints = new Set(mfg.map((a) => a.hint).filter(Boolean));
-    // 製造原価の目印は法人で「製造原価を使う」にしたときだけ
-    const accounts = entityType === 'corporation' ? [...base, ...mfg] : base;
+    const re = realEstateAccounts(base);
+    const reHints = new Set(re.map((a) => a.hint).filter(Boolean));
+    // 製造原価の目印は法人で「製造原価を使う」、不動産所得の目印は個人で「不動産所得がある」にしたときだけ
+    const accounts = entityType === 'corporation' ? [...base, ...mfg] : [...base, ...re];
     for (const hint of Object.keys(HINTS)) {
       const hits = accounts.filter((a) => a.hint === hint);
       if (mfgHints.has(hint) && entityType === 'individual') assert.equal(hits.length, 0);
+      else if (reHints.has(hint) && entityType === 'corporation') assert.equal(hits.length, 0);
       else if (BREAKDOWN_HINTS.includes(hint) && !['notes_receivable', 'securities', 'notes_payable', 'short_loan', 'short_borrowings'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 内訳書は法人だけ（手形・有価証券は経営分析でも使う）
       else if (['officer_loan', 'income_taxes_payable', 'accumulated_depreciation', 'consumption_tax_payable', 'asset_sale_gain', 'asset_sale_loss', 'asset_retirement_loss'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 個人は直接法
       else assert.equal(hits.length, 1, `${entityType} ${hint}`);

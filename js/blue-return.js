@@ -76,9 +76,17 @@ export const BS_LIABILITY_LINES = [
  *   令和9年分以後（令和8年度税制改正）：55万円の控除は e-Tax が要件に加わって65万円に、65万円の控除は仕訳帳・総勘定元帳を
  *     優良な電子帳簿などで保存する場合に75万円になる。書面で提出すると10万円。簡易簿記で前々年分の収入金額が1,000万円を超える人は10万円の対象外
  *     国税庁「令和9年分から青色申告特別控除はどう変わる？」https://www.nta.go.jp/taxes/shiraberu/shinkoku/kojin_jigyo/0026004-012.pdf
+ * 不動産所得だけで貸付けが事業的規模でない人は10万円まで（国税庁「青色申告決算書（不動産所得用）の書き方」）
  * @param {number} year 年分（個人の会計期間の終了日の年）
+ * @param {{ limited?: boolean }} [opts] limited：10万円までに限られる
  */
-export function blueDeductionOptions(year) {
+export function blueDeductionOptions(year, { limited = false } = {}) {
+  if (limited) {
+    return [
+      { value: 100000, label: '10万円（事業的規模でない不動産の貸付けだけ）' },
+      { value: 0, label: '適用しない' },
+    ];
+  }
   if (year >= 2027) {
     return [
       { value: 750000, label: '75万円（複式簿記・e-Tax＋優良な電子帳簿）' },
@@ -95,14 +103,16 @@ export function blueDeductionOptions(year) {
   ];
 }
 
-/** 保存した控除額がその年分の選択肢に無いとき（令和9年分の55万円など）は65万円にする */
-export function blueDeductionFor(year, saved) {
-  return blueDeductionOptions(year).some((o) => o.value === saved) ? saved : 650000;
+/** 保存した控除額がその年分の選択肢に無いとき（令和9年分の55万円など）は65万円（10万円までのときは10万円）にする */
+export function blueDeductionFor(year, saved, opts = {}) {
+  const options = blueDeductionOptions(year, opts);
+  if (options.some((o) => o.value === saved)) return saved;
+  return options.some((o) => o.value === 650000) ? 650000 : options[0].value;
 }
 
 /** 選択肢に無い控除額を選んでいたか（画面で知らせる） */
-export function blueDeductionReplaced(year, saved) {
-  return saved != null && !blueDeductionOptions(year).some((o) => o.value === saved);
+export function blueDeductionReplaced(year, saved, opts = {}) {
+  return saved != null && !blueDeductionOptions(year, opts).some((o) => o.value === saved);
 }
 
 const templateAccount = (accounts, code) => accounts.find((a) => a.template && a.code === code) || null;
@@ -206,10 +216,11 @@ export function monthlySalesPurchases({ accounts, period, journals }) {
 
 /**
  * 3ページ目：減価償却費の計算（㋭普通償却費・㋬割増（特別）償却費・㋣償却費合計）
+ * filter：載せる資産（一般用は不動産所得の資産を除き、不動産所得用はその資産だけにする）
  * @returns {{ rows: Array, total: { ordinary, special, amount, business, closing } }}
  */
-export function depreciationTable({ assets, periods, period }) {
-  const rows = assetRegister(assets, periods, period).map(({ asset, cost, opening, row, closing }) => {
+export function depreciationTable({ assets, periods, period, filter = () => true }) {
+  const rows = assetRegister(assets, periods, period).filter(({ asset }) => filter(asset)).map(({ asset, cost, opening, row, closing }) => {
     const rateText = row?.rate ? (row.rate / 1000).toFixed(3) : asset.method === 'lump3' ? '1/3' : '';
     // 摘要：一括償却・少額の区分、95%到達後の「均等償却」、特別償却の制度の名前、除却した日
     const note = [

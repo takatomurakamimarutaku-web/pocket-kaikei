@@ -61,7 +61,7 @@ export function cashFlowStatement({ entityType, accounts, period, journals }) {
     cf[key] = (cf[key] || 0) + sign * (after - before);
   }
   const pl = (pred) => close.filter((r) => !isBsGroup(r.account.group) && pred(r.account)).reduce((s, r) => s + groupAmount(r), 0);
-  const depreciation = pl((a) => a.hint === 'depreciation' || a.hint === 'mfg_depreciation');
+  const depreciation = pl((a) => a.hint === 'depreciation' || a.hint === 'mfg_depreciation' || a.hint === 're_depreciation');
   const gainLoss = pl((a) => a.hint === 'asset_sale_loss' || a.hint === 'asset_retirement_loss') - pl((a) => a.hint === 'asset_sale_gain');
   const profit = individual ? profits.income : profits.pretax;
   const taxes = individual ? 0 : profits.pretax - profits.net;
@@ -128,13 +128,13 @@ export const CASH_PLAN_ROWS = [
  */
 export function cashPlanKeyOf(account, effect) {
   const { group, hint } = account;
-  if (group === 'sales' || ['receivable', 'notes_receivable', 'advance_received'].includes(hint)) return 'sales_in';
+  if (group === 'sales' || group === 're_income' || ['receivable', 'notes_receivable', 'advance_received'].includes(hint)) return 'sales_in';
   if (group === 'cost_of_sales' || isMfgGroup(group) || ['payable', 'notes_payable', 'advance_paid'].includes(hint)) return 'purchase_out';
-  if (group === 'income_taxes' || ['taxes_dues', 'consumption_tax_payable', 'income_taxes_payable'].includes(hint)) return 'tax_out';
+  if (group === 'income_taxes' || ['taxes_dues', 're_taxes', 'consumption_tax_payable', 'income_taxes_payable'].includes(hint)) return 'tax_out';
   if (['tangible_fixed_assets', 'intangible_fixed_assets', 'investments', 'deferred_assets'].includes(group) || ['short_loan', 'securities'].includes(hint)) return 'asset';
   if (BORROWING_HINTS.includes(hint)) return 'borrow';
   if (group === 'equity' || group === 'owner_drawings') return 'owner';
-  if (['sga', 'non_operating_expenses', 'family_salary', 'extraordinary_losses', 'reserves_provision'].includes(group) || ['accrued', 'accrued_expenses'].includes(hint)) return 'expense_out';
+  if (['sga', 'non_operating_expenses', 'family_salary', 'extraordinary_losses', 'reserves_provision', 're_expenses', 're_family_salary'].includes(group) || ['accrued', 'accrued_expenses'].includes(hint)) return 'expense_out';
   return effect > 0 ? 'other_in' : 'other_out';
 }
 
@@ -152,7 +152,7 @@ export function cashEffects(lines, accountById) {
 }
 
 /** 予算を資金の予定にしない科目（減価償却費・棚卸高・引当金の繰入繰戻は資金が動かない） */
-const NON_CASH_HINTS = ['depreciation', 'mfg_depreciation', 'opening_materials', 'closing_materials', 'opening_wip', 'closing_wip', 'opening_finished', 'closing_finished'];
+const NON_CASH_HINTS = ['depreciation', 'mfg_depreciation', 're_depreciation', 'opening_materials', 'closing_materials', 'opening_wip', 'closing_wip', 'opening_finished', 'closing_finished'];
 function isNonCashBudget(account) {
   return NON_CASH_HINTS.includes(account.hint) || ['opening_inventory', 'closing_inventory'].includes(account.role) || ['reserves_provision', 'reserves_reversal'].includes(account.group);
 }

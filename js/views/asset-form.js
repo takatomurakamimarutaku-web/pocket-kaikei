@@ -18,7 +18,8 @@ import {
 import { usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults } from '../asset-tools.js';
 import { searchLifeTable, lifeEntryName } from '../life-table.js';
 import { formatYen } from '../money.js';
-import { compareAccounts } from '../accounts.js';
+import { compareAccounts, findByHint } from '../accounts.js';
+import { hasRealEstate } from '../real-estate.js';
 import { parseYen } from '../money.js';
 import { todayString } from '../period.js';
 import { createAsset } from '../models.js';
@@ -50,6 +51,8 @@ export async function render({ app, outlet, params, query = {} }) {
     : capexParent
       ? createAsset(capexDefaults(capexParent, defaultDate))
       : createAsset({ acquiredOn: defaultDate, startedOn: defaultDate, method: individual ? 'straight' : 'declining', usefulLife: 4, businessRatio: 100 });
+  // 不動産所得だけの人が新しく登録する資産は、償却費の科目を「減価償却費（不動産）」にしておく
+  if (!original && !capexParent && settings.realEstate === 'only' && hasRealEstate(settings)) state.expenseAccountId = findByHint(accounts, 're_depreciation')?.id ?? null;
   const byId = new Map(assets.map((a) => [a.id, a]));
   const parent = state.parentId ? byId.get(state.parentId) : null;
   const children = original ? assets.filter((a) => a.parentId === original.id) : [];
@@ -82,13 +85,13 @@ export async function render({ app, outlet, params, query = {} }) {
   // 特別償却（事業供用年度に 取得価額×率。即時償却は100）
   const specialRate = h('input', { id: 'f-special-rate', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.specialRate ?? '', placeholder: '例：30' });
   const specialName = h('input', { id: 'f-special-name', type: 'text', maxlength: 40, value: state.specialName || '', placeholder: '例：中小企業投資促進税制' });
-  // 償却費の科目（製造原価を使うときか、選んであるときだけ出す）
-  const showExpense = Boolean(settings.manufacturing || state.expenseAccountId);
+  // 償却費の科目（製造原価・不動産所得を使うときか、選んであるときだけ出す）
+  const showExpense = Boolean(settings.manufacturing || hasRealEstate(settings) || state.expenseAccountId);
   const expense = showExpense
     ? h(
         'select',
         { id: 'f-expense' },
-        h('option', { value: '', text: '減価償却費（販売費及び一般管理費）', selected: !state.expenseAccountId }),
+        h('option', { value: '', text: individual ? '減価償却費（事業所得の経費）' : '減価償却費（販売費及び一般管理費）', selected: !state.expenseAccountId }),
         accounts
           .filter((a) => EXPENSE_GROUPS.includes(a.group) && a.normalSide === 'debit' && a.hint !== 'depreciation' && (a.active || a.id === state.expenseAccountId))
           .sort(compareAccounts)
@@ -333,7 +336,14 @@ export async function render({ app, outlet, params, query = {} }) {
     detail ? field('細目（任意）', detail, { name: 'detail', hint: '別表十六・少額減価償却資産の明細書の「構造」「細目」になります。耐用年数表から選ぶと入ります' }) : null,
     usedWrap,
     specialWrap,
-    expense ? field('償却費の科目', expense, { name: 'expenseAccountId', hint: '工場の機械など、製品を作るために使う資産は製造経費の「減価償却費（製造）」にすると、製造原価報告書に入ります' }) : null,
+    expense
+      ? field('償却費の科目', expense, {
+          name: 'expenseAccountId',
+          hint: individual
+            ? '貸しているアパート・駐車場などの資産は不動産経費の「減価償却費（不動産）」にすると、青色申告決算書（不動産所得用）に入ります'
+            : '工場の機械など、製品を作るために使う資産は製造経費の「減価償却費（製造）」にすると、製造原価報告書に入ります',
+        })
+      : null,
     individual ? field('事業で使う割合（%）', ratio, { name: 'businessRatio', hint: '車などを私用にも使うときは、事業で使う割合を入れます。残りは事業主貸になります' }) : null,
     carryWrap,
     disposalBox,

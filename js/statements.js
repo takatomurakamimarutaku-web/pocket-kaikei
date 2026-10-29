@@ -3,7 +3,7 @@
 // 区分の向き（資産・費用は借方、負債・純資産・収益は貸方）をプラスとして集計する。
 // 評価勘定（減価償却累計額・期末商品棚卸高など）は区分と逆の残高なので、自動的にマイナス（△）になる。
 // 個人の様式は国税庁「青色申告決算書（一般用）」の損益計算書・貸借対照表の並びに合わせる。
-import { GROUP_BY_ID, compareAccounts, groupLabel, MFG_GROUPS, isContra } from './accounts.js';
+import { GROUP_BY_ID, compareAccounts, groupLabel, MFG_GROUPS, isContra, isReGroup } from './accounts.js';
 import { trialBalance } from './ledger.js';
 
 /** 科目の期末残高（dc）を区分の向きの金額にする */
@@ -85,7 +85,7 @@ function costOfSales(rows) {
  * @returns {{ items: Array, netIncome: number, profits: Record<string, number> }}
  *   profits：売上・売上原価・販管費（経費）の合計と段階利益（経営分析で使う）
  *   items：画面にそのまま並べる行（group：区分と科目、subtotal：段階利益）
- *   netIncome：法人は当期純利益、個人は青色申告特別控除前の所得金額
+ *   netIncome：法人は当期純利益、個人は青色申告特別控除前の所得金額（不動産所得があれば事業所得との合計）
  */
 export function incomeStatement(entityType, rows) {
   if (entityType === 'individual') {
@@ -97,22 +97,27 @@ export function incomeStatement(entityType, rows) {
     const reversal = section('各種引当金・準備金等 繰戻額等', ['reserves_reversal'], rows);
     const family = section('専従者給与', ['family_salary'], rows);
     const provision = section('各種引当金・準備金等 繰入額等', ['reserves_provision'], rows);
-    const income = diff2 + reversal.total - family.total - provision.total;
-    return {
-      items: [
-        sales,
-        cogs,
-        subtotal('差引金額', diff1),
-        sga,
-        subtotal('差引金額', diff2),
-        reversal,
-        family,
-        provision,
-        subtotal('青色申告特別控除前の所得金額', income, { strong: true }),
-      ],
-      netIncome: income,
-      profits: { sales: sales.total, cogs: cogs.total, diff1, sga: sga.total, diff2, income },
-    };
+    const business = diff2 + reversal.total - family.total - provision.total;
+    const items = [sales, cogs, subtotal('差引金額', diff1), sga, subtotal('差引金額', diff2), reversal, family, provision];
+    // 不動産所得の科目があれば、事業所得と分けて出す（青色申告決算書は一般用と不動産所得用に分かれる）
+    if (!rows.some((r) => isReGroup(r.account.group))) {
+      items.push(subtotal('青色申告特別控除前の所得金額', business, { strong: true }));
+      return { items, netIncome: business, profits: { sales: sales.total, cogs: cogs.total, diff1, sga: sga.total, diff2, income: business, businessIncome: business, realEstateIncome: 0 } };
+    }
+    const reIncome = section('不動産収入', ['re_income'], rows);
+    const reExpenses = section('不動産経費', ['re_expenses'], rows);
+    const reFamily = section('専従者給与（不動産）', ['re_family_salary'], rows);
+    const realEstate = reIncome.total - reExpenses.total - reFamily.total;
+    const income = business + realEstate;
+    items.push(
+      subtotal('事業所得（青色申告特別控除前）', business),
+      reIncome,
+      reExpenses,
+      reFamily,
+      subtotal('不動産所得（青色申告特別控除前）', realEstate),
+      subtotal('青色申告特別控除前の所得金額（合計）', income, { strong: true }),
+    );
+    return { items, netIncome: income, profits: { sales: sales.total, cogs: cogs.total, diff1, sga: sga.total, diff2, income, businessIncome: business, realEstateIncome: realEstate } };
   }
   const sales = section('売上高', ['sales'], rows);
   const cogs = costOfSales(rows);

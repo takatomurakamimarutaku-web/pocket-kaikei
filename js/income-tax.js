@@ -262,16 +262,18 @@ export const MEDICAL_KINDS = [
  * @param {object} p
  * @param {number} p.year 年分
  * @param {object} p.business 青色申告決算書の { revenue（㋐）, income（①）, familySalary, blueDeduction }
+ * @param {object} [p.realEstate] 青色申告決算書（不動産所得用）の { revenue（㋒）, income（③） }。③は土地等の負債利子の分を除いた額
  * @param {object} p.input period.incomeTaxReturn
  */
-export function computeIncomeTax({ year, business, input }) {
+export function computeIncomeTax({ year, business, realEstate = null, input }) {
   const r = rulesFor(year);
   if (!r) return { supported: false, year };
   const v = { ...DEFAULT_INCOME_TAX, ...input };
   const L = {};
   // 収入金額等・所得金額等
-  const rev = { a: business.revenue, e: v.salaryRevenue, g: v.miscBusinessRevenue, h: v.miscOtherRevenue };
+  const rev = { a: business.revenue, c: realEstate?.revenue ?? 0, e: v.salaryRevenue, g: v.miscBusinessRevenue, h: v.miscOtherRevenue };
   L[1] = business.income;
+  L[3] = realEstate?.income ?? 0;
   L[6] = salaryIncome(v.salaryRevenue, year);
   L[8] = v.miscBusinessRevenue - v.miscBusinessExpenses;
   L[9] = Math.max(0, v.miscOtherRevenue - v.miscOtherExpenses);
@@ -279,8 +281,8 @@ export function computeIncomeTax({ year, business, input }) {
   // 雑所得の赤字は他の所得と通算しない（業務・その他の合計がマイナスなら0）
   L[10] = Math.max(0, L[7] + L[8] + L[9]);
   L[11] = 0;
-  // 事業所得の赤字は給与所得などと損益通算する
-  L[12] = Math.max(0, L[1] + L[6] + L[10] + L[11]);
+  // 事業所得・不動産所得の赤字は給与所得などと損益通算する（不動産所得の赤字のうち土地等の負債利子の分は③に入れていない）
+  L[12] = Math.max(0, L[1] + L[3] + L[6] + L[10] + L[11]);
   const total = L[12]; // 合計所得金額（分離課税なし）
 
   // 所得から差し引かれる金額

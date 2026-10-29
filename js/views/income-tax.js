@@ -1,7 +1,7 @@
 // 所得税の確定申告書（個人）：第一表・第二表の欄と、医療費控除の明細書・添付書類の確認
 // 弥生会計・freee の確定申告書作成と同じく、事業所得は青色申告決算書から、それ以外の所得と控除は入力から作る
 import { h, put, amountCell, field, showToast, errorBox } from '../ui.js';
-import { blueIncomeStatement, blueDeductionFor } from '../blue-return.js';
+import { blueReturnSet, realEstateForFirstTable } from '../real-estate.js';
 import { computeIncomeTax, DEFAULT_INCOME_TAX, MEDICAL_KINDS, DEPENDENT_KIND_LABELS, SUPPORTED_YEARS, rulesFor } from '../income-tax.js';
 import { formatYen, parseYen } from '../money.js';
 import { ValidationError } from '../db.js';
@@ -15,9 +15,12 @@ export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
   if (settings.entityType !== 'individual') return put(outlet, h('p', { class: 'notice', text: '所得税の確定申告書は個人事業主の画面です。' }));
   const year = Number(period.endDate.slice(0, 4));
-  const deduction = blueDeductionFor(year, period.blueReturn?.deduction ?? 650000);
-  const is = blueIncomeStatement({ accounts, period, journals, deduction });
-  const business = { revenue: is.lines[1], income: is.lines[45], familySalary: is.lines[38], blueDeduction: is.lines[44] };
+  const blue = blueReturnSet({ settings, accounts, period, journals });
+  const is = blue.business;
+  const re = blue.realEstate;
+  const deduction = blue.selected;
+  const business = { revenue: is.lines[1], income: is.lines[45], familySalary: is.lines[38] + (re ? re.lines[20] : 0), blueDeduction: is.lines[44] + (re ? re.lines[22] : 0) };
+  const realEstate = re ? { revenue: re.lines[4], income: realEstateForFirstTable(re.lines[23], blue.landInterest) } : null;
   const input = clone({ ...DEFAULT_INCOME_TAX, ...(period.incomeTaxReturn || {}) });
   const resultEl = h('div');
   const errorsEl = h('div');
@@ -35,9 +38,14 @@ export async function render({ app, outlet }) {
     const L = r.lines;
     return section(
       `確定申告書 第一表（令和${year - 2018}年分）`,
-      table('収入金額等', [row('㋐', '事業　営業等', r.rev.a), row('㋔', '給与', r.rev.e), row('㋖', '雑　業務', r.rev.g), row('㋗', '雑　その他', r.rev.h)]),
+      table('収入金額等', [row('㋐', '事業　営業等', r.rev.a), re ? row('㋒', '不動産', r.rev.c, { sub: '不動産所得用の収入金額④' }) : null, row('㋔', '給与', r.rev.e), row('㋖', '雑　業務', r.rev.g), row('㋗', '雑　その他', r.rev.h)]),
       table('所得金額等', [
         row(1, '事業　営業等', L[1], { sub: '青色申告決算書の所得金額㊺' }),
+        re
+          ? row(3, '不動産', L[3], {
+              sub: re.lines[23] < 0 && blue.landInterest ? `不動産所得用の㉓（△${formatYen(-re.lines[23])}）から土地等を取得するための負債の利子 ${formatYen(blue.landInterest)}円の分を除く` : '青色申告決算書（不動産所得用）の所得金額㉓',
+            })
+          : null,
         row(6, '給与', L[6]),
         row(8, '雑　業務', L[8]),
         row(9, '雑　その他', L[9]),
@@ -77,8 +85,8 @@ export async function render({ app, outlet }) {
       ]),
       table('その他', [
         row('', '配偶者の合計所得金額', r.other.spouseIncome ?? 0),
-        row('', '専従者給与（控除）額の合計額', r.other.familySalary),
-        row('', '青色申告特別控除額', r.other.blueDeduction),
+        row('', '専従者給与（控除）額の合計額', r.other.familySalary, { sub: re ? '一般用の㊳と不動産所得用の⑳の合計' : '' }),
+        row('', '青色申告特別控除額', r.other.blueDeduction, { sub: re ? '一般用の㊹と不動産所得用の㉒の合計' : '' }),
         row('', '雑所得・一時所得等の源泉徴収税額の合計額', r.other.miscWithholding),
       ]),
     );
@@ -130,7 +138,8 @@ export async function render({ app, outlet }) {
 
   function attachments(r) {
     const items = [
-      ['青色申告決算書（4ページ）', true, h('a', { href: '#/reports/blue-return', class: 'link', text: '青色申告決算書を開く' })],
+      ['青色申告決算書（一般用・4ページ）', settings.realEstate !== 'only' || !re, h('a', { href: '#/reports/blue-return', class: 'link', text: '青色申告決算書を開く' })],
+      ['青色申告決算書（不動産所得用・4ページ）', Boolean(re), h('a', { href: '#/reports/blue-return-re', class: 'link', text: '不動産所得用を開く' })],
       ['医療費控除の明細書', input.medical.length > 0, '医療費の領収書は5年間保存（提出は不要）'],
       ['社会保険料（国民年金保険料）控除証明書', input.socialInsurance > 0, '国民年金保険料・国民年金基金の分。e-Tax なら提出を省略できます'],
       ['小規模企業共済等掛金払込証明書', input.smallBusinessAid > 0, ''],
@@ -146,7 +155,7 @@ export async function render({ app, outlet }) {
   }
 
   function paint() {
-    const r = computeIncomeTax({ year, business, input });
+    const r = computeIncomeTax({ year, business, realEstate, input });
     const pay = r.lines[52];
     const refund = r.lines[53];
     put(
@@ -269,7 +278,7 @@ export async function render({ app, outlet }) {
 
   put(
     outlet,
-    h('p', { class: 'muted small', text: `${settings.businessName}　令和${year - 2018}年分　事業所得は青色申告決算書（青色申告特別控除 ${formatYen(deduction)}円）から` }),
+    h('p', { class: 'muted small', text: `${settings.businessName}　令和${year - 2018}年分　${re ? '事業所得・不動産所得' : '事業所得'}は青色申告決算書（青色申告特別控除 ${formatYen(deduction)}円）から` }),
     resultEl,
     h('details', { class: 'panel no-print', open: !period.incomeTaxReturn }, h('summary', { text: '所得と控除を入力する' }), editorBody, errorsEl, h('button', { type: 'button', class: 'btn btn-block', text: '入力を保存する', onclick: save })),
     h(

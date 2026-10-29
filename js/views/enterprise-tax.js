@@ -100,7 +100,7 @@ export async function render({ app, outlet }) {
   }
 
   function individualView() {
-    const r = individualEnterpriseTax({ income: pl.netIncome, industry: input.industry, months: input.months, lossCarry: input.lossCarry });
+    const r = individualEnterpriseTax({ income: pl.profits.businessIncome, industry: input.industry, months: input.months, lossCarry: input.lossCarry });
     return [
       h(
         'div',

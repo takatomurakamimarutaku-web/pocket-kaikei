@@ -28,7 +28,7 @@ export async function render({ app, outlet, params, query = {} }) {
   const receipts = active((a) => a.group === 'current_assets' && a.normalSide === 'debit');
   const gains = active((a) => ['extraordinary_income', 'non_operating_income'].includes(a.group));
   const sellLosses = active((a) => ['extraordinary_losses', 'non_operating_expenses'].includes(a.group));
-  const retireLosses = individual ? active((a) => a.group === 'sga') : sellLosses;
+  const retireLosses = individual ? active((a) => a.group === 'sga' || a.group === 're_expenses') : sellLosses;
   const today = todayString();
   const splittable = canSplit(asset);
   const totalQty = asset.quantity ?? 1;

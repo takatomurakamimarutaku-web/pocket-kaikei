@@ -1,6 +1,7 @@
 // 勘定科目の追加・編集と補助科目の管理
 import { h, put, field, segmented, showErrors, showToast, confirmDialog, taxSelect } from '../ui.js';
-import { groupsFor, groupLabel, normalSideFor, ROLES, GROUP_BY_ID } from '../accounts.js';
+import { groupsFor, groupLabel, normalSideFor, ROLES, GROUP_BY_ID, ratioAllowed } from '../accounts.js';
+import { hasRealEstate } from '../real-estate.js';
 import { createAccount, createSubAccount } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
@@ -45,15 +46,15 @@ export async function render({ app, outlet, params }) {
         paintRatio();
       },
     },
-    // 製造原価の区分は「製造原価を使う」にしたときか、その区分の科目を編集するときだけ出す
-    groupsFor(settings.entityType).filter((g) => !g.mfg || settings.manufacturing || g.id === acc.group).map((g) => h('option', { value: g.id, text: groupLabel(g.id, settings.entityType), selected: g.id === acc.group })),
+    // 製造原価・不動産所得の区分は、設定で使うにしたときか、その区分の科目を編集するときだけ出す
+    groupsFor(settings.entityType).filter((g) => (!g.mfg || settings.manufacturing || g.id === acc.group) && (!g.re || hasRealEstate(settings) || g.id === acc.group)).map((g) => h('option', { value: g.id, text: groupLabel(g.id, settings.entityType), selected: g.id === acc.group })),
   );
   const tax = taxSelect(acc.defaultTaxCategory, { split: Boolean(settings.taxUseSplit), id: 'a-tax', onchange: (e) => (acc.defaultTaxCategory = e.target.value) });
   const active = h('input', { type: 'checkbox', checked: acc.active, disabled: Boolean(acc.role) });
   // 家事按分の事業割合（個人の経費だけ。減価償却費は固定資産台帳で按分する）
   const ratio = h('input', { id: 'a-ratio', type: 'text', inputmode: 'numeric', maxlength: 2, value: acc.businessRatio ?? '', placeholder: '按分しない' });
   const ratioWrap = h('div', {}, field('事業割合（家事按分・%）', ratio, { name: 'businessRatio', hint: '事業と家事の両方に使う経費だけ入れます。決算・繰越の「家事按分」で、家事の分を事業主貸へ振り替えます' }));
-  const paintRatio = () => (ratioWrap.hidden = settings.entityType !== 'individual' || acc.group !== 'sga' || acc.hint === 'depreciation');
+  const paintRatio = () => (ratioWrap.hidden = settings.entityType !== 'individual' || !ratioAllowed(acc));
   paintRatio();
   paintSide();
 
