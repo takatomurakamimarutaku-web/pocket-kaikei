@@ -41,8 +41,13 @@ test('法人の損益計算書：売上原価（期末棚卸は△）と段階�
   assert.equal(lineOf(cogs, '期末商品棚卸高').amount, -250000, '評価勘定は△');
   assert.equal(cogs.total, 200000 + 880000 - 250000);
   assert.deepEqual(pl.profits, {
+    sales: 1650000,
+    cogs: 830000,
     gross: 1650000 - 830000,
+    sga: 300000 + 110000 + 22000 + 90000,
     operating: 820000 - (300000 + 110000 + 22000 + 90000),
+    nonOperatingIncome: 1000,
+    nonOperatingExpenses: 5000,
     ordinary: 298000 + 1000 - 5000,
     pretax: 294000 - 20000,
     net: 274000 - 70000,

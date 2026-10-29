@@ -19,7 +19,7 @@ test('テンプレートの目印：個人・法人とも使う目印の科目�
     for (const hint of Object.keys(HINTS)) {
       const hits = accounts.filter((a) => a.hint === hint);
       if (mfgHints.has(hint) && entityType === 'individual') assert.equal(hits.length, 0);
-      else if (BREAKDOWN_HINTS.includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 内訳書は法人だけ
+      else if (BREAKDOWN_HINTS.includes(hint) && !['notes_receivable', 'securities', 'notes_payable'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 内訳書は法人だけ（手形・有価証券は経営分析でも使う）
       else if (['officer_loan', 'accumulated_depreciation', 'consumption_tax_payable', 'asset_sale_gain', 'asset_sale_loss', 'asset_retirement_loss'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 個人は直接法
       else assert.equal(hits.length, 1, `${entityType} ${hint}`);
     }

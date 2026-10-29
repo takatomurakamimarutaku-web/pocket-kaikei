@@ -1,6 +1,6 @@
 // 帳票の共通部品（月範囲の選択・0の科目を隠す切替・期首残高の警告）
 import { h, put, amountCell } from '../ui.js';
-import { monthsInPeriod, monthRange } from '../period.js';
+import { monthsInPeriod, monthRange, addDays } from '../period.js';
 import { formatYen } from '../money.js';
 
 const monthText = (m) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
@@ -79,4 +79,12 @@ export function statementRows(items, showZero = false) {
     out.push(h('tr', { class: 'st-total' }, h('th', { text: `${it.label} 計` }), amountCell('td', it.total)));
   }
   return out;
+}
+
+/** 前期（当期の開始日の前日に終わる期間）とその仕訳。アプリに前期が無ければ null */
+export async function loadPrevious(app, period) {
+  const periods = await app.db.listPeriods();
+  const prev = periods.find((p) => p.endDate === addDays(period.startDate, -1));
+  if (!prev) return null;
+  return { period: prev, journals: await app.db.listJournals(prev.id) };
 }

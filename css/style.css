@@ -770,3 +770,16 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .check-count.info { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary-strong); }
 .check-count.ok { background: var(--ok-bg); color: var(--ok-text); }
 .check-section.is-ok .muted { display: none; }
+
+/* 前期比較・経営分析 */
+.toggles { display: flex; flex-wrap: wrap; gap: 2px 16px; }
+.report.compare { font-size: 0.74rem; }
+.report.compare td, .report.compare thead th { padding-left: 4px; padding-right: 4px; }
+.report.compare tbody th { min-width: 5.5em; }
+.report.compare td.diff { white-space: nowrap; }
+.report.compare td.diff .rate { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 400; }
+.report.compare thead th { font-size: 0.72rem; color: var(--muted); }
+.analysis-table th .ind-label { display: block; font-weight: 700; }
+.analysis-table th .ind-formula { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 400; line-height: 1.35; }
+.analysis-table td { white-space: nowrap; vertical-align: top; }
+.analysis-table thead th { font-size: 0.72rem; color: var(--muted); }

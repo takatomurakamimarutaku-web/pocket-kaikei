@@ -83,6 +83,7 @@ function costOfSales(rows) {
 /**
  * 損益計算書
  * @returns {{ items: Array, netIncome: number, profits: Record<string, number> }}
+ *   profits：売上・売上原価・販管費（経費）の合計と段階利益（経営分析で使う）
  *   items：画面にそのまま並べる行（group：区分と科目、subtotal：段階利益）
  *   netIncome：法人は当期純利益、個人は青色申告特別控除前の所得金額
  */
@@ -110,7 +111,7 @@ export function incomeStatement(entityType, rows) {
         subtotal('青色申告特別控除前の所得金額', income, { strong: true }),
       ],
       netIncome: income,
-      profits: { diff1, diff2, income },
+      profits: { sales: sales.total, cogs: cogs.total, diff1, sga: sga.total, diff2, income },
     };
   }
   const sales = section('売上高', ['sales'], rows);
@@ -143,7 +144,7 @@ export function incomeStatement(entityType, rows) {
       subtotal('当期純利益', net, { strong: true }),
     ],
     netIncome: net,
-    profits: { gross, operating, ordinary, pretax, net },
+    profits: { sales: sales.total, cogs: cogs.total, gross, sga: sga.total, operating, nonOperatingIncome: noi.total, nonOperatingExpenses: noe.total, ordinary, pretax, net },
   };
 }
 
