@@ -1,0 +1,302 @@
+// 勘定科目の区分・役割・テンプレート（DOM に依存しない）
+// 科目の判定は名前ではなく group（区分）と role（役割）で行う
+
+/**
+ * 区分。section：bs_asset / bs_liability / bs_equity / pl
+ * side：区分の既定の残高側。entity：その区分を使う事業者（both / individual / corporation）
+ */
+export const GROUPS = [
+  { id: 'current_assets', label: '流動資産', section: 'bs_asset', side: 'debit', entity: 'both' },
+  { id: 'tangible_fixed_assets', label: '有形固定資産', section: 'bs_asset', side: 'debit', entity: 'both' },
+  { id: 'intangible_fixed_assets', label: '無形固定資産', section: 'bs_asset', side: 'debit', entity: 'both' },
+  { id: 'investments', label: '投資その他の資産', section: 'bs_asset', side: 'debit', entity: 'both' },
+  { id: 'deferred_assets', label: '繰延資産', section: 'bs_asset', side: 'debit', entity: 'both' },
+  { id: 'owner_drawings', label: '事業主貸', section: 'bs_asset', side: 'debit', entity: 'individual' },
+  { id: 'current_liabilities', label: '流動負債', section: 'bs_liability', side: 'credit', entity: 'both' },
+  { id: 'fixed_liabilities', label: '固定負債', section: 'bs_liability', side: 'credit', entity: 'both' },
+  { id: 'equity', label: '純資産', section: 'bs_equity', side: 'credit', entity: 'both' },
+  { id: 'sales', label: '売上高', section: 'pl', side: 'credit', entity: 'both' },
+  { id: 'cost_of_sales', label: '売上原価', section: 'pl', side: 'debit', entity: 'both' },
+  { id: 'sga', label: '販売費及び一般管理費', section: 'pl', side: 'debit', entity: 'both' },
+  { id: 'non_operating_income', label: '営業外収益', section: 'pl', side: 'credit', entity: 'corporation' },
+  { id: 'non_operating_expenses', label: '営業外費用', section: 'pl', side: 'debit', entity: 'corporation' },
+  { id: 'extraordinary_income', label: '特別利益', section: 'pl', side: 'credit', entity: 'corporation' },
+  { id: 'extraordinary_losses', label: '特別損失', section: 'pl', side: 'debit', entity: 'corporation' },
+  { id: 'income_taxes', label: '法人税等', section: 'pl', side: 'debit', entity: 'corporation' },
+  { id: 'reserves_reversal', label: '引当金・準備金等の繰戻額', section: 'pl', side: 'credit', entity: 'individual' },
+  { id: 'reserves_provision', label: '引当金・準備金等の繰入額', section: 'pl', side: 'debit', entity: 'individual' },
+  { id: 'family_salary', label: '専従者給与', section: 'pl', side: 'debit', entity: 'individual' },
+];
+
+export const GROUP_BY_ID = Object.fromEntries(GROUPS.map((g) => [g.id, g]));
+
+/** 個人事業主での区分の呼び名（青色申告決算書の様式に合わせる） */
+const INDIVIDUAL_LABELS = { sales: '売上(収入)金額', sga: '経費', equity: '資本', current_liabilities: '負債', fixed_liabilities: '負債' };
+
+export function groupLabel(groupId, entityType) {
+  if (entityType === 'individual' && INDIVIDUAL_LABELS[groupId]) return INDIVIDUAL_LABELS[groupId];
+  return GROUP_BY_ID[groupId]?.label ?? groupId;
+}
+
+/** 事業者の種類で使える区分 */
+export function groupsFor(entityType) {
+  return GROUPS.filter((g) => g.entity === 'both' || g.entity === entityType);
+}
+
+export function isBsGroup(groupId) {
+  return GROUP_BY_ID[groupId]?.section !== 'pl';
+}
+
+/** 役割。役割のある科目は削除・区分変更・無効化ができない */
+export const ROLES = {
+  cash: '現金',
+  deposit: '預金',
+  owner_capital: '元入金',
+  owner_drawings: '事業主貸',
+  owner_borrowings: '事業主借',
+  capital_stock: '資本金',
+  retained_earnings: '繰越利益剰余金',
+  opening_inventory: '期首商品棚卸高',
+  closing_inventory: '期末商品棚卸高',
+};
+
+/** 事業者ごとに必ず存在する役割 */
+export const REQUIRED_ROLES = {
+  individual: ['cash', 'owner_capital', 'owner_drawings', 'owner_borrowings'],
+  corporation: ['cash', 'capital_stock', 'retained_earnings'],
+};
+
+// ---- テンプレート ----
+// [コード, 科目名, 区分, 税区分の初期値, オプション]  オプション：role、contra（評価勘定＝残高側が区分と逆）
+
+const T = 'purchase_10';
+const N = 'none';
+
+const CORPORATION = [
+  ['100', '現金', 'current_assets', N, { role: 'cash' }],
+  ['101', '小口現金', 'current_assets', N, { role: 'cash' }],
+  ['110', '当座預金', 'current_assets', N, { role: 'deposit' }],
+  ['111', '普通預金', 'current_assets', N, { role: 'deposit' }],
+  ['112', '定期預金', 'current_assets', N, { role: 'deposit' }],
+  ['120', '受取手形', 'current_assets', N],
+  ['121', '売掛金', 'current_assets', N],
+  ['130', '有価証券', 'current_assets', N],
+  ['140', '商品', 'current_assets', N],
+  ['141', '貯蔵品', 'current_assets', N],
+  ['150', '前払金', 'current_assets', N],
+  ['151', '前払費用', 'current_assets', N],
+  ['152', '立替金', 'current_assets', N],
+  ['153', '仮払金', 'current_assets', N],
+  ['154', '未収入金', 'current_assets', N],
+  ['155', '短期貸付金', 'current_assets', N],
+  ['199', '貸倒引当金', 'current_assets', N, { contra: true }],
+  ['200', '建物', 'tangible_fixed_assets', T],
+  ['201', '建物附属設備', 'tangible_fixed_assets', T],
+  ['202', '構築物', 'tangible_fixed_assets', T],
+  ['203', '機械装置', 'tangible_fixed_assets', T],
+  ['204', '車両運搬具', 'tangible_fixed_assets', T],
+  ['205', '工具器具備品', 'tangible_fixed_assets', T],
+  ['206', '土地', 'tangible_fixed_assets', 'purchase_exempt'],
+  ['219', '減価償却累計額', 'tangible_fixed_assets', N, { contra: true }],
+  ['220', 'ソフトウェア', 'intangible_fixed_assets', T],
+  ['221', '電話加入権', 'intangible_fixed_assets', T],
+  ['240', '投資有価証券', 'investments', N],
+  ['241', '出資金', 'investments', N],
+  ['242', '長期貸付金', 'investments', N],
+  ['243', '敷金', 'investments', N],
+  ['244', '差入保証金', 'investments', N],
+  ['245', '長期前払費用', 'investments', N],
+  ['260', '創立費', 'deferred_assets', N],
+  ['261', '開業費', 'deferred_assets', N],
+  ['300', '支払手形', 'current_liabilities', N],
+  ['301', '買掛金', 'current_liabilities', N],
+  ['302', '短期借入金', 'current_liabilities', N],
+  ['303', '未払金', 'current_liabilities', N],
+  ['304', '未払費用', 'current_liabilities', N],
+  ['305', '前受金', 'current_liabilities', N],
+  ['306', '預り金', 'current_liabilities', N],
+  ['307', '仮受金', 'current_liabilities', N],
+  ['308', '未払法人税等', 'current_liabilities', N],
+  ['309', '未払消費税等', 'current_liabilities', N],
+  ['350', '長期借入金', 'fixed_liabilities', N],
+  ['351', '役員借入金', 'fixed_liabilities', N],
+  ['400', '資本金', 'equity', N, { role: 'capital_stock' }],
+  ['401', '資本準備金', 'equity', N],
+  ['410', '利益準備金', 'equity', N],
+  ['411', '繰越利益剰余金', 'equity', N, { role: 'retained_earnings' }],
+  ['500', '売上高', 'sales', 'sales_10'],
+  ['510', '期首商品棚卸高', 'cost_of_sales', N, { role: 'opening_inventory' }],
+  ['511', '仕入高', 'cost_of_sales', T],
+  ['519', '期末商品棚卸高', 'cost_of_sales', N, { role: 'closing_inventory', contra: true }],
+  ['600', '役員報酬', 'sga', N],
+  ['601', '給料手当', 'sga', N],
+  ['602', '賞与', 'sga', N],
+  ['603', '法定福利費', 'sga', 'purchase_exempt'],
+  ['604', '福利厚生費', 'sga', T],
+  ['605', '外注費', 'sga', T],
+  ['606', '荷造運賃', 'sga', T],
+  ['607', '広告宣伝費', 'sga', T],
+  ['608', '接待交際費', 'sga', T],
+  ['609', '会議費', 'sga', T],
+  ['610', '旅費交通費', 'sga', T],
+  ['611', '通信費', 'sga', T],
+  ['612', '販売手数料', 'sga', T],
+  ['613', '消耗品費', 'sga', T],
+  ['614', '事務用品費', 'sga', T],
+  ['615', '修繕費', 'sga', T],
+  ['616', '水道光熱費', 'sga', T],
+  ['617', '新聞図書費', 'sga', T],
+  ['618', '諸会費', 'sga', N],
+  ['619', '支払手数料', 'sga', T],
+  ['620', '車両費', 'sga', T],
+  ['621', '地代家賃', 'sga', T],
+  ['622', '賃借料', 'sga', T],
+  ['623', '保険料', 'sga', 'purchase_exempt'],
+  ['624', '租税公課', 'sga', N],
+  ['625', '支払報酬料', 'sga', T],
+  ['626', '減価償却費', 'sga', N],
+  ['699', '雑費', 'sga', T],
+  ['700', '受取利息', 'non_operating_income', 'sales_exempt'],
+  ['701', '受取配当金', 'non_operating_income', N],
+  ['702', '雑収入', 'non_operating_income', 'sales_10'],
+  ['710', '支払利息', 'non_operating_expenses', 'purchase_exempt'],
+  ['711', '雑損失', 'non_operating_expenses', N],
+  ['720', '固定資産売却益', 'extraordinary_income', N],
+  ['730', '固定資産売却損', 'extraordinary_losses', N],
+  ['731', '固定資産除却損', 'extraordinary_losses', N],
+  ['740', '法人税、住民税及び事業税', 'income_taxes', N],
+];
+
+// 個人：青色申告決算書（一般用）の科目と並びに合わせる
+const INDIVIDUAL = [
+  ['100', '現金', 'current_assets', N, { role: 'cash' }],
+  ['110', '当座預金', 'current_assets', N, { role: 'deposit' }],
+  ['111', '定期預金', 'current_assets', N, { role: 'deposit' }],
+  ['112', '普通預金', 'current_assets', N, { role: 'deposit' }],
+  ['120', '受取手形', 'current_assets', N],
+  ['121', '売掛金', 'current_assets', N],
+  ['130', '有価証券', 'current_assets', N],
+  ['140', '商品', 'current_assets', N],
+  ['150', '前払金', 'current_assets', N],
+  ['151', '貸付金', 'current_assets', N],
+  ['152', '未収入金', 'current_assets', N],
+  ['200', '建物', 'tangible_fixed_assets', T],
+  ['201', '建物附属設備', 'tangible_fixed_assets', T],
+  ['202', '機械装置', 'tangible_fixed_assets', T],
+  ['203', '車両運搬具', 'tangible_fixed_assets', T],
+  ['204', '工具器具備品', 'tangible_fixed_assets', T],
+  ['205', '土地', 'tangible_fixed_assets', 'purchase_exempt'],
+  ['220', 'ソフトウェア', 'intangible_fixed_assets', T],
+  ['240', '敷金', 'investments', N],
+  ['290', '事業主貸', 'owner_drawings', N, { role: 'owner_drawings' }],
+  ['300', '支払手形', 'current_liabilities', N],
+  ['301', '買掛金', 'current_liabilities', N],
+  ['302', '借入金', 'current_liabilities', N],
+  ['303', '未払金', 'current_liabilities', N],
+  ['304', '前受金', 'current_liabilities', N],
+  ['305', '預り金', 'current_liabilities', N],
+  ['309', '貸倒引当金', 'current_liabilities', N],
+  ['400', '事業主借', 'equity', N, { role: 'owner_borrowings' }],
+  ['410', '元入金', 'equity', N, { role: 'owner_capital' }],
+  ['500', '売上高', 'sales', 'sales_10'],
+  ['501', '雑収入', 'sales', 'sales_10'],
+  ['510', '期首商品棚卸高', 'cost_of_sales', N, { role: 'opening_inventory' }],
+  ['511', '仕入高', 'cost_of_sales', T],
+  ['519', '期末商品棚卸高', 'cost_of_sales', N, { role: 'closing_inventory', contra: true }],
+  ['600', '租税公課', 'sga', N],
+  ['601', '荷造運賃', 'sga', T],
+  ['602', '水道光熱費', 'sga', T],
+  ['603', '旅費交通費', 'sga', T],
+  ['604', '通信費', 'sga', T],
+  ['605', '広告宣伝費', 'sga', T],
+  ['606', '接待交際費', 'sga', T],
+  ['607', '損害保険料', 'sga', 'purchase_exempt'],
+  ['608', '修繕費', 'sga', T],
+  ['609', '消耗品費', 'sga', T],
+  ['610', '減価償却費', 'sga', N],
+  ['611', '福利厚生費', 'sga', T],
+  ['612', '給料賃金', 'sga', N],
+  ['613', '外注工賃', 'sga', T],
+  ['614', '利子割引料', 'sga', 'purchase_exempt'],
+  ['615', '地代家賃', 'sga', T],
+  ['616', '貸倒金', 'sga', N],
+  ['620', '支払手数料', 'sga', T],
+  ['621', '車両費', 'sga', T],
+  ['622', '新聞図書費', 'sga', T],
+  ['623', '会議費', 'sga', T],
+  ['699', '雑費', 'sga', T],
+  ['700', '貸倒引当金繰戻額', 'reserves_reversal', N],
+  ['710', '貸倒引当金繰入額', 'reserves_provision', N],
+  ['720', '専従者給与', 'family_salary', N],
+];
+
+export const TEMPLATES = { corporation: CORPORATION, individual: INDIVIDUAL };
+
+/** 区分と評価勘定かどうかから残高側を決める */
+export function normalSideFor(groupId, contra = false) {
+  const side = GROUP_BY_ID[groupId].side;
+  return contra ? (side === 'debit' ? 'credit' : 'debit') : side;
+}
+
+/**
+ * テンプレートから科目レコードの元を作る（id・日時は呼び出し側で付ける）
+ * @returns {Array<{code,name,group,role,normalSide,defaultTaxCategory,active,sortOrder,template}>}
+ */
+export function templateAccounts(entityType) {
+  const rows = TEMPLATES[entityType];
+  if (!rows) throw new Error(`不明な事業者の種類です: ${entityType}`);
+  return rows.map(([code, name, group, tax, opt = {}]) => ({
+    code,
+    name,
+    group,
+    role: opt.role ?? null,
+    normalSide: normalSideFor(group, opt.contra),
+    defaultTaxCategory: tax,
+    active: true,
+    sortOrder: Number(code),
+    template: true,
+  }));
+}
+
+/** 科目の並び：区分の順 → 並び順 → コード */
+export function compareAccounts(a, b) {
+  const gi = (x) => GROUPS.findIndex((g) => g.id === x.group);
+  return gi(a) - gi(b) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.code).localeCompare(String(b.code));
+}
+
+/** 役割を持つ最初の科目 */
+export function findByRole(accounts, role) {
+  return accounts.find((a) => a.role === role) || null;
+}
+
+/** 評価勘定か（残高側が区分の既定と逆） */
+export function isContra(account) {
+  return GROUP_BY_ID[account.group]?.side !== account.normalSide;
+}
+
+/**
+ * 科目の検証（追加・編集）
+ * @param {object} account
+ * @param {Array} others 他の科目（コード重複の確認用）
+ * @param {{ used?: boolean, entityType: string }} ctx used：仕訳・期首残高で使われているか
+ * @param {object|null} before 編集前の科目
+ */
+export function validateAccount(account, others, { used = false, entityType } = {}, before = null) {
+  const errors = {};
+  const code = String(account.code ?? '').trim();
+  if (!/^\d{1,6}$/.test(code)) errors.code = 'コードは6桁以内の数字で入力してください';
+  else if (others.some((o) => o.id !== account.id && o.code === code)) errors.code = 'このコードは使われています';
+  if (!String(account.name ?? '').trim()) errors.name = '科目名を入力してください';
+  else if (String(account.name).length > 30) errors.name = '科目名は30文字以内にしてください';
+  const g = GROUP_BY_ID[account.group];
+  if (!g || (g.entity !== 'both' && g.entity !== entityType)) errors.group = '区分を選んでください';
+  if (account.normalSide !== 'debit' && account.normalSide !== 'credit') errors.normalSide = '残高の側を選んでください';
+  if (before) {
+    if (before.role && account.group !== before.group) errors.group = 'この科目は区分を変更できません';
+    if (before.role && account.active === false) errors.active = 'この科目は無効にできません';
+    if (used && (account.group !== before.group || account.normalSide !== before.normalSide)) {
+      errors.group = errors.group || '使用中の科目は区分・残高の側を変更できません';
+    }
+  }
+  return errors;
+}
