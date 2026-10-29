@@ -91,6 +91,10 @@ test('検証に失敗したら既存のデータは変わらない', async () =>
 
 test('ファイル名とバックアップの催促', () => {
   assert.equal(backupFileName(new Date(2026, 9, 29, 9, 5)), 'pocket-kaikei-20261029-0905.json');
+  // 事業者名を入れる。ファイル名に使えない文字・空白は _ にする
+  assert.equal(backupFileName(new Date(2026, 9, 29, 9, 5), '株式会社ヤマダ'), 'pocket-kaikei-株式会社ヤマダ-20261029-0905.json');
+  assert.equal(backupFileName(new Date(2026, 9, 29, 9, 5), ' A/B 商店: 本店 '), 'pocket-kaikei-A_B_商店_本店-20261029-0905.json');
+  assert.equal(backupFileName(new Date(2026, 9, 29, 9, 5), '???'), 'pocket-kaikei-20261029-0905.json');
   const now = new Date('2026-10-29T00:00:00Z');
   assert.equal(shouldRemindBackup({ lastBackupAt: null, latestJournalUpdatedAt: null, now }), false);
   assert.equal(shouldRemindBackup({ lastBackupAt: null, latestJournalUpdatedAt: '2026-10-28T00:00:00Z', now }), true);

@@ -22,7 +22,7 @@ const GROUPS = [
     ['#/e-book', '電子帳簿保存', '優良な電子帳簿・電子取引のデータの保存の要件、事務手続・事務処理規程のひな形', 'check', 'data'],
   ]],
   ['この端末', [
-    ['#/books', '帳簿の切替', '個人と法人、家族の事業などの帳簿を分けて持つ', 'books', 'data'],
+    ['#/books', '事業所の切替', '個人と法人、複数の会社などの事業所を分けて持つ・新しく作る', 'books', 'data'],
     ['#/lock', '画面ロック', 'アプリを開くときにパスコード・Face ID などで解除する', 'lock', 'setting'],
   ]],
   ['Pocket会計について', [
@@ -32,8 +32,8 @@ const GROUPS = [
 
 export async function render({ app, outlet }) {
   const [books, lock] = await Promise.all([app.device.listBooks(), app.device.getLock()]);
-  // 帳簿の切替・画面ロックは今の状態を説明に出す
-  const sub = (href, text) => (href === '#/books' && books.length > 1 ? `${books.length}冊。今の帳簿：${app.book.label || '（初期設定前）'}` : href === '#/lock' ? (lock ? '使っています' : text) : text);
+  // 事業所の切替・画面ロックは今の状態を説明に出す
+  const sub = (href, text) => (href === '#/books' && books.length > 1 ? `${books.length}件。今の事業所：${app.book.label || '（初期設定前）'}` : href === '#/lock' ? (lock ? '使っています' : text) : text);
   put(outlet, 
     ...GROUPS.flatMap(([title, items]) => [
       h('h2', { class: 'menu-group-title', text: title }),
