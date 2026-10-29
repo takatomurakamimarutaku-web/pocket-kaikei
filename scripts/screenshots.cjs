@@ -175,6 +175,18 @@ mkdirSync(OUT, { recursive: true });
   if (!bsText.includes('＝')) errors.push(`BSが一致しない: ${bsText}`);
   await go('#/reports/tax');
   await shot('12-tax', true);
+  // 消費税集計：科目別税区分集計表・月別推移・チェック
+  await page.getByRole('radio', { name: '科目別' }).click();
+  await shot('12b-tax-by-account', true);
+  if (!(await page.locator('table.tax-account').count())) errors.push('科目別税区分集計表が出ない');
+  await page.getByRole('radio', { name: '月別推移' }).click();
+  await page.getByRole('radio', { name: '消費税等（参考）' }).click();
+  await shot('12c-tax-monthly', true);
+  await page.getByRole('radio', { name: 'チェック' }).click();
+  await page.getByLabel('科目の初期値と違う税区分も表示').check();
+  await page.waitForTimeout(200);
+  await shot('12d-tax-check', true);
+  if (!(await page.evaluate(() => location.hash.includes('view=check') && location.hash.includes('info=1')))) errors.push('消費税集計の表示がURLに残らない');
   await go('#/reports/monthly');
   await page.locator('.ch-hit').nth(entity === 'individual' ? 3 : 0).click();
   await shot('23-monthly-pl', true);
