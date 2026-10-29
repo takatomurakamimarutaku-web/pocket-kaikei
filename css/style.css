@@ -1,6 +1,7 @@
-/* ポケット会計 — スマホ優先・ダークモード対応（土台はホップ手帖と共通） */
+/* Pocket会計 — スマホ優先・ダークモード対応（土台はホップ手帖と共通） */
 /*
- * トークン：色は落ち着いた緑。文字を載せる面は --primary（白文字 4.5 以上）。
+ * トークン：色はブランドカラーの緑（#00B386）の系統。文字を載せる面は --primary（白文字 4.5 以上）。
+ * #00B386 そのものは白文字 2.7 で足りないため、ライトの --primary は同じ色相を濃くした #00805F（4.9）にする。
  * 余白：4 の倍数（--sp-1〜--sp-6）。文字：rem 指定で iPhone の文字サイズ設定に追従。
  * 金額は等幅数字（tabular-nums）で右寄せ。マイナス（△）は --negative。
  */
@@ -13,8 +14,8 @@
   --border: #d8dfdd;
   --separator: rgba(16, 36, 30, 0.09);
   --card-border: #e3e8e6;
-  --fab-grad: linear-gradient(140deg, #2a957a 0%, #1a7560 55%, #125646 100%);
-  --hero-grad: linear-gradient(135deg, #1a7560 0%, #13604f 55%, #0e4a3d 100%);
+  --fab-grad: linear-gradient(140deg, #00b386 0%, #008f6b 55%, #00704f 100%);
+  --hero-grad: linear-gradient(135deg, #00805f 0%, #006b50 55%, #00573f 100%);
   --shadow-sm: 0 1px 2px rgba(16, 36, 30, 0.05);
   --shadow-lg: 0 16px 40px rgba(10, 30, 25, 0.22);
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent);
@@ -27,9 +28,9 @@
   --fs-title3: 1.25rem;
   --fs-large: 1.75rem;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --primary: #1a7560;
+  --primary: #00805f;
   /* メニューのアイコンの色の系統（入力・帳票・消費税・決算・設定・データ） */
-  --tone-entry: #1a7560;
+  --tone-entry: #00805f;
   --tone-report: #2b62a8;
   --tone-tax: #7a4cb0;
   --tone-close: #b8650f;
@@ -39,7 +40,7 @@
   /* グラフの系列色（validate_palette.js でライト・ダークとも検証済み） */
   --chart-1: #2a8f74;
   --chart-2: #c0692a;
-  --primary-strong: #13604f;
+  --primary-strong: #00684d;
   --on-primary: #ffffff;
   --danger: #c23b2e;
   --negative: #b3261e;
@@ -47,8 +48,8 @@
   --credit: #a8521f;
   --warn-bg: #fff1d6;
   --warn-text: #7a4b00;
-  --ok-bg: #e2f4ec;
-  --ok-text: #17614f;
+  --ok-bg: #dcf5eb;
+  --ok-text: #00684d;
   --shadow: var(--shadow-sm);
   --tabbar-h: 58px;
   --header-h: 48px;
@@ -67,8 +68,8 @@
     --border: #33403c;
     --separator: rgba(220, 255, 240, 0.09);
     --card-border: #2a3431;
-    --hero-grad: linear-gradient(135deg, #1d5c4c 0%, #164a3e 60%, #113a31 100%);
-    --tone-entry: #4cc39f;
+    --hero-grad: linear-gradient(135deg, #00664d 0%, #00513d 60%, #003d2e 100%);
+    --tone-entry: #2fd39a;
     --tone-report: #7fb0f0;
     --tone-tax: #c39cf0;
     --tone-close: #f0b06a;
@@ -76,8 +77,8 @@
     --tone-data: #9aa8f0;
     --shadow-sm: none;
     --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
-    --primary: #4cc39f;
-    --primary-strong: #74d6b6;
+    --primary: #2fd39a;
+    --primary-strong: #74e3bb;
     --on-primary: #0d1412;
     --danger: #ff8a7a;
     --negative: #ff8a7a;
@@ -85,8 +86,8 @@
     --credit: #f0b38a;
     --warn-bg: #3a2b14;
     --warn-text: #ffcf7a;
-    --ok-bg: #173229;
-    --ok-text: #74d6b6;
+    --ok-bg: #12332a;
+    --ok-text: #74e3bb;
     --shadow: none;
   }
 }
@@ -630,7 +631,7 @@ details.panel > summary { cursor: pointer; list-style: revert; }
   :root {
     --bg: #fff; --surface: #fff; --surface-2: #eef1f0; --text: #000; --muted: #444;
     --border: #bbb; --separator: #ccc; --card-border: #ccc; --shadow: none; --shadow-sm: none;
-    --primary: #1f7a63; --primary-strong: #17614f; --negative: #b3261e;
+    --primary: #00805f; --primary-strong: #00684d; --negative: #b3261e;
     --warn-bg: #fff; --warn-text: #000; --ok-bg: #fff; --ok-text: #000;
     color-scheme: light;
   }
