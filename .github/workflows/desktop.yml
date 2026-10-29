@@ -1,6 +1,7 @@
 # Windows 版（Tauri の exe）をビルドする
 # - PR：ビルドして、インストーラーを Actions の成果物（Artifacts）に置く（動作確認用）
-# - v で始まるタグを push：GitHub Releases に下書きとして置く。中身を確かめてから公開する
+# - 手動実行で release を選ぶ、または v で始まるタグを push：GitHub Releases に下書きとして置く。中身を確かめてから公開する
+#   手動実行のタグ名は package.json のバージョンから v0.24.0 のように付ける（タグは下書きを公開したときに作られる）
 name: desktop
 
 on:
@@ -11,6 +12,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Releases に下書きを作る（package.json のバージョンでタグを付ける）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,14 +39,15 @@ jobs:
           npm ci
           npm run prepare-web
           npm run icon
-      - name: ビルド（タグのときは Releases に下書きを作る）
+      - name: ビルド（タグか手動の release のときは Releases に下書きを作る）
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: desktop
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Pocket会計 {0}', github.ref_name) || '' }}
+          # __VERSION__ は tauri-action が tauri.conf.json（＝ルートの package.json）のバージョンに置き換える
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (inputs.release && 'v__VERSION__') || '' }}
+          releaseName: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.release) && 'Pocket会計 v__VERSION__' || '' }}
           releaseBody: |
             Windows 10/11 用のインストーラーです。下の「Assets」から `-setup.exe` をダウンロードして実行してください。
             署名していないため、初回に「WindowsによってPCが保護されました」と出ます。「詳細情報」→「実行」で進めます。

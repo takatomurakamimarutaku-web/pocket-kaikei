@@ -22,8 +22,8 @@
 ## 配布
 - `.github/workflows/desktop.yml`（windows-latest）
   - PR（`desktop/**` の変更時）：ビルドしてインストーラーを Actions の成果物に置く
-  - `v*` タグの push：Releases に下書きを作る。確認してから公開する
-  - 手動実行（workflow_dispatch）：ビルドのみ
+  - 手動実行で release を選ぶ、または `v*` タグの push：Releases に下書きを作る（タグ名は package.json のバージョン）。確認してから公開する
+  - 手動実行で release を選ばない：ビルドのみ
 - インストーラーは NSIS、利用者ごとのインストール（管理者権限不要）。WebView2 が無い PC ではインストール時に取得する
 - コード署名はしていないので SmartScreen の警告が出る
 
