@@ -141,3 +141,26 @@ export function monthlyTrialCsv(mtb, { entityType, includeZero = false }) {
   }
   return toCsv(rows);
 }
+
+/**
+ * 科目別税区分集計表（tax-reports.taxByAccount）。科目×税区分で1行、最後に税区分ごとの合計
+ */
+export function taxByAccountCsv({ rows, byCode }) {
+  const out = [['コード', '科目', '税区分', '件数', '税込金額', '税抜金額（参考）', '消費税等（参考）']];
+  for (const r of rows) for (const x of r.items) out.push([r.account.code, r.account.name, x.label, x.count, x.gross, x.net, x.tax]);
+  for (const x of byCode) out.push(['', '合計', x.label, x.count, x.gross, x.net, x.tax]);
+  return toCsv(out);
+}
+
+/**
+ * 税区分別の月別推移（tax-reports.taxMonthly）。税区分ごとに税込金額と消費税等の2行
+ */
+export function taxMonthlyCsv({ months, rows, netTax, netTaxTotal }) {
+  const out = [['税区分', '項目', ...months.map((m) => `${m.slice(0, 4)}/${m.slice(5)}`), '合計']];
+  for (const r of rows) {
+    out.push([r.label, '税込金額', ...r.gross, r.total.gross]);
+    out.push([r.label, '消費税等（参考）', ...r.tax, r.total.tax]);
+  }
+  out.push(['差引', '消費税等（参考）', ...netTax, netTaxTotal]);
+  return toCsv(out);
+}
