@@ -1,5 +1,5 @@
 // ホーム：当期の概要（売上・利益・資金）、今月の動き、やること、最近の仕訳、よく使う操作
-import { h, put } from '../ui.js';
+import { h, put, charaSay } from '../ui.js';
 import { formatYen } from '../money.js';
 import { formatPeriod, todayString, addDays } from '../period.js';
 import { buildStatements, closingRows } from '../statements.js';
@@ -106,6 +106,8 @@ export async function render({ app, outlet }) {
       kpi('現金・預金', cash, null, '#/cashbook'),
       h('a', { class: 'kpi', href: '#/journals' }, h('span', { class: 'kpi-label', text: '仕訳' }), h('span', { class: 'kpi-value num', text: `${journals.length}件` }), h('span', { class: 'kpi-sub', text: `今月 ${journals.filter((j) => j.date.startsWith(today.slice(0, 7))).length}件` })),
     ),
+    // 仕訳がまだ無いときの案内
+    journals.length ? null : charaSay('kai-cheer', '最初の取引を入力してみよう！下の「取引を入力」から始められるよ。', { who: 'カイ' }),
     // よく使う操作
     h(
       'nav',
@@ -120,6 +122,7 @@ export async function render({ app, outlet }) {
           'section',
           { class: 'card-section' },
           h('h2', { class: 'card-title', text: 'やること' }),
+          charaSay(todos.some((t) => t.level === 'warn') ? 'keily-caution' : 'keily-normal', `やることが${todos.length}件あります。順番に片づけていきましょう。`, { who: 'ケイリー' }),
           h(
             'ul',
             { class: 'menu-group todo-list' },

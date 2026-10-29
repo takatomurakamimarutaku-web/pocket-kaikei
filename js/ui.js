@@ -217,11 +217,26 @@ export function segmented({ name, options, value, onChange, allowEmpty = false }
   return wrap;
 }
 
-/** 空の状態の表示 */
-export function emptyState(message, action, { title } = {}) {
+// ---- キャラクター（ケイリーと双子のカイ・ケイ）。案内の場面（初期設定・空の状態・やること）だけに出す ----
+const CHARA_SIZE = { sm: 52, md: 96, lg: 168 };
+
+/** キャラクターの絵（img/chara/{name}.svg）。飾りなので読み上げない */
+export function chara(name, { size = 'md' } = {}) {
+  const px = CHARA_SIZE[size];
+  return h('img', { class: `chara chara-${size}`, src: `img/chara/${name}.svg`, alt: '', 'aria-hidden': 'true', width: px, height: px });
+}
+
+/** キャラクターの吹き出し。who は話し手の名前 */
+export function charaSay(name, text, { who } = {}) {
+  return h('div', { class: 'chara-say' }, chara(name, { size: 'sm' }), h('p', { class: 'chara-bubble' }, who ? h('span', { class: 'chara-who', text: who }) : null, text));
+}
+
+/** 空の状態の表示。face: キャラクターの絵の名前（null で出さない） */
+export function emptyState(message, action, { title, face = 'keily-normal' } = {}) {
   return h(
     'div',
     { class: 'empty' },
+    face ? chara(face) : null,
     title ? h('h2', { class: 'empty-title', text: title }) : null,
     h('p', { text: message }),
     action || null,

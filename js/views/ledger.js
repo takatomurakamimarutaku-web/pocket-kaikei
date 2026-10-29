@@ -50,7 +50,7 @@ export async function render({ app, outlet, query }) {
     put(
       body,
       ledgers.map((lg) => ledgerTable(lg, from, accountId === ALL)),
-      accountId === ALL && !ledgers.length ? emptyState('この期間の取引はありません') : null,
+      accountId === ALL && !ledgers.length ? emptyState('この期間の取引はありません', null, { face: null }) : null,
       h('div', { class: 'report-tools no-print' }, h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv })),
     );
   }
@@ -88,7 +88,7 @@ export async function render({ app, outlet, query }) {
           h('tfoot', {}, h('tr', {}, h('th', { colspan: 2, text: '期間計' }), amountCell('td', lg.debit), amountCell('td', lg.credit), amountCell('td', lg.closing))),
         ),
       ),
-      lg.rows.length || many ? null : emptyState('この期間の取引はありません'),
+      lg.rows.length || many ? null : emptyState('この期間の取引はありません', null, { face: null }),
     );
   }
   paintSubs();
