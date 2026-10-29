@@ -487,3 +487,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .notice .btn { justify-self: start; }
 .period-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .menu-sub.is-closed { color: var(--primary-strong); font-weight: 700; }
+
+/* 銀行明細の取り込み */
+.bi-list { padding: 0; }
+.bi-row { display: grid; grid-template-columns: 32px 1fr; gap: 6px; padding: 10px 12px 10px 8px; align-items: start; }
+.bi-list .bi-row + .bi-row { border-top: 1px solid var(--separator); }
+.bi-row.is-off .bi-main { opacity: 0.55; }
+.bi-check { display: flex; justify-content: center; padding-top: 2px; }
+.bi-check input { width: 20px; height: 20px; }
+.bi-main { display: grid; gap: 4px; min-width: 0; }
+.bi-head { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; }
+.bi-memo { overflow-wrap: anywhere; }
+.bi-in { color: var(--debit); }
+.bi-out { color: var(--credit); }
+.bi-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.bi-tags:empty { display: none; }
+.bi-counter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bi-counter .acc-btn.is-empty { border-style: dashed; color: var(--muted); }
+details.panel > summary { cursor: pointer; list-style: revert; }

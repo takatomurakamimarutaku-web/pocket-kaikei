@@ -11,6 +11,7 @@ import * as journalFormView from './views/journal-form.js';
 import * as entryView from './views/entry.js';
 import * as quickEntryView from './views/quick-entry.js';
 import * as cashbookView from './views/cashbook.js';
+import * as bankImportView from './views/bank-import.js';
 import * as reportsView from './views/reports.js';
 import * as ledgerView from './views/ledger.js';
 import * as trialView from './views/trial.js';
@@ -36,6 +37,7 @@ const routes = [
   { path: '/entry', view: entryView, title: '入力', tab: 'entry' },
   { path: '/quick/:kind', view: quickEntryView, title: 'かんたん入力', tab: 'entry', back: '#/entry' },
   { path: '/cashbook', view: cashbookView, title: '出納帳', tab: 'entry', back: '#/entry' },
+  { path: '/import/bank', view: bankImportView, title: '銀行明細の取り込み', tab: 'entry', back: '#/entry' },
   { path: '/journal/new', view: journalFormView, title: '振替伝票の入力', tab: 'entry', back: '#/entry' },
   { path: '/journal/:id/edit', view: journalFormView, title: '仕訳の編集', tab: 'journals', back: '#/journals' },
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },

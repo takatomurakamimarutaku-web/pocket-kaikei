@@ -226,6 +226,36 @@ mkdirSync(OUT, { recursive: true });
   if (!(await page.locator('.asset-row').count())) errors.push('固定資産を登録できない');
   await shot('35-assets-list', true);
 
+  // 銀行明細CSVの取り込み（Shift_JIS・三菱UFJ銀行に似せた形式）
+  await go('#/import/bank');
+  await page.selectOption('#bi-account', { label: '普通預金' });
+  await page.setInputFiles('#bi-file', join(__dirname, '..', 'test', 'fixtures', 'bank-sample-sjis.csv'));
+  await page.waitForTimeout(500);
+  await shot('36-bank-import', true);
+  const pickFor = async (memo, name) => {
+    await page.locator('.bi-row', { hasText: memo }).first().locator('.acc-btn').click();
+    await page.fill('.sheet input[type=search]', name);
+    await page.locator('.picker-item', { hasText: name }).first().click();
+    await page.waitForTimeout(200);
+  };
+  await pickFor('マルタク', '売上高');
+  await pickFor('ドコモ', '通信費');
+  await pickFor('アマゾン', '消耗品費');
+  await pickFor('振込手数料', '支払手数料');
+  await page.waitForTimeout(300);
+  await shot('37-bank-import-ready', true);
+  if ((await page.locator('.bi-row', { hasText: 'マルタク' }).locator('.acc-btn', { hasText: '売上高' }).count()) !== 2) errors.push('同じ摘要の明細に科目が入らない');
+  await page.getByRole('button', { name: /件を仕訳として登録する/ }).click();
+  await page.waitForTimeout(700);
+  await shot('38-bank-import-done', true);
+  if (!(await page.locator('table.cashbook').innerText()).includes('フリコミ')) errors.push('取り込んだ明細が出納帳に出ない');
+  // 同じファイルをもう一度読むと、登録済みの印が付き、初期状態で外れる
+  await go('#/import/bank');
+  await page.selectOption('#bi-account', { label: '普通預金' });
+  await page.setInputFiles('#bi-file', join(__dirname, '..', 'test', 'fixtures', 'bank-sample-sjis.csv'));
+  await page.waitForTimeout(500);
+  if ((await page.getByText('登録済みかも').count()) !== 5) errors.push('取り込み済みの明細を重複として示さない');
+
   // 決算・繰越
   await go('#/closing');
   await shot('26-closing', true);

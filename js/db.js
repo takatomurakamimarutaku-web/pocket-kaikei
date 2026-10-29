@@ -146,6 +146,36 @@ async function normalizeOpening(tx, balances) {
   return result;
 }
 
+/**
+ * 仕訳の保存（トランザクションの中で呼ぶ）。同じトランザクションで科目・期間を読み、貸借一致などを再検証する。
+ * 新規のときは期間の通し番号を採番する（削除しても番号は詰めない）
+ */
+async function putJournal(tx, journal) {
+  const periods = tx.objectStore('periods');
+  const journals = tx.objectStore('journals');
+  const period = await req(periods.get(journal.periodId));
+  const original = (await req(journals.get(journal.id))) || null;
+  if (period?.closed || (original && (await req(periods.get(original.periodId)))?.closed)) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+  const errors = validateJournal(journal, {
+    accounts: await req(tx.objectStore('accounts').getAll()),
+    subAccounts: await req(tx.objectStore('subAccounts').getAll()),
+    period,
+    original,
+  });
+  if (errors.length) throw new ValidationError(errors);
+  const record = { ...journal, updatedAt: now() };
+  if (original) {
+    record.no = original.no;
+    record.createdAt = original.createdAt;
+  } else {
+    record.no = period.nextJournalNo || 1;
+    // 同じトランザクションで続けて保存するときのために、読み直した期間に番号を進める
+    periods.put({ ...period, nextJournalNo: record.no + 1 });
+  }
+  journals.put(record);
+  return record;
+}
+
 export class Repository {
   constructor(db) {
     this.db = db;
@@ -441,29 +471,25 @@ export class Repository {
    * 新規のときは期間の通し番号を採番する（削除しても番号は詰めない）
    */
   saveJournal(journal) {
+    return this.run(['accounts', 'subAccounts', 'periods', 'journals'], 'readwrite', (tx) => putJournal(tx, journal));
+  }
+
+  /**
+   * 複数の仕訳をまとめて新規登録する（銀行明細の取り込み）。1件でも不正なら1件も保存しない
+   * @returns {Array} 保存した仕訳（番号つき）
+   */
+  saveJournals(list) {
     return this.run(['accounts', 'subAccounts', 'periods', 'journals'], 'readwrite', async (tx) => {
-      const periods = tx.objectStore('periods');
-      const journals = tx.objectStore('journals');
-      const period = await req(periods.get(journal.periodId));
-      const original = (await req(journals.get(journal.id))) || null;
-      if (period?.closed || (original && (await req(periods.get(original.periodId)))?.closed)) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
-      const errors = validateJournal(journal, {
-        accounts: await req(tx.objectStore('accounts').getAll()),
-        subAccounts: await req(tx.objectStore('subAccounts').getAll()),
-        period,
-        original,
-      });
-      if (errors.length) throw new ValidationError(errors);
-      const record = { ...journal, updatedAt: now() };
-      if (original) {
-        record.no = original.no;
-        record.createdAt = original.createdAt;
-      } else {
-        record.no = period.nextJournalNo || 1;
-        periods.put({ ...period, nextJournalNo: record.no + 1 });
+      const out = [];
+      for (const [i, j] of list.entries()) {
+        try {
+          out.push(await putJournal(tx, j));
+        } catch (e) {
+          if (e instanceof ValidationError) throw new ValidationError(e.errors.map((m) => `${i + 1}件目（${j.date}）：${m}`));
+          throw e;
+        }
       }
-      journals.put(record);
-      return record;
+      return out;
     });
   }
 
