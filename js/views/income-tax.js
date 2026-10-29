@@ -1,7 +1,7 @@
 // 所得税の確定申告書（個人）：第一表・第二表の欄と、医療費控除の明細書・添付書類の確認
 // 弥生会計・freee の確定申告書作成と同じく、事業所得は青色申告決算書から、それ以外の所得と控除は入力から作る
 import { h, put, amountCell, field, showToast, errorBox } from '../ui.js';
-import { blueIncomeStatement } from '../blue-return.js';
+import { blueIncomeStatement, blueDeductionFor } from '../blue-return.js';
 import { computeIncomeTax, DEFAULT_INCOME_TAX, MEDICAL_KINDS, DEPENDENT_KIND_LABELS, SUPPORTED_YEARS, rulesFor } from '../income-tax.js';
 import { formatYen, parseYen } from '../money.js';
 import { ValidationError } from '../db.js';
@@ -15,7 +15,7 @@ export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
   if (settings.entityType !== 'individual') return put(outlet, h('p', { class: 'notice', text: '所得税の確定申告書は個人事業主の画面です。' }));
   const year = Number(period.endDate.slice(0, 4));
-  const deduction = period.blueReturn?.deduction ?? 650000;
+  const deduction = blueDeductionFor(year, period.blueReturn?.deduction ?? 650000);
   const is = blueIncomeStatement({ accounts, period, journals, deduction });
   const business = { revenue: is.lines[1], income: is.lines[45], familySalary: is.lines[38], blueDeduction: is.lines[44] };
   const input = clone({ ...DEFAULT_INCOME_TAX, ...(period.incomeTaxReturn || {}) });

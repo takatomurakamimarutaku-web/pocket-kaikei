@@ -721,3 +721,24 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .it-group legend { font-weight: 800; font-size: 0.95rem; padding: 0 4px 0 0; }
 .it-item { padding: var(--sp-2) var(--sp-3); margin: var(--sp-2) 0; border-radius: var(--radius-sm); background: var(--surface-2); }
 .it-attach { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+
+/* 仕訳の訂正・削除の履歴・詳しい検索 */
+.lg-no { display: block; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.adv-search { margin: 0 0 var(--sp-3); }
+.adv-search .field-row { margin-top: 6px; }
+.history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.history-item { padding: 12px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); display: grid; gap: 4px; }
+.history-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.history-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; background: var(--surface-2); color: var(--text); }
+.history-badge.update { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary-strong); }
+.history-badge.delete { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.history-change { margin: 0; padding-left: 1.1em; font-size: 0.85rem; }
+.late-flag { font-size: 0.72rem; font-weight: 700; color: var(--tone-close, var(--muted)); }
+.ebook-merit { margin: 0 0 var(--sp-2); padding-left: 1.2em; display: grid; gap: 6px; font-size: 0.9rem; }
+.ebook-reqs { margin: 0 0 var(--sp-3); padding-left: 1.4em; display: grid; gap: 12px; }
+.ebook-reqs p { margin: 4px 0 0; font-size: 0.9rem; }
+.ebook-req-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.ebook-user { color: var(--text); }
+.ebook-tag { display: inline-block; margin-right: 6px; padding: 0 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary-strong); }
+.ebook-template { white-space: pre-wrap; word-break: break-word; margin: 0 0 var(--sp-3); padding: 12px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--card-border); font-family: inherit; font-size: 0.82rem; line-height: 1.7; max-height: 420px; overflow: auto; }
+@media print { .ebook-template { max-height: none; overflow: visible; } }

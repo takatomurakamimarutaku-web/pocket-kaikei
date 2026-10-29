@@ -1,4 +1,5 @@
 // 仕訳の入力・編集（振替伝票形式）
+import { historyItem } from './journal-history.js';
 import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox, taxSelect } from '../ui.js';
 import { emptyRow, emptySide, rowsToLines, linesToRows, rowsTotals, validateJournal, memoCandidates, copyForNew } from '../journal.js';
 import { formatYen, parseYen } from '../money.js';
@@ -247,7 +248,15 @@ export async function render({ app, outlet, params, query }) {
   if (locked) {
     app.setTitle(editing ? '仕訳の表示' : '仕訳の入力');
     put(outlet, closedNotice({ closed: true }), editing ? journalCardLike(editing) : null);
+    await appendHistory();
     return;
+  }
+  // この仕訳の訂正・削除の履歴
+  async function appendHistory() {
+    if (!editing) return;
+    const list = (await app.db.listJournalHistory(editing.periodId)).filter((e) => e.journalId === editing.id);
+    if (!list.length) return;
+    outlet.append(h('details', { class: 'panel journal-history' }, h('summary', { text: `この仕訳の履歴（${list.length}件）` }), h('ul', { class: 'history-list' }, list.map((e) => historyItem(e, { accountById, subById: data.subById })))));
   }
   function journalCardLike(j) {
     return h(
@@ -279,6 +288,7 @@ export async function render({ app, outlet, params, query }) {
   );
   paintRows();
   put(outlet, form);
+  await appendHistory();
 
   app.leaveGuard = async () =>
     !dirty ||

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blueIncomeStatement, monthlySalesPurchases, depreciationTable, blueBalanceSheet } from '../js/blue-return.js';
+import { blueIncomeStatement, monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionFor, blueDeductionReplaced } from '../js/blue-return.js';
 import { incomeStatement, closingRows } from '../js/statements.js';
 import { createAccount } from '../js/models.js';
 import { makeBook } from './helpers.js';
@@ -97,4 +97,19 @@ test('貸借対照表：期首・期末とも資産合計＝負債・資本合�
   assert.equal(label(bs.liabilities, '元入金').closing, 700000);
   assert.equal(label(bs.liabilities, '事業主借').closing, 20000);
   assert.equal(label(bs.liabilities, '青色申告特別控除前の所得金額').closing, 384600);
+});
+
+test('青色申告特別控除の選択肢：令和8年分までは65万・55万・10万、令和9年分以後は75万・65万・10万（55万は無い）', () => {
+  const values = (y) => blueDeductionOptions(y).map((o) => o.value);
+  assert.deepEqual(values(2026), [650000, 550000, 100000, 0]);
+  assert.deepEqual(values(2027), [750000, 650000, 100000, 0]);
+  assert.deepEqual(values(2030), [750000, 650000, 100000, 0]);
+  // 令和9年分で前に選んだ55万円は使えないので65万円にし、画面で知らせる
+  assert.equal(blueDeductionFor(2027, 550000), 650000);
+  assert.equal(blueDeductionReplaced(2027, 550000), true);
+  // 令和8年分の75万円も同じ
+  assert.equal(blueDeductionFor(2026, 750000), 650000);
+  assert.equal(blueDeductionFor(2027, 750000), 750000);
+  assert.equal(blueDeductionReplaced(2027, undefined), false);
+  assert.equal(blueDeductionFor(2026, 0), 0);
 });

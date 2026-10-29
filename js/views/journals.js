@@ -1,11 +1,13 @@
 // 仕訳帳：月別表示・検索・CSV 出力。タップで編集
-import { h, put, emptyState, saveFile, showToast } from '../ui.js';
+import { h, put, emptyState, saveFile, showToast, field } from '../ui.js';
 import { compareJournals, matchJournal, linesToRows } from '../journal.js';
 import { monthsInPeriod, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { TAX_BY_CODE } from '../tax.js';
 import { normalize } from '../search.js';
 import { journalsCsv, csvFileName } from '../csv.js';
+import { searchJournals, hasCriteria } from '../journal-history.js';
+import { parseYen } from '../money.js';
 
 export async function render({ app, outlet, query }) {
   const data = await app.load();
@@ -14,6 +16,8 @@ export async function render({ app, outlet, query }) {
   const today = todayString().slice(0, 7);
   let month = query.month === 'all' ? 'all' : months.includes(query.month) ? query.month : months.includes(today) ? today : months[0];
   let q = query.q || '';
+  // 詳しい検索（優良な電子帳簿の要件：日付・金額の範囲指定、取引先、2つ以上の項目の組合せ）
+  const crit = { dateFrom: '', dateTo: '', amountMin: null, amountMax: null, accountId: '', party: '' };
 
   const list = h('div', { class: 'journal-list' });
   const meta = h('p', { class: 'list-meta' });
@@ -54,10 +58,40 @@ export async function render({ app, outlet, query }) {
 
   function visible() {
     const ctx = { accountById, subById, normalize };
-    return journals
-      .filter((j) => (month === 'all' || j.date.startsWith(month)) && matchJournal(j, q, ctx))
-      .sort(compareJournals);
+    // 詳しい検索の条件があるときは、会計期間の全体から探す
+    const adv = hasCriteria(crit);
+    const base = journals.filter((j) => (adv || month === 'all' || j.date.startsWith(month)) && matchJournal(j, q, ctx));
+    return (adv ? searchJournals(base, crit, ctx) : base).sort(compareJournals);
   }
+
+  const advInput = (key, attrs) =>
+    h('input', {
+      id: `adv-${key}`,
+      ...attrs,
+      oninput: (e) => {
+        const v = e.target.value.trim();
+        if (key === 'amountMin' || key === 'amountMax') {
+          const r = v === '' ? null : parseYen(v, { allowZero: true });
+          if (r && !r.ok) return;
+          crit[key] = r ? r.value : null;
+        } else crit[key] = v;
+        paint();
+      },
+    });
+  const accountOptions = [...accountById.values()].filter((a) => a.active || journals.some((j) => j.lines.some((l) => l.accountId === a.id))).sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  const advanced = h(
+    'details',
+    { class: 'panel adv-search no-print' },
+    h('summary', { text: '詳しく検索（日付・金額の範囲・取引先・科目）' }),
+    h('div', { class: 'field-row' }, field('日付（から）', advInput('dateFrom', { type: 'date', min: period.startDate, max: period.endDate })), field('日付（まで）', advInput('dateTo', { type: 'date', min: period.startDate, max: period.endDate }))),
+    h('div', { class: 'field-row' }, field('金額（以上）', advInput('amountMin', { type: 'text', inputmode: 'numeric', placeholder: '0' })), field('金額（以下）', advInput('amountMax', { type: 'text', inputmode: 'numeric', placeholder: '上限なし' }))),
+    field('取引先', advInput('party', { type: 'text', placeholder: '補助科目・摘要に含まれる名前' })),
+    field(
+      '科目',
+      h('select', { id: 'adv-accountId', onchange: (e) => ((crit.accountId = e.target.value), paint()) }, [h('option', { value: '', text: 'すべての科目' }), ...accountOptions.map((a) => h('option', { value: a.id, text: `${a.code} ${a.name}` }))]),
+    ),
+    h('p', { class: 'muted small', text: '入力した条件をすべて満たす仕訳を、会計期間の全体から探します。上の検索欄とも組み合わせられます。' }),
+  );
 
   function paint() {
     const isAll = month === 'all';
@@ -67,7 +101,7 @@ export async function render({ app, outlet, query }) {
     allBtn.setAttribute('aria-checked', String(isAll));
     const items = visible();
     const total = items.reduce((s, j) => s + j.lines.filter((l) => l.side === 'debit').reduce((a, l) => a + l.amount, 0), 0);
-    meta.textContent = `${items.length}件・借方合計 ${formatYen(total)}円`;
+    meta.textContent = `${hasCriteria(crit) ? '詳しい検索：会計期間の全体から ' : ''}${items.length}件・借方合計 ${formatYen(total)}円`;
     put(list, 
       ...(items.length
         ? items.map((j) => journalCard(j, accountById, subById))
@@ -78,11 +112,13 @@ export async function render({ app, outlet, query }) {
   put(outlet, 
     h('div', { class: 'month-bar' }, prev, monthLabel, next, allBtn),
     h('div', { class: 'search-bar' }, search),
+    advanced,
     meta,
     list,
     h(
       'div',
       { class: 'actions' },
+      h('a', { href: '#/journals/history', class: 'btn', text: '訂正・削除の履歴' }),
       h('button', {
         type: 'button',
         class: 'btn',

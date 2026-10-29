@@ -1,6 +1,6 @@
 // 青色申告決算書（一般用）：4ページの各欄を様式の並びで表示する（確定申告書等作成コーナー・e-Tax に転記する数字）
 import { h, put, field, segmented, amountCell } from '../ui.js';
-import { blueIncomeStatement, monthlySalesPurchases, depreciationTable, blueBalanceSheet, BLUE_DEDUCTIONS } from '../blue-return.js';
+import { blueIncomeStatement, monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionFor, blueDeductionReplaced } from '../blue-return.js';
 import { formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 
@@ -14,7 +14,9 @@ export async function render({ app, outlet, query }) {
     return;
   }
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
-  let deduction = period.blueReturn?.deduction ?? 650000;
+  const year = Number(period.endDate.slice(0, 4));
+  const saved = period.blueReturn?.deduction;
+  let deduction = blueDeductionFor(year, saved ?? 650000);
   let page = ['1', '2', '3', '4'].includes(query.page) ? query.page : '1';
   const body = h('div');
 
@@ -170,7 +172,7 @@ export async function render({ app, outlet, query }) {
         if (!period.closed) await app.db.saveBlueReturnSettings(period.id, { deduction }).catch(() => {});
       },
     },
-    BLUE_DEDUCTIONS.map((d) => h('option', { value: d.value, text: d.label, selected: d.value === deduction })),
+    blueDeductionOptions(year).map((d) => h('option', { value: d.value, text: d.label, selected: d.value === deduction })),
   );
 
   put(
@@ -179,7 +181,13 @@ export async function render({ app, outlet, query }) {
     h(
       'section',
       { class: 'panel no-print' },
-      field('青色申告特別控除額', deductionSelect, { hint: '65万円・55万円は複式簿記で、貸借対照表を添付して期限内に申告する場合。令和9年分以後は75万円が加わり、55万円・10万円の扱いが変わります（国税庁の案内で確認してください）' }),
+      field('青色申告特別控除額', deductionSelect, {
+        hint:
+          year >= 2027
+            ? '令和9年分以後：65万円は複式簿記で貸借対照表を添付し、期限内に e-Tax で申告する場合。75万円はさらに仕訳帳・総勘定元帳を優良な電子帳簿で保存する場合（その他メニューの「電子帳簿保存」を参照）。書面で提出すると10万円です'
+            : '65万円・55万円は複式簿記で、貸借対照表を添付して期限内に申告する場合。65万円は e-Tax で申告するか、優良な電子帳簿で保存する場合です',
+      }),
+      blueDeductionReplaced(year, saved) ? h('p', { class: 'notice', text: `${year}年分には前に選んだ控除額の区分が無いため、65万円で計算しています。控除額を選び直してください。` }) : null,
       segmented({
         name: 'ページ',
         options: [
