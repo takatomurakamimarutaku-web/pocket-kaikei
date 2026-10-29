@@ -1,8 +1,8 @@
 {
   "name": "pocket-kaikei",
-  "version": "0.24.1",
+  "version": "0.25.0",
   "private": true,
-  "description": "Pocket会計：スマホで使う複式簿記の会計PWA（個人事業主・法人）",
+  "description": "ポケット会計：スマホで使う複式簿記の会計PWA（個人事業主・法人）",
   "type": "module",
   "scripts": {
     "test": "node --test",

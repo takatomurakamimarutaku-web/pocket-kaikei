@@ -713,3 +713,11 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 /* 事業税 */
 .field-row.et-rates { grid-template-columns: 1fr 1fr 1fr; }
 .et-table th[scope="row"] { min-width: 12em; }
+
+/* 確定申告書（個人） */
+.it-sub { margin: var(--sp-3) 0 var(--sp-2); font-size: 0.9rem; color: var(--muted); }
+.it-list td { white-space: normal; }
+.it-group { border: 0; border-top: 1px solid var(--card-border); margin: var(--sp-3) 0 0; padding: var(--sp-3) 0 0; min-width: 0; }
+.it-group legend { font-weight: 800; font-size: 0.95rem; padding: 0 4px 0 0; }
+.it-item { padding: var(--sp-2) var(--sp-3); margin: var(--sp-2) 0; border-radius: var(--radius-sm); background: var(--surface-2); }
+.it-attach { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
