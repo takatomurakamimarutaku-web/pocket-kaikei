@@ -301,6 +301,28 @@ export class Repository {
     });
   }
 
+  /**
+   * 消費税の申告計算の設定（計算の方法・事業区分・中間納付税額）を期間に保存する
+   * @param {{ method: string, businessType: number, interimNational: number, interimLocal: number }} taxReturn
+   */
+  saveTaxReturnSettings(periodId, taxReturn) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+      const errors = [];
+      if (!['general', 'simplified', 'twenty', 'thirty'].includes(taxReturn.method)) errors.push('計算の方法を選んでください');
+      if (![1, 2, 3, 4, 5, 6].includes(taxReturn.businessType)) errors.push('事業区分を選んでください');
+      for (const k of ['interimNational', 'interimLocal']) if (!isYen(taxReturn[k]) || taxReturn[k] < 0) errors.push('中間納付税額は0以上の整数で入力してください');
+      if (errors.length) throw new ValidationError([...new Set(errors)]);
+      const { method, businessType, interimNational, interimLocal } = taxReturn;
+      const next = { ...period, taxReturn: { method, businessType, interimNational, interimLocal }, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
   listPeriods() {
     return this.run(['periods'], 'readonly', async (tx) => (await req(tx.objectStore('periods').getAll())).sort((a, b) => (a.startDate < b.startDate ? -1 : 1)));
   }

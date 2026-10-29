@@ -14,7 +14,7 @@ test('テンプレートの目印：個人・法人とも使う目印の科目�
     const accounts = templateAccounts(entityType);
     for (const hint of Object.keys(HINTS)) {
       const hits = accounts.filter((a) => a.hint === hint);
-      if (['officer_loan', 'accumulated_depreciation'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 個人は直接法
+      if (['officer_loan', 'accumulated_depreciation', 'consumption_tax_payable'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 個人は直接法
       else assert.equal(hits.length, 1, `${entityType} ${hint}`);
     }
   }

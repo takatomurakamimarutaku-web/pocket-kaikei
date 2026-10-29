@@ -6,7 +6,7 @@
 //         https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6383.htm
 //         タックスアンサー No.6391 課税仕入れに係る消費税額の計算
 //         https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6391.htm
-// これは申告書の計算ではない（課税標準額の千円未満切捨て・インボイスの経過措置・簡易課税などは第2弾）。
+// これは参考値。申告書の計算（千円未満切捨て・インボイスの経過措置・簡易課税・2割特例など）は tax-return.js。
 
 /**
  * 税区分の定義。kind：sales（貸方でプラス）／purchase（借方でプラス）／none
@@ -21,6 +21,9 @@ export const TAX_CATEGORIES = [
   { code: 'sales_exempt', label: '非課税売上', short: '非売', kind: 'sales', rate: 0, national: 0 },
   { code: 'purchase_10', label: '課税仕入10%', short: '仕10', kind: 'purchase', rate: 100, national: 780 },
   { code: 'purchase_8r', label: '課税仕入8%（軽減）', short: '仕8軽', kind: 'purchase', rate: 80, national: 624 },
+  // インボイス（適格請求書）のない仕入（免税事業者などから）。控除できるのは日付に応じた経過措置の割合だけ（tax-return.js）
+  { code: 'purchase_10_ni', label: '課税仕入10%（インボイスなし）', short: '仕10無', kind: 'purchase', rate: 100, national: 780, transitional: true },
+  { code: 'purchase_8r_ni', label: '課税仕入8%（軽減・インボイスなし）', short: '仕8無', kind: 'purchase', rate: 80, national: 624, transitional: true },
   { code: 'purchase_exempt', label: '非課税仕入', short: '非仕', kind: 'purchase', rate: 0, national: 0 },
 ];
 

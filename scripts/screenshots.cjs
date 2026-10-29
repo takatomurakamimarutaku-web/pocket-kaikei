@@ -256,6 +256,24 @@ mkdirSync(OUT, { recursive: true });
   await page.waitForTimeout(500);
   if ((await page.getByText('登録済みかも').count()) !== 5) errors.push('取り込み済みの明細を重複として示さない');
 
+  // 消費税の申告計算
+  await go('#/reports/tax-return');
+  await shot('39-tax-return', true);
+  await page.getByRole('radio', { name: '簡易' }).click();
+  await page.selectOption('#tr-type', '5');
+  await page.waitForTimeout(200);
+  await shot('40-tax-return-simplified', true);
+  await page.getByRole('radio', { name: '2割' }).click();
+  await page.waitForTimeout(200);
+  if (entity === 'corporation') {
+    await page.getByRole('button', { name: '消費税等の仕訳を登録する' }).click();
+    await page.waitForTimeout(600);
+    if (!(await page.getByText('消費税等の仕訳は登録済みです').count())) errors.push('消費税等の仕訳を登録できない');
+    await shot('41-tax-return-booked', true);
+    await go('#/reports/tax-return');
+    if ((await page.getByRole('radio', { name: '2割' }).getAttribute('aria-checked')) !== 'true') errors.push('計算の方法が保存されない');
+  }
+
   // 決算・繰越
   await go('#/closing');
   await shot('26-closing', true);
