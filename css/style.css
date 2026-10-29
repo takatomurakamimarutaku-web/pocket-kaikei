@@ -696,3 +696,19 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 
 /* サンプルデータ */
 .sample-panel { margin-top: 16px; }
+
+/* 償却資産申告書 */
+.pt-table td:nth-child(2) { white-space: normal; min-width: 8em; }
+.pt-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary-strong); vertical-align: 1px; }
+.pt-settings { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.pt-setting { padding: 10px 0; border-top: 1px solid var(--card-border); display: grid; gap: 6px; }
+.pt-setting:first-child { border-top: 0; }
+.pt-setting-name { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.pt-setting-controls { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.pt-setting-controls select { max-width: 100%; }
+.pt-life { width: 4.5em; text-align: right; }
+.pt-excluded { margin: 8px 0 0; padding-left: 1.2em; display: grid; gap: 4px; }
+
+/* 事業税 */
+.field-row.et-rates { grid-template-columns: 1fr 1fr 1fr; }
+.et-table th[scope="row"] { min-width: 12em; }

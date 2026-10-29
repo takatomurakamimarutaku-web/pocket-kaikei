@@ -42,6 +42,8 @@ const PRECACHE_URLS = [
   'js/tax-forms.js',
   'js/breakdown.js',
   'js/financial.js',
+  'js/property-tax.js',
+  'js/enterprise-tax.js',
   'js/tax-reports.js',
   'js/sample.js',
   'js/blue-return.js',
@@ -83,6 +85,8 @@ const PRECACHE_URLS = [
   'js/views/blue-return.js',
   'js/views/breakdown.js',
   'js/views/financial.js',
+  'js/views/property-tax.js',
+  'js/views/enterprise-tax.js',
   'js/views/trial.js',
 ];
 
