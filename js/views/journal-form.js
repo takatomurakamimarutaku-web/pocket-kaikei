@@ -1,7 +1,7 @@
 // 仕訳の入力・編集（振替伝票形式）
 import { historyItem } from './journal-history.js';
 import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox, taxSelect } from '../ui.js';
-import { emptyRow, emptySide, rowsToLines, linesToRows, rowsTotals, validateJournal, memoCandidates, copyForNew } from '../journal.js';
+import { emptyRow, emptySide, rowsToLines, linesToRows, rowsTotals, validateJournal, memoCandidates, copyForNew, journalLabel, voucherOf, parseVoucherNo } from '../journal.js';
 import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
 import { createJournal, createTemplate } from '../models.js';
@@ -83,6 +83,20 @@ export async function render({ app, outlet, params, query, route }) {
     max: period.endDate,
     onchange: (e) => {
       date = e.target.value;
+      dirty = true;
+    },
+  });
+  // 伝票No：新規は次の番号（これまでに使った最大の番号＋1）を出しておき、書き換えなければ保存のときに付ける
+  const nextVoucher = () => Math.max(period.nextVoucherNo || 1, ...journals.map((j) => voucherOf(j) + 1));
+  let voucherTouched = false;
+  const voucherInput = h('input', {
+    id: 'j-voucher',
+    type: 'text',
+    inputmode: 'numeric',
+    autocomplete: 'off',
+    value: String(editing ? voucherOf(editing) : nextVoucher()),
+    oninput: () => {
+      voucherTouched = true;
       dirty = true;
     },
   });
@@ -314,7 +328,7 @@ export async function render({ app, outlet, params, query, route }) {
     return h(
       'div',
       { class: 'panel' },
-      h('p', { class: 'muted small', text: `No.${j.no}・${j.date.replaceAll('-', '/')}` }),
+      h('p', { class: 'muted small', text: `${journalLabel(j)}・${j.date.replaceAll('-', '/')}` }),
       h('ul', { class: 'plain-list' }, j.lines.map((l) => h('li', { text: `${SIDE_LABEL[l.side]}　${accountById.get(l.accountId)?.name ?? '（不明な科目）'}　${formatYen(l.amount)}円${l.memo ? `　${l.memo}` : ''}` }))),
     );
   }
@@ -327,17 +341,17 @@ export async function render({ app, outlet, params, query, route }) {
   const form = h(
     'form',
     { class: 'journal-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), templateMode ? saveTemplate() : save()) },
-    editing ? h('p', { class: 'muted small', text: `No.${editing.no}` }) : null,
-    source && !templateMode ? h('p', { class: 'notice', text: `No.${source.no} を複製しました。日付を確認して登録してください。` }) : null,
+    editing ? h('p', { class: 'muted small', text: `入力No.${editing.no}（登録した順に付く番号で、変わりません）` }) : null,
+    source && !templateMode ? h('p', { class: 'notice', text: `${journalLabel(source)} を複製しました。日付を確認して登録してください。` }) : null,
     fromTemplate ? h('p', { class: 'notice', text: `定型仕訳「${fromTemplate.name}」を呼び出しました。日付と金額を確認して登録してください。` }) : null,
     templateMode
       ? [
-          source ? h('p', { class: 'notice', text: `No.${source.no} の内容から定型仕訳を作ります。名前を付けて保存してください。` }) : null,
+          source ? h('p', { class: 'notice', text: `${journalLabel(source)} の内容から定型仕訳を作ります。名前を付けて保存してください。` }) : null,
           field('名前', nameInput, { name: 'name' }),
           field('毎月作る', repeatSelect, { name: 'repeatDay', hint: '日を選ぶと「定型仕訳」画面の「毎月の仕訳を作る」でまとめて登録できます。毎月作るものはすべての金額を入れてください。31日を超える月は月末日になります' }),
           h('p', { class: 'muted small', text: '金額を空欄にすると、呼び出したときに入力します。' }),
         ]
-      : field('日付', dateInput, { name: 'date' }),
+      : h('div', { class: 'field-row' }, field('日付', dateInput, { name: 'date' }), field('伝票No', voucherInput, { name: 'voucherNo' })),
     rowsEl,
     templateMode ? null : h('label', { class: 'check small adjusting-check' }, adjustingInput, '決算整理仕訳（月次推移の試算表で「決算整理」の列に分けて表示）'),
     attach?.el,
@@ -376,9 +390,13 @@ export async function render({ app, outlet, params, query, route }) {
 
   async function save() {
     const { lines, errors } = rowsToLines(rows);
+    // 伝票No：編集では入力のまま、新規で書き換えていなければ保存のときに次の番号を付ける
+    const voucher = editing || voucherTouched ? parseVoucherNo(voucherInput.value) : { ok: true, value: null };
+    if (!voucher.ok) errors.unshift(voucher.error);
+    const voucherNo = voucher.ok ? voucher.value : null;
     const journal = editing
-      ? { ...editing, date, lines, adjusting: adjustingInput.checked }
-      : createJournal({ periodId: period.id, date, lines, adjusting: adjustingInput.checked, ...(fromTemplate ? { source: TEMPLATE_SOURCE, sourceId: fromTemplate.id } : {}) });
+      ? { ...editing, date, voucherNo: voucherNo ?? voucherOf(editing), lines, adjusting: adjustingInput.checked }
+      : createJournal({ periodId: period.id, date, lines, adjusting: adjustingInput.checked, ...(voucherNo ? { voucherNo } : {}), ...(fromTemplate ? { source: TEMPLATE_SOURCE, sourceId: fromTemplate.id } : {}) });
     const all = [...errors, ...validateJournal(journal, { accounts, subAccounts, period, original: editing, departments })];
     if (all.length) {
       showErrorList([...new Set(all)]);
@@ -391,13 +409,13 @@ export async function render({ app, outlet, params, query, route }) {
       dirty = false;
       app.leaveGuard = null;
       if (editing) {
-        showToast(`No.${saved.no} を保存しました`);
+        showToast(`${journalLabel(saved)} を保存しました`);
         app.goBack('#/journals');
         return;
       }
       const attached = attach.hasPending() ? await attach.commit(saved) : 0;
       // 続けて入力できるよう、日付を残して伝票を空にする
-      showToast(`No.${saved.no} を登録しました${attached ? `（証憑${attached}件）` : ''}`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${date.slice(0, 7)}`), duration: 5000 });
+      showToast(`${journalLabel(saved)} を登録しました${attached ? `（証憑${attached}件）` : ''}`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${date.slice(0, 7)}`), duration: 5000 });
       if (source || fromTemplate) {
         app.navigate('#/journal/new', { replace: true });
         return;
@@ -405,6 +423,9 @@ export async function render({ app, outlet, params, query, route }) {
       journals.push(saved);
       rows = [emptyRow()];
       adjustingInput.checked = false;
+      period.nextVoucherNo = Math.max(period.nextVoucherNo || 1, saved.voucherNo + 1);
+      voucherInput.value = String(nextVoucher());
+      voucherTouched = false;
       clearErrors();
       paintRows();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -462,7 +483,7 @@ export async function render({ app, outlet, params, query, route }) {
 
   async function remove() {
     const ok = await confirmDialog({
-      title: `No.${editing.no} を削除しますか？`,
+      title: `${journalLabel(editing)} を削除しますか？`,
       message: '削除した直後は「元に戻す」で取り消せます。添付した証憑は消さずに残します（証憑の一覧で確かめられます）。',
       buttons: [
         { label: 'キャンセル', value: false },
@@ -474,7 +495,7 @@ export async function render({ app, outlet, params, query, route }) {
       const snap = await app.db.deleteJournal(editing.id);
       dirty = false;
       app.leaveGuard = null;
-      showToast(`No.${editing.no} を削除しました`, {
+      showToast(`${journalLabel(editing)} を削除しました`, {
         actionLabel: '元に戻す',
         duration: 6000,
         onAction: async () => {

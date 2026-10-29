@@ -89,7 +89,7 @@ export function yayoiRows(journals, { accountById, subById, period, departmentBy
         const dep = s.departmentId ? departmentById.get(s.departmentId)?.name ?? '' : '';
         return [accountById.get(s.accountId)?.name ?? '', s.subAccountId ? subById.get(s.subAccountId)?.name ?? '' : '', dep, yayoiTaxName(s.taxCategory, j.date), amount, taxAmount(s.taxCategory, amount)];
       };
-      out.push([flag, j.no, kessan, slash(j.date), ...side(r.debit), ...side(r.credit), r.memo, '', '', single ? 0 : 3, '', '', 0, 0, 'no']);
+      out.push([flag, j.voucherNo ?? j.no, kessan, slash(j.date), ...side(r.debit), ...side(r.credit), r.memo, '', '', single ? 0 : 3, '', '', 0, 0, 'no']);
     });
   }
   return out;

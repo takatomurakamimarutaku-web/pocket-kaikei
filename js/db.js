@@ -24,7 +24,7 @@ import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments'];
 /** 証憑の添付（バックアップで画像を含めないときは書き出し・置き換えの対象から外す） */
 export const ATTACHMENT_STORES = ['attachments', 'attachmentData'];
@@ -83,6 +83,21 @@ export function migrate(db, oldVersion, tx) {
   if (oldVersion < 7) {
     // 部門（仕訳の明細の departmentId で付ける。部門別損益）
     db.createObjectStore('departments', { keyPath: 'id' });
+  }
+  if (oldVersion < 8) {
+    // 伝票No（利用者が付ける番号）：今までの仕訳には入力No（no）をそのまま付け、期間に次の伝票No を持たせる
+    tx.objectStore('journals').openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (!cursor) return;
+      if (cursor.value.voucherNo == null) cursor.update({ ...cursor.value, voucherNo: cursor.value.no });
+      cursor.continue();
+    };
+    tx.objectStore('periods').openCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (!cursor) return;
+      if (cursor.value.nextVoucherNo == null) cursor.update({ ...cursor.value, nextVoucherNo: cursor.value.nextJournalNo || 1 });
+      cursor.continue();
+    };
   }
 }
 
@@ -189,7 +204,8 @@ async function normalizeOpening(tx, balances) {
 
 /**
  * 仕訳の保存（トランザクションの中で呼ぶ）。同じトランザクションで科目・期間を読み、貸借一致などを再検証する。
- * 新規のときは期間の通し番号を採番する（削除しても番号は詰めない）
+ * 新規のときは期間の通し番号（入力No）を採番する（削除しても番号は詰めない）
+ * 伝票No は渡されたものを使い、無ければ期間の次の伝票No（これまでに使った最大の番号＋1）を付ける
  */
 async function putJournal(tx, journal) {
   const periods = tx.objectStore('periods');
@@ -206,14 +222,20 @@ async function putJournal(tx, journal) {
   });
   if (errors.length) throw new ValidationError(errors);
   const record = { ...journal, updatedAt: now() };
+  const nextVoucher = period.nextVoucherNo || 1;
+  const nextPeriod = { ...period };
   if (original) {
     record.no = original.no;
     record.createdAt = original.createdAt;
+    if (record.voucherNo == null) record.voucherNo = original.voucherNo ?? original.no;
   } else {
     record.no = period.nextJournalNo || 1;
-    // 同じトランザクションで続けて保存するときのために、読み直した期間に番号を進める
-    periods.put({ ...period, nextJournalNo: record.no + 1 });
+    if (record.voucherNo == null) record.voucherNo = nextVoucher;
+    nextPeriod.nextJournalNo = record.no + 1;
   }
+  nextPeriod.nextVoucherNo = Math.max(nextVoucher, record.voucherNo + 1);
+  // 同じトランザクションで続けて保存するときのために、読み直した期間に番号を進める
+  if (nextPeriod.nextJournalNo !== period.nextJournalNo || nextPeriod.nextVoucherNo !== period.nextVoucherNo) periods.put(nextPeriod);
   journals.put(record);
   if (!original) tx.objectStore('journalHistory').put(historyEntry('create', null, record, record.updatedAt));
   else if (journalChanged(original, record)) tx.objectStore('journalHistory').put(historyEntry('update', original, record, record.updatedAt));
@@ -347,7 +369,7 @@ export class Repository {
       meta.put({ key: 'settings', value: settings });
       if (!(await req(meta.get('deviceId')))) meta.put({ key: 'deviceId', value: newId() });
       meta.put({ key: 'currentPeriodId', value: period.id });
-      tx.objectStore('periods').put({ nextJournalNo: 1, ...period });
+      tx.objectStore('periods').put({ nextJournalNo: 1, nextVoucherNo: 1, ...period });
       for (const a of accounts) tx.objectStore('accounts').put(a);
       return settings;
     });
@@ -650,7 +672,7 @@ export class Repository {
       const periods = await req(store.getAll());
       if (periods.some((p) => p.startDate <= period.endDate && period.startDate <= p.endDate)) throw new ValidationError(['この期間と重なる会計期間が既にあります']);
       const result = await normalizeOpening(tx, balances);
-      const next = { ...period, openingBalances: result, nextJournalNo: 1 };
+      const next = { ...period, openingBalances: result, nextJournalNo: 1, nextVoucherNo: 1 };
       store.put(next);
       tx.objectStore('meta').put({ key: 'currentPeriodId', value: next.id });
       return next;

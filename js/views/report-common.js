@@ -1,7 +1,8 @@
 // 帳票の共通部品（月範囲の選択・0の科目を隠す切替・期首残高の警告）
-import { h, put, amountCell } from '../ui.js';
+import { h, put, amountCell, emptyState } from '../ui.js';
 import { monthsInPeriod, monthRange, addDays } from '../period.js';
 import { formatYen } from '../money.js';
+import { carriedLabel } from '../ledger.js';
 
 const monthText = (m) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
 
@@ -87,4 +88,48 @@ export async function loadPrevious(app, period) {
   const prev = periods.find((p) => p.endDate === addDays(period.startDate, -1));
   if (!prev) return null;
   return { period: prev, journals: await app.db.listJournals(prev.id) };
+}
+
+/**
+ * 元帳の表（総勘定元帳・補助元帳）。繰越の行・取引の行（日付・伝票No・相手科目・摘要・借方・貸方・残高）・期間計
+ * 日付の下の No. は伝票No.（見出しに書く。列の幅を取らないよう短くする）
+ * @param {object} lg ledger.generalLedger の結果
+ * @param {{ period, from, title?: string, meta?: string, id?: string, showEmpty?: boolean }} opts
+ *   title：見出し（続けて表示するとき）。meta：件数の行の先頭に付ける文字
+ */
+export function ledgerSection(lg, { period, from, title = '', meta = '', id = null, showEmpty = true }) {
+  const side = lg.account.normalSide === 'debit' ? '借方残' : '貸方残';
+  return h(
+    'section',
+    { class: 'lg-section', id },
+    title ? h('h2', { class: 'section-title', text: title }) : null,
+    h('p', { class: 'list-meta', text: `${meta}${side}・${lg.rows.length}件` }),
+    h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        { class: 'report ledger' },
+        h('thead', {}, h('tr', {}, ['日付／伝票No.', '相手科目／摘要', '借方', '貸方', '残高'].map((t) => h('th', { scope: 'col', text: t })))),
+        h(
+          'tbody',
+          {},
+          h('tr', { class: 'carried' }, h('td'), h('td', { text: carriedLabel(period, from) }), h('td'), h('td'), amountCell('td', lg.carried)),
+          lg.rows.map((r) =>
+            h(
+              'tr',
+              {},
+              h('td', { class: 'nowrap' }, h('a', { href: `#/journal/${encodeURIComponent(r.journal.id)}/edit`, text: r.date.slice(5).replace('-', '/') }), h('span', { class: 'lg-no', text: `No.${r.voucherNo ?? r.no}` })),
+              h('td', {}, h('span', { class: 'lg-counter', text: r.counterpart }), r.memo ? h('span', { class: 'lg-memo', text: r.memo }) : null),
+              amountCell('td', r.debit, { blankZero: true }),
+              amountCell('td', r.credit, { blankZero: true }),
+              amountCell('td', r.balance),
+            ),
+          ),
+        ),
+        h('tfoot', {}, h('tr', {}, h('th', { colspan: 2, text: '期間計' }), amountCell('td', lg.debit), amountCell('td', lg.credit), amountCell('td', lg.closing))),
+      ),
+    ),
+    lg.rows.length || !showEmpty ? null : emptyState('この期間の取引はありません', null, { face: null }),
+  );
 }

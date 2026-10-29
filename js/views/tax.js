@@ -7,6 +7,7 @@ import { isAdjusting } from '../monthly.js';
 import { taxByAccountCsv, taxMonthlyCsv, csvFileName } from '../csv.js';
 import { monthsInPeriod } from '../period.js';
 import { monthRangePicker } from './report-common.js';
+import { journalLabel } from '../journal.js';
 
 const TABS = [
   { value: 'summary', label: '税区分別' },
@@ -142,7 +143,7 @@ export async function render({ app, outlet, query }) {
                     'span',
                     { class: 'acc-main' },
                     h('span', { class: 'acc-title', text: `${x.level === 'warn' ? '⚠ ' : ''}${x.message}` }),
-                    h('span', { class: 'muted small', text: `${slash(x.journal.date)}　No.${x.journal.no ?? ''}　${x.line.side === 'debit' ? '借方' : '貸方'} ${x.account.name}　${yen(x.line.amount)}円` }),
+                    h('span', { class: 'muted small', text: `${slash(x.journal.date)}　${journalLabel(x.journal)}　${x.line.side === 'debit' ? '借方' : '貸方'} ${x.account.name}　${yen(x.line.amount)}円` }),
                     h('span', { class: 'muted small', text: `税区分：${labelOf(x.line.taxCategory)}${x.type === 'default_diff' ? `（科目の初期値：${labelOf(x.account.defaultTaxCategory)}）` : ''}${x.line.memo ? `　${x.line.memo}` : ''}` }),
                   ),
                 ),

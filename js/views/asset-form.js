@@ -25,6 +25,7 @@ import { todayString } from '../period.js';
 import { createAsset } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { journalLabel } from '../journal.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 /** 半角・全角の数字だけの入力を整数に（それ以外は null） */
@@ -280,7 +281,7 @@ export async function render({ app, outlet, params, query = {} }) {
         { class: 'panel disposal-done' },
         h('h3', { class: 'section-title', text: original.disposalType === 'sell' ? '売却済み' : '除却済み' }),
         h('p', { class: 'small', text: `${slash(original.disposedOn)} に${original.disposalType === 'sell' ? `${(original.salePrice ?? 0).toLocaleString('ja-JP')}円で売却` : '除却'}しました。` }),
-        disposals.length ? h('p', { class: 'small' }, '仕訳：', disposals.map((j) => h('a', { class: 'link', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no} ` }))) : h('p', { class: 'muted small', text: '仕訳はありません（この期間に登録していない、または帳簿価額が0円）。' }),
+        disposals.length ? h('p', { class: 'small' }, '仕訳：', disposals.map((j) => h('a', { class: 'link', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)} ` }))) : h('p', { class: 'muted small', text: '仕訳はありません（この期間に登録していない、または帳簿価額が0円）。' }),
         h('button', { type: 'button', class: 'btn btn-danger-text', text: '売却・除却を取り消す', onclick: undoDisposal }),
       )
     : h('div', {}, splitLocked ? null : disposedField, original && canDispose(original) ? h('a', { class: 'btn btn-block', href: `#/asset/${encodeURIComponent(original.id)}/dispose`, text: '売却・除却する（全部・一部。仕訳も作る）' }) : null);

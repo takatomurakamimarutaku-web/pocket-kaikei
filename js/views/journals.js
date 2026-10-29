@@ -1,6 +1,6 @@
-// 仕訳帳：月別表示・検索・CSV 出力。タップで編集
-import { h, put, emptyState, saveFile, showToast, field } from '../ui.js';
-import { compareJournals, matchJournal, linesToRows } from '../journal.js';
+// 仕訳帳：月別表示・並び順（日付順・入力順・伝票No順）・検索・CSV 出力。タップで編集
+import { h, put, emptyState, saveFile, showToast, field, segmented } from '../ui.js';
+import { JOURNAL_ORDERS, matchJournal, linesToRows, voucherOf, parseVoucherNo } from '../journal.js';
 import { monthsInPeriod, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { TAX_BY_CODE } from '../tax.js';
@@ -20,8 +20,10 @@ export async function render({ app, outlet, query }) {
   const today = todayString().slice(0, 7);
   let month = query.month === 'all' ? 'all' : months.includes(query.month) ? query.month : months.includes(today) ? today : months[0];
   let q = query.q || '';
+  // 並び順：日付順（同じ日は伝票No順）・入力順（入力No）・伝票No順。印刷・CSV もこの順
+  let order = Object.hasOwn(JOURNAL_ORDERS, query.order) ? query.order : 'date';
   // 詳しい検索（優良な電子帳簿の要件：日付・金額の範囲指定、取引先、2つ以上の項目の組合せ）
-  const crit = { dateFrom: '', dateTo: '', amountMin: null, amountMax: null, accountId: '', party: '' };
+  const crit = { dateFrom: '', dateTo: '', amountMin: null, amountMax: null, accountId: '', party: '', voucherFrom: null, voucherTo: null };
 
   const list = h('div', { class: 'journal-list' });
   const meta = h('p', { class: 'list-meta' });
@@ -57,6 +59,7 @@ export async function render({ app, outlet, query }) {
     const params = new URLSearchParams();
     params.set('month', month);
     if (q) params.set('q', q);
+    if (order !== 'date') params.set('order', order);
     history.replaceState(history.state, '', `#/journals?${params}`);
   }
 
@@ -65,7 +68,7 @@ export async function render({ app, outlet, query }) {
     // 詳しい検索の条件があるときは、会計期間の全体から探す
     const adv = hasCriteria(crit);
     const base = journals.filter((j) => (adv || month === 'all' || j.date.startsWith(month)) && matchJournal(j, q, ctx));
-    return (adv ? searchJournals(base, crit, ctx) : base).sort(compareJournals);
+    return (adv ? searchJournals(base, crit, ctx) : base).sort(JOURNAL_ORDERS[order]);
   }
 
   const advInput = (key, attrs) =>
@@ -78,6 +81,10 @@ export async function render({ app, outlet, query }) {
           const r = v === '' ? null : parseYen(v, { allowZero: true });
           if (r && !r.ok) return;
           crit[key] = r ? r.value : null;
+        } else if (key === 'voucherFrom' || key === 'voucherTo') {
+          const r = v === '' ? null : parseVoucherNo(v);
+          if (r && !r.ok) return;
+          crit[key] = r ? r.value : null;
         } else crit[key] = v;
         paint();
       },
@@ -86,7 +93,7 @@ export async function render({ app, outlet, query }) {
   const advanced = h(
     'details',
     { class: 'panel adv-search no-print' },
-    h('summary', { text: '詳しく検索（日付・金額の範囲・取引先・科目）' }),
+    h('summary', { text: '詳しく検索（日付・金額の範囲・取引先・科目・伝票No）' }),
     h('div', { class: 'field-row' }, field('日付（から）', advInput('dateFrom', { type: 'date', min: period.startDate, max: period.endDate })), field('日付（まで）', advInput('dateTo', { type: 'date', min: period.startDate, max: period.endDate }))),
     h('div', { class: 'field-row' }, field('金額（以上）', advInput('amountMin', { type: 'text', inputmode: 'numeric', placeholder: '0' })), field('金額（以下）', advInput('amountMax', { type: 'text', inputmode: 'numeric', placeholder: '上限なし' }))),
     field('取引先', advInput('party', { type: 'text', placeholder: '補助科目・摘要に含まれる名前' })),
@@ -94,6 +101,7 @@ export async function render({ app, outlet, query }) {
       '科目',
       h('select', { id: 'adv-accountId', onchange: (e) => ((crit.accountId = e.target.value), paint()) }, [h('option', { value: '', text: 'すべての科目' }), ...accountOptions.map((a) => h('option', { value: a.id, text: `${a.code} ${a.name}` }))]),
     ),
+    h('div', { class: 'field-row' }, field('伝票No（から）', advInput('voucherFrom', { type: 'text', inputmode: 'numeric' })), field('伝票No（まで）', advInput('voucherTo', { type: 'text', inputmode: 'numeric' }))),
     h('p', { class: 'muted small', text: '入力した条件をすべて満たす仕訳を、会計期間の全体から探します。上の検索欄とも組み合わせられます。' }),
   );
 
@@ -108,7 +116,7 @@ export async function render({ app, outlet, query }) {
     meta.textContent = `${hasCriteria(crit) ? '詳しい検索：会計期間の全体から ' : ''}${items.length}件・借方合計 ${formatYen(total)}円`;
     put(list, 
       ...(items.length
-        ? items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0, departmentById }))
+        ? items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0, departmentById, showInputNo: order === 'input' }))
         : [emptyState(journals.length ? '条件に合う仕訳はありません' : 'まだ仕訳がありません', journals.length ? null : h('a', { href: '#/entry', class: 'btn btn-primary', text: '取引を入力する' }))]),
     );
   }
@@ -116,6 +124,24 @@ export async function render({ app, outlet, query }) {
   put(outlet, 
     h('div', { class: 'month-bar' }, prev, monthLabel, next, allBtn),
     h('div', { class: 'search-bar' }, search),
+    h(
+      'div',
+      { class: 'journal-order no-print' },
+      segmented({
+        name: '並び順',
+        options: [
+          { value: 'date', label: '日付順' },
+          { value: 'input', label: '入力順' },
+          { value: 'voucher', label: '伝票No順' },
+        ],
+        value: order,
+        onChange: (v) => {
+          order = v;
+          paint();
+          syncUrl();
+        },
+      }),
+    ),
     advanced,
     meta,
     list,
@@ -139,8 +165,11 @@ export async function render({ app, outlet, query }) {
   paint();
 }
 
-/** 仕訳1件のカード（振替伝票の行を並べる）。attachments：添付した証憑の件数 */
-export function journalCard(j, accountById, subById, { attachments = 0, departmentById = new Map() } = {}) {
+/**
+ * 仕訳1件のカード（振替伝票の行を並べる）。attachments：添付した証憑の件数
+ * showInputNo：入力No も出す（入力順のとき。伝票No と入力No が違う仕訳はいつも出す）
+ */
+export function journalCard(j, accountById, subById, { attachments = 0, departmentById = new Map(), showInputNo = false } = {}) {
   const sideCell = (s) => {
     if (!s.accountId) return h('div', { class: 'jc-side jc-empty' });
     const acc = accountById.get(s.accountId);
@@ -166,7 +195,7 @@ export function journalCard(j, accountById, subById, { attachments = 0, departme
       { class: 'jc-head' },
       h('span', { class: 'jc-date', text: j.date.slice(5).replace('-', '/') }),
       attachments ? h('span', { class: 'jc-attach', title: `証憑${attachments}件`, 'aria-label': `証憑${attachments}件` }, icon('attach'), attachments > 1 ? String(attachments) : null) : null,
-      h('span', { class: 'jc-no', text: `No.${j.no}` }),
+      h('span', { class: 'jc-no' }, `伝票No.${voucherOf(j)}`, showInputNo || voucherOf(j) !== j.no ? h('span', { class: 'jc-input-no', text: `入力No.${j.no}` }) : null),
     ),
     h(
       'div',

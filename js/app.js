@@ -27,6 +27,7 @@ import * as bankImportView from './views/bank-import.js';
 import * as bankRulesView from './views/bank-rules.js';
 import * as reportsView from './views/reports.js';
 import * as ledgerView from './views/ledger.js';
+import * as subLedgerView from './views/sub-ledger.js';
 import * as trialView from './views/trial.js';
 import * as monthlyView from './views/monthly.js';
 import * as trialMonthlyView from './views/trial-monthly.js';
@@ -81,6 +82,7 @@ const routes = [
   { path: '/template/:id', view: journalFormView, kind: 'template', title: '定型仕訳の編集', tab: 'entry', back: '#/templates' },
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
   { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/sub-ledger', view: subLedgerView, title: '補助元帳', tab: 'reports', back: '#/reports', print: true },
   { path: '/receivables', view: receivablesView, title: '売掛金・買掛金', tab: 'reports', back: '#/reports' },
   { path: '/receivables/party', view: receivablesView, kind: 'party', title: '取引先', tab: 'reports', back: '#/receivables' },
   { path: '/reports/checks', view: checksView, title: '仕訳のチェック', tab: 'reports', back: '#/reports', print: true },

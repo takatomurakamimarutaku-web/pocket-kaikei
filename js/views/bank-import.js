@@ -20,7 +20,7 @@ import {
 } from '../bank-import.js';
 import { compareAccounts, findByHint } from '../accounts.js';
 import { isCashAccount } from '../quick.js';
-import { validateJournal } from '../journal.js';
+import { validateJournal, voucherOf } from '../journal.js';
 import { formatYen } from '../money.js';
 import { isInPeriod } from '../period.js';
 import { createJournal } from '../models.js';
@@ -282,7 +282,7 @@ export async function render({ app, outlet, query, route }) {
     try {
       const done = await app.db.saveJournals(journalsToSave);
       await app.db.setMeta(metaKey, { accountId: bank.accountId, subAccountId: bank.subAccountId, mappings: { ...saved.mappings, [file.signature]: mapping } });
-      showToast(`${done.length}件の仕訳を登録しました（No.${done[0].no}〜${done[done.length - 1].no}）`, { duration: 5000 });
+      showToast(`${done.length}件の仕訳を登録しました（伝票No.${voucherOf(done[0])}〜${voucherOf(done[done.length - 1])}）`, { duration: 5000 });
       const p = new URLSearchParams({ account: bank.accountId, ...(cardMode ? {} : { month: 'all' }), ...(bank.subAccountId ? { sub: bank.subAccountId } : {}) });
       app.navigate(cardMode ? `#/reports/ledger?${p}` : `#/cashbook?${p}`);
     } catch (e) {

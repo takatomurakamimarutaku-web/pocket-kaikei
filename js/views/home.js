@@ -14,6 +14,7 @@ import { findDepreciationJournals } from '../depreciation.js';
 import { icon } from '../icons.js';
 import { PARTY_KINDS, partyBalances } from '../receivables.js';
 import { periodContext, closedNotice } from './period-common.js';
+import { journalLabel } from '../journal.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 const dayMs = 86400000;
@@ -160,7 +161,7 @@ export async function render({ app, outlet }) {
                 h(
                   'a',
                   { class: 'recent-row', href: `#/journal/${encodeURIComponent(j.id)}/edit` },
-                  h('span', { class: 'recent-date' }, h('span', { text: `${Number(j.date.slice(5, 7))}/${Number(j.date.slice(8))}` }), h('span', { class: 'recent-no', text: `No.${j.no}` })),
+                  h('span', { class: 'recent-date' }, h('span', { text: `${Number(j.date.slice(5, 7))}/${Number(j.date.slice(8))}` }), h('span', { class: 'recent-no', text: journalLabel(j) })),
                   h('span', { class: 'recent-main' }, h('span', { class: 'recent-acc', text: `${nameOf(j, 'debit')} / ${nameOf(j, 'credit')}` }), memo ? h('span', { class: 'recent-memo', text: memo }) : null),
                   h('span', { class: 'recent-amt num', text: formatYen(amount) }),
                 ),

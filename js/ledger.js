@@ -147,9 +147,12 @@ export function counterpartName(journal, line, accountById, subById) {
   return sub ? `${name}（${sub}）` : name;
 }
 
+/** 補助元帳で「補助科目なし」の明細だけを選ぶときの subAccountId */
+export const NO_SUB = '__none__';
+
 /**
- * 総勘定元帳（subAccountId を渡すと補助元帳）
- * @returns {{ account, carried, rows:[{journal, date, no, counterpart, memo, debit, credit, balance}], debit, credit, closing }}
+ * 総勘定元帳（subAccountId を渡すと補助元帳。NO_SUB なら補助科目の付いていない明細だけ）
+ * @returns {{ account, carried, rows:[{journal, date, no, voucherNo, counterpart, memo, debit, credit, balance}], debit, credit, closing }}
  *   carried：from 時点の繰越残高（残高側）
  */
 export function generalLedger({ accountId, subAccountId = null, accounts, subAccounts = [], period, journals, from = period.startDate, to = period.endDate }) {
@@ -157,10 +160,11 @@ export function generalLedger({ accountId, subAccountId = null, accounts, subAcc
   const subById = new Map(subAccounts.map((s) => [s.id, s]));
   const account = accountById.get(accountId);
   if (!account) throw new Error('勘定科目が見つかりません');
-  const match = (l) => l.accountId === accountId && (!subAccountId || l.subAccountId === subAccountId);
+  const subMatch = (id) => !subAccountId || (subAccountId === NO_SUB ? !id : id === subAccountId);
+  const match = (l) => l.accountId === accountId && subMatch(l.subAccountId);
   let dc = 0;
   for (const ob of period.openingBalances || []) {
-    if (ob.accountId === accountId && (!subAccountId || ob.subAccountId === subAccountId)) dc += fromNormal(ob.amount, account);
+    if (ob.accountId === accountId && subMatch(ob.subAccountId)) dc += fromNormal(ob.amount, account);
   }
   const sorted = journals.filter((j) => j.date >= period.startDate && j.date <= to).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no));
   const rows = [];
@@ -179,6 +183,7 @@ export function generalLedger({ accountId, subAccountId = null, accounts, subAcc
         journal: j,
         date: j.date,
         no: j.no,
+        voucherNo: j.voucherNo ?? j.no,
         counterpart: counterpartName(j, l, accountById, subById),
         memo: l.memo || '',
         debit: l.side === 'debit' ? l.amount : 0,
@@ -200,6 +205,24 @@ export function generalLedgers({ accounts, subAccounts = [], period, journals, f
     .sort(compareAccounts)
     .map((a) => generalLedger({ accountId: a.id, accounts, subAccounts, period, journals, from, to }))
     .filter((lg) => lg.rows.length || lg.carried || lg.closing);
+}
+
+/**
+ * 補助元帳：1つの科目の補助科目ごとの元帳（補助科目の並び順）と、補助科目の付いていない明細の元帳
+ * 期間に取引があるか、繰越・期末の残高があるものだけ（includeEmpty なら補助科目はすべて）
+ * 補助科目ごとの元帳の合計は、その科目の総勘定元帳と一致する
+ * @returns {Array<ReturnType<typeof generalLedger> & { subAccount: object|null, subName: string }>}
+ */
+export function subLedgers({ accountId, accounts, subAccounts = [], period, journals, from = period.startDate, to = period.endDate, includeEmpty = false }) {
+  const ctx = { accountId, accounts, subAccounts, period, journals, from, to };
+  const subs = subAccounts.filter((s) => s.accountId === accountId).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.name).localeCompare(String(b.name), 'ja'));
+  const hasAmount = (lg) => lg.rows.length || lg.carried || lg.closing;
+  const out = subs
+    .map((s) => ({ ...generalLedger({ ...ctx, subAccountId: s.id }), subAccount: s, subName: s.name }))
+    .filter((lg) => includeEmpty || hasAmount(lg));
+  const none = { ...generalLedger({ ...ctx, subAccountId: NO_SUB }), subAccount: null, subName: '補助科目なし' };
+  if (hasAmount(none)) out.push(none);
+  return out;
 }
 
 /** 繰越行の名前（期首からなら「前期繰越」、途中の月からなら「前月繰越」） */

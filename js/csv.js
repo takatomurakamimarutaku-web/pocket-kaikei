@@ -19,14 +19,14 @@ export function toCsv(rows) {
 }
 
 /**
- * 仕訳帳。振替伝票の行単位（複合仕訳は同じ No. で複数行）
+ * 仕訳帳。振替伝票の行単位（複合仕訳は同じ伝票No. で複数行）。最後の列は入力No.（登録した順の番号で、変わらない）
  */
 export function journalsCsv(journals, { accountById, subById, departmentById = new Map() }) {
   // 部門を登録しているときだけ、補助の次に部門の列を入れる
   const dep = departmentById.size > 0;
   const header = dep
-    ? ['No.', '日付', '借方科目', '借方補助', '借方部門', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方部門', '貸方税区分', '貸方金額', '摘要']
-    : ['No.', '日付', '借方科目', '借方補助', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方税区分', '貸方金額', '摘要'];
+    ? ['伝票No.', '日付', '借方科目', '借方補助', '借方部門', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方部門', '貸方税区分', '貸方金額', '摘要', '入力No.']
+    : ['伝票No.', '日付', '借方科目', '借方補助', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方税区分', '貸方金額', '摘要', '入力No.'];
   const side = (s) => {
     if (!s.accountId) return dep ? ['', '', '', '', ''] : ['', '', '', ''];
     const cat = TAX_BY_CODE[s.taxCategory];
@@ -36,7 +36,7 @@ export function journalsCsv(journals, { accountById, subById, departmentById = n
   };
   const rows = [header];
   for (const j of journals) {
-    for (const r of linesToRows(j.lines)) rows.push([j.no, j.date.replaceAll('-', '/'), ...side(r.debit), ...side(r.credit), r.memo]);
+    for (const r of linesToRows(j.lines)) rows.push([j.voucherNo ?? j.no, j.date.replaceAll('-', '/'), ...side(r.debit), ...side(r.credit), r.memo, j.no]);
   }
   return toCsv(rows);
 }
@@ -58,15 +58,17 @@ export function trialBalanceCsv(tb, entityType, { includeSubs = true } = {}) {
 }
 
 /**
- * 総勘定元帳・出納帳（ledger.generalLedger の結果の配列）。科目ごとに繰越の行、取引の行を続ける
+ * 総勘定元帳・補助元帳・出納帳（ledger.generalLedger の結果の配列）。科目ごとに繰越の行、取引の行を続ける
+ * 補助科目の列は、元帳ごとの subName（補助元帳）か、opts の subName
+ * 最後の列の入力No. は仕訳帳の入力No. と同じ（帳簿どうしを結びつける番号）
  * @param {{ carried: string, debitLabel?: string, creditLabel?: string, subName?: string }} opts carried：繰越行の名前（前期繰越・前月繰越）
  */
 export function ledgerCsv(ledgers, { carried, debitLabel = '借方', creditLabel = '貸方', subName = '' }) {
-  const rows = [['コード', '勘定科目', '補助科目', '日付', 'No.', '相手科目', '摘要', debitLabel, creditLabel, '残高']];
+  const rows = [['コード', '勘定科目', '補助科目', '日付', '伝票No.', '相手科目', '摘要', debitLabel, creditLabel, '残高', '入力No.']];
   for (const lg of ledgers) {
-    const head = [lg.account.code, lg.account.name, subName];
-    rows.push([...head, '', '', carried, '', '', '', lg.carried]);
-    for (const r of lg.rows) rows.push([...head, r.date.replaceAll('-', '/'), r.no, r.counterpart, r.memo, r.debit || '', r.credit || '', r.balance]);
+    const head = [lg.account.code, lg.account.name, lg.subName ?? subName];
+    rows.push([...head, '', '', carried, '', '', '', lg.carried, '']);
+    for (const r of lg.rows) rows.push([...head, r.date.replaceAll('-', '/'), r.voucherNo ?? r.no, r.counterpart, r.memo, r.debit || '', r.credit || '', r.balance, r.no]);
   }
   return toCsv(rows);
 }
@@ -222,10 +224,10 @@ export function propertyTaxCsv(r) {
  */
 export function attachmentsCsv(list, { journalById, kindLabels, fileName }) {
   const slash = (d) => (d ? d.replaceAll('-', '/') : '');
-  const rows = [['取引年月日', '取引金額', '取引先', '種類', '保存用のファイル名', '元のファイル名', '大きさ（バイト）', 'SHA-256', '仕訳No.', '仕訳の日付', 'メモ', '登録日時']];
+  const rows = [['取引年月日', '取引金額', '取引先', '種類', '保存用のファイル名', '元のファイル名', '大きさ（バイト）', 'SHA-256', '伝票No.', '仕訳の日付', 'メモ', '登録日時']];
   for (const a of list) {
     const j = a.journalId ? journalById.get(a.journalId) : null;
-    rows.push([slash(a.date), a.amount ?? '', a.partner, kindLabels[a.kind] ?? a.kind, fileName(a), a.name, a.size, a.sha256, j ? j.no : '', j ? slash(j.date) : '', a.memo, a.createdAt]);
+    rows.push([slash(a.date), a.amount ?? '', a.partner, kindLabels[a.kind] ?? a.kind, fileName(a), a.name, a.size, a.sha256, j ? (j.voucherNo ?? j.no) : '', j ? slash(j.date) : '', a.memo, a.createdAt]);
   }
   return toCsv(rows);
 }
@@ -234,10 +236,10 @@ export function attachmentsCsv(list, { journalById, kindLabels, fileName }) {
  * 積上げ計算の明細（tax-return.js の stackedDetail）。明細ごとの税込金額と消費税額等
  */
 export function stackedTaxCsv(rows, { accountById, subById }) {
-  const header = ['日付', 'No.', '売上・仕入', '科目', '補助科目', '税区分', '摘要', '税込金額', '消費税額等', '経過措置の割合', '経過措置で控除する国税'];
+  const header = ['日付', '伝票No.', '売上・仕入', '科目', '補助科目', '税区分', '摘要', '税込金額', '消費税額等', '経過措置の割合', '経過措置で控除する国税'];
   const body = rows.map((r) => [
     r.journal.date.replaceAll('-', '/'),
-    r.journal.no,
+    r.journal.voucherNo ?? r.journal.no,
     r.side === 'sales' ? '売上' : '仕入',
     accountById.get(r.line.accountId)?.name ?? '',
     subById.get(r.line.subAccountId)?.name ?? '',

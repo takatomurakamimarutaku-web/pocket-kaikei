@@ -4,7 +4,7 @@ import { h, put, field, segmented, showToast, errorBox, amountCell, saveFile } f
 import { computeTaxReturn, TAX_METHODS, BUSINESS_TYPES, ALLOCATIONS, TAX_CALCS, ROUNDINGS, stackedDetail, consumptionTaxLines } from '../tax-return.js';
 import { taxReturnForms } from '../tax-forms.js';
 import { taxFormsCsv, stackedTaxCsv, csvFileName } from '../csv.js';
-import { validateJournal } from '../journal.js';
+import { validateJournal, journalLabel } from '../journal.js';
 import { parseYen, formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 import { createJournal } from '../models.js';
@@ -319,7 +319,7 @@ export async function render({ app, outlet, query = {} }) {
         'section',
         { class: 'panel no-print' },
         title,
-        h('p', {}, '消費税等の仕訳は登録済みです（', h('a', { class: 'link', href: `#/journal/${encodeURIComponent(done[0].id)}/edit`, text: `No.${done[0].no}` }), '）。'),
+        h('p', {}, '消費税等の仕訳は登録済みです（', h('a', { class: 'link', href: `#/journal/${encodeURIComponent(done[0].id)}/edit`, text: journalLabel(done[0]) }), '）。'),
         booked !== r.payable ? h('p', { class: 'notice', text: `いまの計算の納付税額（${formatYen(r.payable)}円）と仕訳の金額（${formatYen(booked)}円）が違います。仕訳を直してください。` }) : null,
       );
     }
@@ -342,7 +342,7 @@ export async function render({ app, outlet, query = {} }) {
     try {
       await saveSettings();
       const saved = await app.db.saveJournal(journal);
-      showToast(`消費税等の仕訳（No.${saved.no}）を登録しました`);
+      showToast(`消費税等の仕訳（${journalLabel(saved)}）を登録しました`);
       app.refresh();
     } catch (e) {
       put(errorsEl, errorBox(e instanceof ValidationError ? (Array.isArray(e.errors) ? e.errors : Object.values(e.errors)) : [errorText(e, '保存')]));

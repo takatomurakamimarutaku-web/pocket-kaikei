@@ -3,7 +3,7 @@ import { h, put, field, segmented, showToast, errorBox, amountCell } from '../ui
 import { disposalLines, bookValueAt, canDispose, canSplit, splitAsset } from '../asset-tools.js';
 import { CATEGORY_BY_ID, METHOD_BY_ID, methodLabel } from '../depreciation.js';
 import { compareAccounts } from '../accounts.js';
-import { validateJournal } from '../journal.js';
+import { validateJournal, journalLabel } from '../journal.js';
 import { TAX_BY_CODE } from '../tax.js';
 import { parseYen, formatYen } from '../money.js';
 import { todayString } from '../period.js';
@@ -209,7 +209,7 @@ export async function render({ app, outlet, params, query = {} }) {
     try {
       const disposal = { disposedOn: state.date, disposalType: state.type, salePrice: state.type === 'sell' ? state.price : null };
       const res = sp ? await app.db.partialDisposeAsset(sp.original, { ...sp.part, ...disposal }, journal) : await app.db.disposeAsset({ ...asset, ...disposal }, journal);
-      showToast(res.journal ? `${state.type === 'sell' ? '売却' : '除却'}の仕訳（No.${res.journal.no}）を登録しました` : '登録しました');
+      showToast(res.journal ? `${state.type === 'sell' ? '売却' : '除却'}の仕訳（${journalLabel(res.journal)}）を登録しました` : '登録しました');
       app.goBack('#/assets');
     } catch (e) {
       put(errorsEl, errorBox(e instanceof ValidationError ? (Array.isArray(e.errors) ? e.errors : Object.values(e.errors)) : [errorText(e, '保存')]));
