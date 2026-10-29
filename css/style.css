@@ -1175,3 +1175,46 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
   .ws-block-title { color: #333; }
   .ws-cell { min-height: 2.8em; }
 }
+
+/* 法人税の申告（別表） */
+.ct-tools { margin-bottom: var(--sp-3); }
+.ct-section > .tf-title:first-child { margin-top: 4px; }
+.ct-table th[scope="row"] { min-width: 11em; }
+.ct-table td.num { white-space: nowrap; }
+/* 列の多い表は、横に送っても項目名が見えるよう1列目を固定する */
+.ct-table tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--separator); }
+.ct-table thead tr > :first-child { z-index: 2; background: var(--surface-2); }
+.ct-table .mt-strong > :first-child, .ct-table .ct-heading > :first-child { background: var(--surface-2); }
+.ct-s4, .ct-s5, .ct-s52, .ct-s7, .ct-dues { font-size: 0.74rem; }
+.ct-s4 th[scope="row"], .ct-s5 th[scope="row"], .ct-s52 th[scope="row"], .ct-s7 th[scope="row"] { min-width: 7.5em; max-width: 10em; }
+.ct-s4 td.num, .ct-s5 td.num, .ct-s52 td.num, .ct-s7 td.num { padding-left: 4px; padding-right: 4px; }
+.ct-s7 thead th { white-space: normal; vertical-align: bottom; }
+.ct-s52 thead th { white-space: normal; min-width: 5.2em; vertical-align: bottom; }
+.ct-dues th[scope="row"] { min-width: 6em; }
+.ct-formula { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ct-heading th { background: var(--surface-2); font-size: 0.72rem; font-weight: 800; color: var(--muted); text-align: left; }
+.ct-note { display: block; font-size: 0.66rem; color: var(--muted); font-weight: 400; }
+.ct-check { margin: var(--sp-3) 0; }
+.ct-check p { margin: 0; }
+.ct-check p + p { margin-top: 4px; overflow-wrap: anywhere; }
+.ct-check.ok .strong { color: var(--primary-strong); }
+.ct-check.ng .strong { color: var(--negative); }
+.ct-rows { display: grid; gap: 8px; margin-bottom: var(--sp-2); }
+.ct-rows > .btn { justify-self: start; }
+.ct-row { display: grid; gap: 6px; align-items: center; }
+.ct-row > * { min-width: 0; }
+.ct-adj { grid-template-columns: 5em 6.8em minmax(0, 1fr) 40px; padding: 8px; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface); }
+.ct-adj > input[list] { grid-column: 1 / -1; }
+.ct-loss { grid-template-columns: minmax(0, 1fr) 8.5em 40px; }
+.ct-open { grid-template-columns: minmax(0, 1fr) 8.5em 40px; }
+.ct-taxes { display: grid; grid-template-columns: minmax(0, 1fr) 7.5em 7.5em; gap: 6px 8px; align-items: center; margin-bottom: var(--sp-3); }
+.ct-taxes > * { min-width: 0; }
+.ct-taxes-head { font-size: 0.72rem; font-weight: 700; color: var(--muted); }
+.ct-taxes-label { font-size: 0.85rem; }
+.ct-taxes-link { overflow-wrap: anywhere; }
+@media print {
+  .ct-section[hidden] { display: block !important; }
+  .ct-section { break-inside: auto; }
+  .ct-section + .ct-section { break-before: page; }
+  .ct-check { border: 1px solid #999; }
+}

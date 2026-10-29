@@ -9,6 +9,7 @@ import { formatYen, parseYen } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { isWhite } from '../white-return.js';
+import { corporateTaxReturn } from '../corporate-tax.js';
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
@@ -17,6 +18,8 @@ export async function render({ app, outlet }) {
   const { pl } = buildStatements({ entityType: settings.entityType, accounts, period, journals, white });
   const input = { ...DEFAULT_ENTERPRISE_TAX, ...(period.enterpriseTax || {}) };
   const months = periodMonths(period);
+  // 法人の所得金額の既定は、法人税の申告の別表四の所得金額（欠損金の繰越控除を含む）
+  const schedule4Income = corp ? corporateTaxReturn({ accounts, period, journals, input: period.corporateTax || {}, enterpriseInput: period.enterpriseTax || {} }).schedule4.income.total : 0;
   const resultEl = h('div');
   const errorsEl = h('div');
 
@@ -49,7 +52,7 @@ export async function render({ app, outlet }) {
   }
 
   function corporateView() {
-    const autoIncome = pl.profits.pretax;
+    const autoIncome = schedule4Income;
     const income = Number.isInteger(input.income) ? input.income : autoIncome;
     const r = corporateEnterpriseTax({ ...input, income, months });
     const tierNo = ['㉙', '㉚', '㉛'];
@@ -62,7 +65,7 @@ export async function render({ app, outlet }) {
       ),
       h('h3', { class: 'tf-title', text: '第六号様式（所得割・特別法人事業税の欄）' }),
       table('法人事業税', [
-        row('㉘', '所得金額総額（課税標準）', r.base, { sub: Number.isInteger(input.income) ? '入力した所得金額（1,000円未満切捨て）' : '税引前当期純利益（1,000円未満切捨て）。法人税申告書 別表四の所得金額に置き換えてください' }),
+        row('㉘', '所得金額総額（課税標準）', r.base, { sub: Number.isInteger(input.income) ? '入力した所得金額（1,000円未満切捨て）' : '法人税の申告（別表四）の所得金額（1,000円未満切捨て）' }),
         ...r.rows.map((x, i) => row(r.reduced ? tierNo[i] : '㉜', x.label, x.amount, { rate: x.rate, sub: r.reduced && months < 12 && i < 2 ? `月割：${formatYen(r.limits[i])}円まで（${months}か月）` : '' })),
         row('', '所得割の税額', r.incomeTax, { strong: true, sub: '各区分の税額の合計（100円未満切捨て）' }),
         row('', '中間納付額', -r.interimTax),
@@ -93,7 +96,7 @@ export async function render({ app, outlet }) {
       });
     const reduced = h('input', { type: 'checkbox', checked: input.reduced, onchange: (e) => ((input.reduced = e.target.checked), paint()) });
     return [
-      field('所得金額（法人税の所得）', yenInput('et-income', 'income', `空欄なら税引前当期純利益 ${formatYen(pl.profits.pretax)}`), { hint: '法人税申告書 別表四の「所得金額又は欠損金額」を入れると正確になります' }),
+      field('所得金額（法人税の所得）', yenInput('et-income', 'income', `空欄なら別表四の所得金額 ${formatYen(schedule4Income)}`), { hint: '空欄なら「法人税の申告」の別表四の所得金額を使います（欠損金の繰越控除も反映）' }),
       h('label', { class: 'check small' }, reduced, '軽減税率を適用する（3以上の都道府県に事務所があり資本金1,000万円以上の法人は外す）'),
       h('div', { class: 'field-row et-rates' }, field('400万円以下（%）', rateInput(0)), field('800万円以下（%）', rateInput(1)), field('800万円超（%）', rateInput(2))),
       h('p', { class: 'muted small', text: `標準税率は ${STANDARD_RATES.map(formatPercent).join('%・')}%。東京都などの超過税率は都道府県の税率表で確認してください。` }),
@@ -162,7 +165,7 @@ export async function render({ app, outlet }) {
       corp
         ? [
             h('p', { text: '資本金1億円以下の普通法人（外形標準課税の対象外）の所得割を計算します。所得割の税率は標準税率（年400万円以下3.5%・800万円以下5.3%・800万円超7.0%）、特別法人事業税は基準法人所得割額の37%です（地方税法 第72条の24の7、特別法人事業税及び特別法人事業譲与税に関する法律 第7条）。' }),
-            h('p', { text: '対応していないもの：外形標準課税（付加価値割・資本割）、収入金額課税の法人、複数の都道府県への分割（第十号様式）、法人住民税（均等割・法人税割）、欠損金の繰越控除の計算（所得金額に反映して入力してください）。' }),
+            h('p', { text: '対応していないもの：外形標準課税（付加価値割・資本割）、収入金額課税の法人、複数の都道府県への分割（第十号様式）。法人住民税と、欠損金の繰越控除を反映した所得金額は「法人税の申告」の画面で計算します。' }),
           ]
         : [
             h('p', { text: '課税標準＝所得金額（青色申告特別控除前）−損失の繰越控除など−事業主控除（年290万円・1年未満は月割）。税率は第1種事業5%・第2種事業4%・第3種事業5%（あん摩・はり・きゅう等は3%）。' }),

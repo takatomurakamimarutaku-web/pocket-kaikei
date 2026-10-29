@@ -1,0 +1,293 @@
+// 法人税の計算の条件：中小法人の区分・配当・交際費・別表四の加算減算・税額控除・繰越欠損金・前期分と中間納付の税額・住民税・別表五(一)の期首
+import { h, put, field, showToast, confirmDialog, errorBox } from '../ui.js';
+import { ValidationError } from '../db.js';
+import { errorText } from '../errors.js';
+import { parseYen, formatYen } from '../money.js';
+import { formatPeriod, periodMonths } from '../period.js';
+import { previousPeriod } from '../closing.js';
+import { formatPercent, parsePercent } from '../enterprise-tax.js';
+import { corporateTaxReturn, carryOverInput, cleanCorporateTax, validateCorporateTax, TAX_KINDS, ADJUSTMENT_PRESETS, RESIDENT_DEFAULTS, TOKYO_DEFAULTS, MAX_ROWS, MAX_LOSS_ROWS, MAX_LABEL, DEFENSE_FROM } from '../corporate-tax.js';
+
+/** 金額の欄 */
+const yenBox = (id, value, { placeholder = '0', label } = {}) => h('input', { id, type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: value ? String(value) : '', placeholder, 'aria-label': label });
+
+/** 金額の欄を読む（空欄は empty の値） */
+function readYen(input, label, errors, { allowNegative = false, empty = 0 } = {}) {
+  const s = String(input.value).trim();
+  if (!s) return empty;
+  const r = parseYen(s, { allowNegative, allowZero: true });
+  if (!r.ok) {
+    errors.push(`${label}：${r.error}`);
+    return 0;
+  }
+  return r.value;
+}
+
+export async function render({ app, outlet }) {
+  const { settings, period, accounts, journals } = await app.load();
+  if (settings.entityType !== 'corporation') return put(outlet, h('p', { class: 'notice', text: '法人税の申告は法人で使います' }));
+  const v = cleanCorporateTax(period.corporateTax || {});
+  const current = corporateTaxReturn({ accounts, period, journals, input: { ...v, entertainment: null }, enterpriseInput: period.enterpriseTax || {} });
+  const defenseApplies = period.startDate >= DEFENSE_FROM;
+  let dirty = false;
+  const markDirty = () => (dirty = true);
+  const errorsEl = h('div', { class: 'errors-wrap' });
+
+  // 法人の区分
+  const sme = h('input', { id: 'ct-sme', type: 'checkbox', checked: v.sme });
+  const excluded = h('input', { id: 'ct-excluded', type: 'checkbox', checked: v.excluded });
+  // 金額の欄
+  const dividends = yenBox('ct-dividends', v.dividends);
+  const withholding = yenBox('ct-withholding', v.withholding);
+  const entertainment = yenBox('ct-entertainment', v.entertainment, { placeholder: `空欄なら ${formatYen(current.entertainment.amount)}` });
+  const dining = yenBox('ct-dining', v.dining);
+  const credits = yenBox('ct-credits', v.credits);
+  const addBack = yenBox('ct-addback', v.residentAddBack);
+
+  // 別表四の加算・減算の行
+  const adjRows = v.adjustments.map((a) => ({ ...a, amount: String(a.amount || '') }));
+  const adjList = h('div', { class: 'ct-rows' });
+  const presets = h('datalist', { id: 'ct-presets' }, ADJUSTMENT_PRESETS.map((p) => h('option', { value: p.label })));
+  function paintAdj() {
+    put(
+      adjList,
+      adjRows.length ? null : h('p', { class: 'small muted', text: '役員給与の損金不算入額・減価償却の償却超過額・寄附金の損金不算入額など、決算書の利益と所得が違う項目を足します。' }),
+      ...adjRows.map((a, i) => {
+        const side = h('select', { 'aria-label': `加算・減算${i + 1}の区分`, onchange: (e) => ((a.side = e.target.value), markDirty()) }, h('option', { value: 'add', text: '加算', selected: a.side === 'add' }), h('option', { value: 'sub', text: '減算', selected: a.side === 'sub' }));
+        const kind = h('select', { 'aria-label': `加算・減算${i + 1}の処分`, onchange: (e) => ((a.kind = e.target.value), markDirty()) }, h('option', { value: 'retained', text: '留保', selected: a.kind === 'retained' }), h('option', { value: 'outflow', text: '社外流出', selected: a.kind === 'outflow' }));
+        return h(
+          'div',
+          { class: 'ct-row ct-adj' },
+          h('input', {
+            type: 'text',
+            list: 'ct-presets',
+            value: a.label,
+            maxlength: MAX_LABEL,
+            placeholder: '項目（候補から選べます）',
+            'aria-label': `加算・減算${i + 1}の項目`,
+            oninput: (e) => {
+              a.label = e.target.value;
+              const p = ADJUSTMENT_PRESETS.find((x) => x.label === a.label);
+              if (p) ((a.side = p.side), (a.kind = p.kind), (side.value = p.side), (kind.value = p.kind));
+              markDirty();
+            },
+          }),
+          side,
+          kind,
+          h('input', { type: 'text', inputmode: 'numeric', class: 'num', value: a.amount, placeholder: '0', 'aria-label': `加算・減算${i + 1}の金額`, oninput: (e) => ((a.amount = e.target.value), markDirty()) }),
+          h('button', { type: 'button', class: 'btn btn-small btn-danger-text', 'aria-label': `加算・減算${i + 1}を削除`, text: '×', onclick: () => (adjRows.splice(i, 1), paintAdj(), markDirty()) }),
+        );
+      }),
+      adjRows.length < MAX_ROWS ? h('button', { type: 'button', class: 'btn btn-small', text: '＋ 加算・減算の行を足す', onclick: () => (adjRows.push({ label: '', side: 'add', kind: 'outflow', amount: '' }), paintAdj(), adjList.querySelector('.ct-row:last-of-type input')?.focus()) }) : null,
+    );
+  }
+
+  // 繰越欠損金の行
+  let lossRows = v.losses.map((l) => ({ endDate: l.endDate, amount: String(l.amount) }));
+  const lossList = h('div', { class: 'ct-rows' });
+  function paintLoss() {
+    put(
+      lossList,
+      ...lossRows.map((l, i) =>
+        h(
+          'div',
+          { class: 'ct-row ct-loss' },
+          h('input', { type: 'date', value: l.endDate, 'aria-label': `欠損金${i + 1}の事業年度の終了日`, oninput: (e) => ((l.endDate = e.target.value), markDirty()) }),
+          h('input', { type: 'text', inputmode: 'numeric', class: 'num', value: l.amount, placeholder: '0', 'aria-label': `欠損金${i + 1}の控除未済欠損金額`, oninput: (e) => ((l.amount = e.target.value), markDirty()) }),
+          h('button', { type: 'button', class: 'btn btn-small btn-danger-text', 'aria-label': `欠損金${i + 1}を削除`, text: '×', onclick: () => (lossRows.splice(i, 1), paintLoss(), markDirty()) }),
+        ),
+      ),
+      lossRows.length < MAX_LOSS_ROWS ? h('button', { type: 'button', class: 'btn btn-small', text: '＋ 欠損金の行を足す', onclick: () => (lossRows.push({ endDate: '', amount: '' }), paintLoss()) }) : null,
+    );
+  }
+
+  // 別表五(一)の期首の調整項目
+  let openRows = v.openingAdjustments.map((a) => ({ label: a.label, amount: String(a.amount) }));
+  const openList = h('div', { class: 'ct-rows' });
+  function paintOpen() {
+    put(
+      openList,
+      ...openRows.map((a, i) =>
+        h(
+          'div',
+          { class: 'ct-row ct-open' },
+          h('input', { type: 'text', list: 'ct-presets', value: a.label, maxlength: MAX_LABEL, placeholder: '項目（例：減価償却の償却超過額）', 'aria-label': `期首の調整項目${i + 1}の名前`, oninput: (e) => ((a.label = e.target.value), markDirty()) }),
+          h('input', { type: 'text', inputmode: 'numeric', class: 'num', value: a.amount, placeholder: '0', 'aria-label': `期首の調整項目${i + 1}の金額`, oninput: (e) => ((a.amount = e.target.value), markDirty()) }),
+          h('button', { type: 'button', class: 'btn btn-small btn-danger-text', 'aria-label': `期首の調整項目${i + 1}を削除`, text: '×', onclick: () => (openRows.splice(i, 1), paintOpen(), markDirty()) }),
+        ),
+      ),
+      openRows.length < MAX_ROWS ? h('button', { type: 'button', class: 'btn btn-small', text: '＋ 期首の調整項目を足す', onclick: () => (openRows.push({ label: '', amount: '' }), paintOpen()) }) : null,
+    );
+  }
+
+  // 前期分の確定税額と当期の中間納付額
+  const kinds = TAX_KINDS.filter((k) => k.key !== 'defense' || defenseApplies || v.prior.defense || v.interim.defense);
+  const taxInputs = Object.fromEntries(
+    kinds.map((k) => [
+      k.key,
+      {
+        prior: yenBox(`ct-prior-${k.key}`, v.prior[k.key], { label: `前期分の${k.label}` }),
+        interim: k.key === 'enterprise' ? null : yenBox(`ct-interim-${k.key}`, v.interim[k.key], { label: `中間納付した${k.label}` }),
+      },
+    ]),
+  );
+  const ent = period.enterpriseTax || {};
+  const taxGrid = h(
+    'div',
+    { class: 'ct-taxes' },
+    h('span', { class: 'ct-taxes-head', text: '' }),
+    h('span', { class: 'ct-taxes-head', text: '前期分の確定額' }),
+    h('span', { class: 'ct-taxes-head', text: '当期の中間納付額' }),
+    ...kinds.flatMap((k) => [
+      h('span', { class: 'ct-taxes-label', text: k.label }),
+      taxInputs[k.key].prior,
+      taxInputs[k.key].interim ?? h('a', { class: 'small ct-taxes-link', href: '#/reports/enterprise-tax', text: `${formatYen((ent.interimTax || 0) + (ent.interimSpecial || 0))}円（事業税の画面）` }),
+    ]),
+  );
+
+  // 住民税
+  const tokyo = h('input', { id: 'ct-tokyo', type: 'checkbox', checked: v.tokyo });
+  const rateBox = (id, r) => h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', class: 'num', value: formatPercent(r) });
+  const prefRate = rateBox('ct-pref-rate', v.prefRate);
+  const cityRate = rateBox('ct-city-rate', v.cityRate);
+  const prefPerCapita = yenBox('ct-pref-pc', v.prefPerCapita);
+  const cityPerCapita = yenBox('ct-city-pc', v.cityPerCapita);
+  const months = h('input', { id: 'ct-months', type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: v.residentMonths === null ? '' : String(v.residentMonths), placeholder: `空欄なら ${Math.min(12, periodMonths(period))}` });
+  tokyo.addEventListener('change', () => {
+    const d = tokyo.checked ? TOKYO_DEFAULTS : RESIDENT_DEFAULTS;
+    prefRate.value = formatPercent(d.prefRate);
+    cityRate.value = formatPercent(d.cityRate);
+    prefPerCapita.value = d.prefPerCapita ? String(d.prefPerCapita) : '';
+    cityPerCapita.value = d.cityPerCapita ? String(d.cityPerCapita) : '';
+  });
+
+  function collect() {
+    const errors = [];
+    const rateOf = (input, label) => {
+      const r = parsePercent(input.value);
+      if (Number.isNaN(r)) errors.push(`${label}：税率は小数第3位までの数字で入力してください（例：1.0）`);
+      return Number.isNaN(r) ? 0 : r;
+    };
+    const m = String(months.value).normalize('NFKC').trim();
+    const record = {
+      sme: sme.checked,
+      excluded: excluded.checked,
+      dividends: readYen(dividends, '配当', errors),
+      withholding: readYen(withholding, '法人税額から控除される所得税額', errors),
+      entertainment: readYen(entertainment, '支出交際費等の額', errors, { empty: null }),
+      dining: readYen(dining, '接待飲食費の額', errors),
+      credits: readYen(credits, '法人税額の特別控除額', errors),
+      residentAddBack: readYen(addBack, '足し戻す控除額', errors),
+      adjustments: adjRows.filter((a) => a.label.trim() || a.amount.trim()).map((a, i) => ({ label: a.label, side: a.side, kind: a.kind, amount: readYen({ value: a.amount }, `加算・減算${i + 1}`, errors) })),
+      losses: lossRows.filter((l) => l.endDate || l.amount.trim()).map((l, i) => ({ endDate: l.endDate, amount: readYen({ value: l.amount }, `欠損金${i + 1}`, errors) })),
+      openingAdjustments: openRows.filter((a) => a.label.trim() || a.amount.trim()).map((a, i) => ({ label: a.label, amount: readYen({ value: a.amount }, `期首の調整項目${i + 1}`, errors, { allowNegative: true }) })),
+      prior: Object.fromEntries(TAX_KINDS.map((k) => [k.key, taxInputs[k.key] ? readYen(taxInputs[k.key].prior, `前期分の${k.label}`, errors) : 0])),
+      interim: Object.fromEntries(TAX_KINDS.map((k) => [k.key, taxInputs[k.key]?.interim ? readYen(taxInputs[k.key].interim, `中間納付した${k.label}`, errors) : 0])),
+      tokyo: tokyo.checked,
+      prefRate: rateOf(prefRate, '道府県民税の法人税割'),
+      cityRate: rateOf(cityRate, '市町村民税の法人税割'),
+      prefPerCapita: readYen(prefPerCapita, '道府県民税の均等割', errors),
+      cityPerCapita: readYen(cityPerCapita, '市町村民税の均等割', errors),
+      residentMonths: m === '' ? null : /^\d+$/.test(m) ? Number(m) : NaN,
+    };
+    return { record, errors: [...errors, ...validateCorporateTax(cleanCorporateTax(record))] };
+  }
+
+  async function save() {
+    const { record, errors } = collect();
+    if (errors.length) {
+      put(errorsEl, errorBox([...new Set(errors)]));
+      errorsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    try {
+      await app.db.saveCorporateTax(period.id, record);
+      app.leaveGuard = null;
+      showToast('法人税の計算の条件を保存しました');
+      app.goBack('#/reports/corporate-tax');
+    } catch (e) {
+      put(errorsEl, errorBox(e instanceof ValidationError ? [].concat(Array.isArray(e.errors) ? e.errors : Object.values(e.errors)) : [errorText(e, '保存')]));
+      errorsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  // 前期の計算から引き継ぐ
+  const prev = previousPeriod(await app.db.listPeriods(), period);
+  async function carryOver() {
+    const prevJournals = await app.db.listJournals(prev.id);
+    const pr = corporateTaxReturn({ accounts, period: prev, journals: prevJournals, input: prev.corporateTax || {}, enterpriseInput: prev.enterpriseTax || {} });
+    const next = carryOverInput(pr);
+    const ok = await confirmDialog({
+      title: '前期の計算から引き継ぎますか？',
+      message: `前期（${formatPeriod(prev)}）の別表から、繰越欠損金${next.losses.length}件・期首の調整項目${next.openingAdjustments.length}件・前期分の確定税額を入れ直します。いま入っている繰越欠損金・期首の調整項目・前期分の税額は置き換わります。`,
+      buttons: [
+        { label: 'キャンセル', value: false },
+        { label: '引き継ぐ', value: true },
+      ],
+    });
+    if (ok !== true) return;
+    lossRows = next.losses.map((l) => ({ endDate: l.endDate, amount: String(l.amount) }));
+    openRows = next.openingAdjustments.map((a) => ({ label: a.label, amount: String(a.amount) }));
+    for (const k of kinds) taxInputs[k.key].prior.value = next.prior[k.key] ? String(next.prior[k.key]) : '';
+    paintLoss();
+    paintOpen();
+    markDirty();
+    showToast('前期の計算から引き継ぎました（保存すると反映されます）');
+  }
+
+  app.leaveGuard = async () =>
+    !dirty ||
+    (await confirmDialog({
+      title: '入力中の内容を破棄しますか？',
+      buttons: [
+        { label: '入力を続ける', value: false },
+        { label: '破棄する', value: true, variant: 'danger' },
+      ],
+    }));
+
+  paintAdj();
+  paintLoss();
+  paintOpen();
+  put(
+    outlet,
+    h(
+      'form',
+      { class: 'pay-form ct-form', novalidate: true, oninput: markDirty, onchange: markDirty, onsubmit: (e) => (e.preventDefault(), save()) },
+      presets,
+      errorsEl,
+      h('p', { class: 'muted small', text: `${formatPeriod(period)}（${periodMonths(period)}か月）` }),
+      prev ? h('button', { type: 'button', class: 'btn btn-block', text: '前期の計算から引き継ぐ', onclick: carryOver }) : null,
+      h('h2', { class: 'section-title', text: '法人の区分' }),
+      h('label', { class: 'check' }, sme, h('span', { text: '中小法人（期末の資本金が1億円以下で、資本金5億円以上の法人の100%子会社などではない）' })),
+      h('label', { class: 'check' }, excluded, h('span', { text: '適用除外事業者（前3事業年度の所得の平均が年15億円を超える）' })),
+      h('p', { class: 'field-hint', text: '中小法人は、年800万円以下の所得の税率が15%、交際費の定額控除（年800万円）、欠損金の100%控除の対象です。' }),
+      h('h2', { class: 'section-title', text: '利益の処分と所得税' }),
+      field('当期に支払った剰余金の配当', dividends, { hint: '別表四の社外流出「配当」。株主総会で決めて当期に支払った配当の額' }),
+      field('法人税額から控除される所得税額', withholding, { hint: '預金の利子・配当から源泉徴収された所得税と復興特別所得税（別表六(一)で計算した額）' }),
+      h('h2', { class: 'section-title', text: '交際費（別表十五）' }),
+      field('支出交際費等の額', entertainment, { hint: '空欄なら「接待交際費」の科目の当期の額。会議費など他の科目に交際費等があれば合計を入れます' }),
+      field('うち接待飲食費の額', dining, { hint: '得意先などとの飲食の費用（社内の人だけの飲食を除く）。中小法人は50%か定額控除の多いほうで計算します' }),
+      h('h2', { class: 'section-title', text: '別表四のその他の加算・減算' }),
+      adjList,
+      h('p', { class: 'field-hint', text: '留保：翌期以降に解消する差（別表五(一)に載る）。社外流出：解消しない差（役員給与・寄附金・罰金など）。' }),
+      h('h2', { class: 'section-title', text: '税額控除' }),
+      field('法人税額の特別控除額', credits, { hint: '賃上げ促進税制・中小企業投資促進税制などで法人税額から引く額の合計（別表六の各明細書）' }),
+      field('住民税の法人税割で足し戻す控除額', addBack, { hint: '中小企業者等の賃上げ促進税制・試験研究費の税額控除などは、法人税割の課税標準からは引きません' }),
+      h('h2', { class: 'section-title', text: '繰越欠損金（別表七(一)）' }),
+      h('p', { class: 'field-hint', text: '前期以前の青色申告の事業年度の欠損金で、まだ控除していない額。事業年度の終了日と金額を入れます。' }),
+      lossList,
+      h('h2', { class: 'section-title', text: '前期分の確定税額・当期の中間納付額' }),
+      h('p', { class: 'field-hint', text: '前期分：当期に未払法人税等を取り崩して納めた、前期の確定申告の税額。中間納付額：当期に「法人税、住民税及び事業税」で処理した中間申告の税額。' }),
+      taxGrid,
+      h('h2', { class: 'section-title', text: '法人住民税' }),
+      h('label', { class: 'check' }, tokyo, h('span', { text: '東京都の特別区（23区）だけに事務所がある（都民税だけを納める）' })),
+      h('div', { class: 'field-row' }, field('法人税割の税率（道府県民税・%）', prefRate), field('法人税割の税率（市町村民税・%）', cityRate)),
+      h('div', { class: 'field-row' }, field('均等割の年額（道府県民税）', prefPerCapita), field('均等割の年額（市町村民税）', cityPerCapita)),
+      field('均等割の月数（事務所があった月数）', months, { hint: '税率・年額は事務所がある自治体の案内で確かめてください（資本金等の額・従業者数で年額が変わります）' }),
+      h('h2', { class: 'section-title', text: '別表五(一)の期首の調整項目' }),
+      h('p', { class: 'field-hint', text: '前期の別表五(一)の「差引翌期首現在」に載っている、減価償却の償却超過額などの調整項目。マイナスは「-」か「△」を付けます。当期の留保の加算・減算と同じ名前にすると同じ行にまとまります。' }),
+      openList,
+      h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: '保存する' }),
+    ),
+  );
+}
