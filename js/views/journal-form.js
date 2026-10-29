@@ -4,6 +4,7 @@ import { emptyRow, emptySide, rowsToLines, linesToRows, rowsTotals, validateJour
 import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
 import { createJournal } from '../models.js';
+import { isAdjusting } from '../monthly.js';
 import { normalize } from '../search.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
@@ -42,6 +43,7 @@ export async function render({ app, outlet, params, query }) {
   const subsOf = (accountId, currentSubId) =>
     subAccounts.filter((s) => s.accountId === accountId && (s.active || s.id === currentSubId)).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
+  const adjustingInput = h('input', { type: 'checkbox', id: 'j-adjusting', checked: editing ? isAdjusting(editing) : false, onchange: () => (dirty = true) });
   const dateInput = h('input', {
     id: 'j-date',
     type: 'date',
@@ -263,6 +265,7 @@ export async function render({ app, outlet, params, query }) {
     source ? h('p', { class: 'notice', text: `No.${source.no} を複製しました。日付を確認して登録してください。` }) : null,
     field('日付', dateInput, { name: 'date' }),
     rowsEl,
+    h('label', { class: 'check small adjusting-check' }, adjustingInput, '決算整理仕訳（月次推移の試算表で「決算整理」の列に分けて表示）'),
     errorsEl,
     h('div', { class: 'form-footer' }, totalsEl, saveBtn),
     editing
@@ -295,7 +298,7 @@ export async function render({ app, outlet, params, query }) {
 
   async function save() {
     const { lines, errors } = rowsToLines(rows);
-    const journal = editing ? { ...editing, date, lines } : createJournal({ periodId: period.id, date, lines });
+    const journal = editing ? { ...editing, date, lines, adjusting: adjustingInput.checked } : createJournal({ periodId: period.id, date, lines, adjusting: adjustingInput.checked });
     const all = [...errors, ...validateJournal(journal, { accounts, subAccounts, period, original: editing })];
     if (all.length) {
       showErrorList([...new Set(all)]);
@@ -320,6 +323,7 @@ export async function render({ app, outlet, params, query }) {
       }
       journals.push(saved);
       rows = [emptyRow()];
+      adjustingInput.checked = false;
       clearErrors();
       paintRows();
       window.scrollTo({ top: 0, behavior: 'smooth' });

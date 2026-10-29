@@ -22,17 +22,20 @@ export function monthRangePicker({ period, query, path, onChange, extra = () => 
     );
   const fromSel = sel(fromMonth, '開始月', (v) => (fromMonth = v));
   const toSel = sel(toMonth, '終了月', (v) => (toMonth = v));
+  function refreshUrl() {
+    const params = new URLSearchParams({ ...extra(), from: fromMonth, to: toMonth });
+    history.replaceState(history.state, '', `#${path}?${params}`);
+  }
   function update() {
     if (toMonth < fromMonth) {
       toMonth = fromMonth;
       toSel.value = toMonth;
     }
-    const params = new URLSearchParams({ ...extra(), from: fromMonth, to: toMonth });
-    history.replaceState(history.state, '', `#${path}?${params}`);
+    refreshUrl();
     onChange();
   }
   const el = h('div', { class: 'range-bar' }, fromSel, h('span', { class: 'muted', text: '〜' }), toSel);
-  return { el, range: () => ({ ...monthRange(period, fromMonth, toMonth), fromMonth, toMonth }) };
+  return { el, refreshUrl, range: () => ({ ...monthRange(period, fromMonth, toMonth), fromMonth, toMonth }) };
 }
 
 /** 0円の科目を表示するかの切替 */

@@ -382,6 +382,15 @@ mkdirSync(OUT, { recursive: true });
     if ((await page.getByRole('radio', { name: '2割' }).getAttribute('aria-checked')) !== 'true') errors.push('計算の方法が保存されない');
   }
 
+  // 月次推移試算表（四半期・半期・決算整理の列）
+  await go('#/reports/trial-monthly');
+  await shot('49-trial-monthly', true);
+  for (const label of ['四半期の合計', '半期の合計', '決算整理を別の列に']) await page.getByLabel(label, { exact: true }).check();
+  await page.waitForTimeout(300);
+  await shot('49b-trial-monthly-options', true);
+  for (const col of ['第1四半期', '上半期', '決算整理', '合計']) if (!(await page.locator('table.mtb thead th', { hasText: col }).count())) errors.push(`月次推移試算表に「${col}」の列が出ない`);
+  if (!(await page.evaluate(() => location.hash.includes('adj=1')))) errors.push('月次推移試算表のオプションがURLに残らない');
+
   // 青色申告決算書（個人のみ）
   if (entity === 'individual') {
     await go('#/reports/blue-return?page=1');
