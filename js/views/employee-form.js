@@ -2,7 +2,7 @@
 import { h, put, field, segmented, showToast, confirmDialog, errorBox } from '../ui.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
-import { EMPLOYEE_KINDS, TAX_COLUMNS, MAX_NAME, MAX_NOTE, employeeDraft, validateEmployee, parseRate, formatRate } from '../payroll.js';
+import { EMPLOYEE_KINDS, TAX_COLUMNS, MAX_NAME, MAX_NOTE, MAX_ADDRESS, MAX_CITY, RESIDENT_COLLECTIONS, employeeDraft, validateEmployee, parseRate, formatRate } from '../payroll.js';
 import { amountInput, readAmount, itemsEditor, toCount } from './pay-items.js';
 
 export async function render({ app, outlet, params }) {
@@ -13,6 +13,7 @@ export async function render({ app, outlet, params }) {
   const e = editing ? structuredClone(editing) : employeeDraft();
   let kind = e.kind;
   let taxColumn = e.taxColumn;
+  let collection = e.residentCollection || 'special';
   let dirty = false;
   const markDirty = () => (dirty = true);
   const errorsEl = h('div', { class: 'errors-wrap' });
@@ -29,6 +30,13 @@ export async function render({ app, outlet, params }) {
   const rate = h('input', { id: 'emp-rate', type: 'text', inputmode: 'decimal', autocomplete: 'off', value: formatRate(e.employmentRate), placeholder: '空欄＝加入していない' });
   const note = h('textarea', { id: 'emp-note', rows: 2, maxlength: MAX_NOTE, value: e.note || '' });
   const activeBox = h('input', { id: 'emp-active', type: 'checkbox', checked: e.active });
+  const address = h('input', { id: 'emp-address', type: 'text', value: e.address || '', maxlength: MAX_ADDRESS, autocomplete: 'off', placeholder: '例：東京都千代田区霞が関3-1-1' });
+  const birthDate = h('input', { id: 'emp-birth', type: 'date', value: e.birthDate || '' });
+  const joinedOn = h('input', { id: 'emp-joined', type: 'date', value: e.joinedOn || '' });
+  const retiredOn = h('input', { id: 'emp-retired', type: 'date', value: e.retiredOn || '' });
+  const city = h('input', { id: 'emp-city', type: 'text', value: e.residentCity || '', maxlength: MAX_CITY, autocomplete: 'off', placeholder: '例：千代田区' });
+  const foreigner = h('input', { id: 'emp-foreigner', type: 'checkbox', checked: e.foreigner === true });
+  const deceased = h('input', { id: 'emp-deceased', type: 'checkbox', checked: e.deceased === true });
   const paintColumn = () => (depField.hidden = taxColumn !== 'kou');
 
   async function save() {
@@ -51,6 +59,14 @@ export async function render({ app, outlet, params }) {
       deductions: deductions.read(parseErrors),
       note: note.value,
       active: activeBox.checked,
+      address: address.value,
+      birthDate: birthDate.value,
+      joinedOn: joinedOn.value,
+      retiredOn: retiredOn.value,
+      residentCity: city.value,
+      residentCollection: collection,
+      foreigner: foreigner.checked,
+      deceased: deceased.checked,
     };
     const errors = [...parseErrors, ...Object.values(validateEmployee(record, { entityType: settings.entityType }))];
     if (errors.length) {
@@ -124,6 +140,15 @@ export async function render({ app, outlet, params }) {
       field('雇用保険料率（千分率）', rate, { hint: '本人負担の料率。例：千分の5.5なら 5.5。支給額（通勤手当を含む）に掛けて計算します（1円未満は50銭以下切捨て）。役員など加入していない人は空欄' }),
       field('住民税（特別徴収）', residentTax, { hint: '市区町村から届く「特別徴収税額の決定通知書」の毎月の金額（6月分は金額が違うことがあるので、給与の入力で直してください）' }),
       h('div', { class: 'field' }, h('p', { class: 'field-label', text: 'その他の控除' }), deductions.el, h('p', { class: 'field-hint', text: '社宅の家賃・財形貯蓄など。預り金に入ります' })),
+      h('h2', { class: 'section-title', text: '源泉徴収票・給与支払報告書' }),
+      field('住所', address, { hint: '源泉徴収票の「住所又は居所」（任意。マイナンバーは保存しません）' }),
+      field('生年月日', birthDate, { hint: '源泉徴収票の受給者生年月日・未成年者の欄に使います' }),
+      h('div', { class: 'field-row' }, field('就職した日', joinedOn), field('退職した日', retiredOn)),
+      h('p', { class: 'field-hint emp-hint', text: 'その年に就職・退職した人は、源泉徴収票の「中途就・退職」の欄に載ります。年の途中で退職した人で、その年の支払金額が30万円以下なら、給与支払報告書（源泉徴収票）の提出を省略できます' }),
+      field('給与支払報告書の提出先（市区町村）', city, { hint: '翌年1月1日現在の住所の市区町村（年の途中で退職した人は、退職した時の住所の市区町村）' }),
+      field('住民税の徴収', segmented({ name: '住民税の徴収', options: RESIDENT_COLLECTIONS.map((c) => ({ value: c.id, label: c.label })), value: collection, onChange: (v) => ((collection = v), markDirty()) }), { hint: '特別徴収：給与から天引きして納める。普通徴収：本人が納める（給与支払報告書の市区町村ごとの人数に使います）' }),
+      h('label', { class: 'check' }, foreigner, h('span', { text: '外国人（日本に住んでいる外国籍の人）' })),
+      h('label', { class: 'check' }, deceased, h('span', { text: '死亡により退職した' })),
       field('メモ', note),
       h('label', { class: 'check' }, activeBox, h('span', { text: '在籍している（まとめて作る給与の対象にする）' })),
       h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: '保存する' }),

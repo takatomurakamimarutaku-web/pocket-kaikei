@@ -144,6 +144,7 @@ export async function render({ app, outlet, query }) {
       { class: 'menu-group pay-menu' },
       menuRow({ href: '#/payroll/employees', label: '従業員', sub: `在籍 ${active.length}人。基本給・通勤手当・社会保険料・扶養親族等の数`, icon: 'payroll', tone: 'entry' }),
       menuRow({ href: '#/payroll/year-end', label: '年末調整', sub: '扶養控除等・保険料控除などの申告書の内容から年税額を計算し、過不足を12月の給与などで精算', icon: 'calc', tone: 'tax' }),
+      menuRow({ href: '#/payroll/slips', label: '源泉徴収票・給与支払報告書', sub: '1年分の源泉徴収票（受給者交付用）・給与支払報告書の明細と、法定調書合計表・総括表に書く人数と金額', icon: 'form', tone: 'tax' }),
       menuRow({ href: '#/payroll/payments', label: '源泉所得税・住民税・社会保険料の納付', sub: '納付書（所得税徴収高計算書）に書く金額と納期限、納付の仕訳', icon: 'calendar', tone: 'close' }),
       menuRow({ href: '#/payroll/settings', label: '給与の設定', sub: '科目・預り金の補助科目・納期の特例', icon: 'settings', tone: 'setting' }),
     ),

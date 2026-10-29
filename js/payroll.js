@@ -56,6 +56,15 @@ export const MAX_ITEMS = 10;
 export const MAX_TITLE = 30;
 export const MAX_NOTE = 200;
 export const MAX_DEPENDENTS = 20;
+export const MAX_ADDRESS = 120;
+export const MAX_CITY = 30;
+export const MAX_PHONE = 30;
+/** 住民税の徴収の方法（給与支払報告書の総括表の人数に使う） */
+export const RESIDENT_COLLECTIONS = [
+  { id: 'special', label: '特別徴収' },
+  { id: 'ordinary', label: '普通徴収' },
+];
+export const RESIDENT_COLLECTION_LABEL = Object.fromEntries(RESIDENT_COLLECTIONS.map((c) => [c.id, c.label]));
 /** 1項目の金額の上限（1億円未満） */
 export const MAX_PAY = 99_999_999;
 /** 雇用保険料率の上限（千分の100）。料率は千分率の100倍の整数で持つ（千分の5.5 → 550） */
@@ -325,6 +334,19 @@ export function validateEmployee(e, { entityType } = {}) {
   if (e.employmentRate != null && (!Number.isInteger(e.employmentRate) || e.employmentRate <= 0 || e.employmentRate > MAX_RATE)) errors.employmentRate = '雇用保険料率は千分率（例：5.5）で入力してください';
   if (len(e.note) > MAX_NOTE) errors.note = `メモは${MAX_NOTE}文字以内にしてください`;
   if (typeof e.active !== 'boolean') errors.active = '在籍かどうかが不正です';
+  // 源泉徴収票・給与支払報告書に使う項目（任意）
+  if (len(e.address) > MAX_ADDRESS) errors.address = `住所は${MAX_ADDRESS}文字以内にしてください`;
+  for (const [k, label] of [
+    ['birthDate', '生年月日'],
+    ['joinedOn', '就職した日'],
+    ['retiredOn', '退職した日'],
+  ]) {
+    if (e[k] && !isValidDate(e[k])) errors[k] = `${label}が正しくありません`;
+  }
+  if (!errors.joinedOn && !errors.retiredOn && e.joinedOn && e.retiredOn && e.retiredOn < e.joinedOn) errors.retiredOn = '退職した日は就職した日より後の日にしてください';
+  if (len(e.residentCity) > MAX_CITY) errors.residentCity = `市区町村は${MAX_CITY}文字以内にしてください`;
+  if (e.residentCollection != null && !RESIDENT_COLLECTION_LABEL[e.residentCollection]) errors.residentCollection = '住民税の徴収の方法を選んでください';
+  if ((e.foreigner != null && typeof e.foreigner !== 'boolean') || (e.deceased != null && typeof e.deceased !== 'boolean')) errors.flags = '外国人・死亡退職の設定が不正です';
   return errors;
 }
 
@@ -395,9 +417,16 @@ export const DEPOSIT_KINDS = [
   { key: 'other', label: 'その他の控除' },
 ];
 
+/** 源泉徴収票の支払者の欄 */
+export const PAYER_FIELDS = [
+  { key: 'name', label: '支払者の氏名又は名称', max: MAX_ADDRESS },
+  { key: 'address', label: '支払者の住所又は所在地', max: MAX_ADDRESS },
+  { key: 'phone', label: '支払者の電話番号', max: MAX_PHONE },
+];
+
 /**
  * 設定の科目（空なら目印・区分から初期値を探す）
- * @returns {{ accounts: Record<string,string>, subs: Record<string,string|null>, special: boolean }}
+ * @returns {{ accounts: Record<string,string>, subs: Record<string,string|null>, special: boolean, payer: {name, address, phone} }}
  */
 export function resolvePayrollSettings(payroll, accounts) {
   const cfg = payroll || {};
@@ -419,10 +448,11 @@ export function resolvePayrollSettings(payroll, accounts) {
     welfare: pick('welfare', byHint('legal_welfare')),
   };
   const subs = Object.fromEntries(DEPOSIT_KINDS.map((k) => [k.key, cfg.subs?.[k.key] || null]));
-  return { accounts: out, subs, special: cfg.special === true };
+  const payer = Object.fromEntries(PAYER_FIELDS.map((f) => [f.key, typeof cfg.payer?.[f.key] === 'string' ? cfg.payer[f.key] : '']));
+  return { accounts: out, subs, special: cfg.special === true, payer };
 }
 
-/** 給与の設定の検証（保存する形：{ accounts: {key: id}, subs: {key: id|null}, special }） */
+/** 給与の設定の検証（保存する形：{ accounts: {key: id}, subs: {key: id|null}, special, payer?: {name, address, phone} }） */
 export function validatePayrollSettings(payroll, { accounts = null, subAccounts = null } = {}) {
   if (payroll === undefined) return [];
   const errors = [];
@@ -439,6 +469,15 @@ export function validatePayrollSettings(payroll, { accounts = null, subAccounts 
       if (!a) errors.push(`${f.label}の科目が見つかりません`);
       else if (!f.groups.includes(a.group)) errors.push(`${f.label}に「${a.name}」は選べません`);
     }
+  }
+  if (payroll.payer != null) {
+    if (typeof payroll.payer !== 'object') errors.push('支払者の設定が不正です');
+    else
+      for (const f of PAYER_FIELDS) {
+        const v = payroll.payer[f.key];
+        if (v != null && typeof v !== 'string') errors.push(`${f.label}が不正です`);
+        else if (len(v) > f.max) errors.push(`${f.label}は${f.max}文字以内にしてください`);
+      }
   }
   const subs = payroll.subs || {};
   for (const k of DEPOSIT_KINDS) {
@@ -531,6 +570,14 @@ export function employeeDraft() {
     deductions: [],
     note: '',
     active: true,
+    address: '',
+    birthDate: '',
+    joinedOn: '',
+    retiredOn: '',
+    residentCity: '',
+    residentCollection: 'special',
+    foreigner: false,
+    deceased: false,
   };
 }
 
