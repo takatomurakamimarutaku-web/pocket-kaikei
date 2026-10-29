@@ -11,6 +11,7 @@ import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
 import { closedNotice } from './period-common.js';
+import { attachmentPanel } from './attachment-panel.js';
 
 const SIDE_LABEL = { debit: '借方', credit: '貸方' };
 /** ボタンで並べる候補の上限。これより多いと科目選択シートで選ぶ */
@@ -204,6 +205,8 @@ export async function render({ app, outlet, params, query }) {
   });
 
   const order = template.taxSide === 'credit' ? ['credit', 'debit'] : ['debit', 'credit'];
+  // 証憑の添付（登録したときに一緒に保存する）
+  const attach = attachmentPanel({ app, data, current: () => ({ date: state.date, lines: buildQuickLines(state).lines }), onPending: () => (dirty = true) });
   const form = h(
     'form',
     { class: 'quick-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), save()) },
@@ -212,6 +215,7 @@ export async function render({ app, outlet, params, query }) {
     h('section', { class: 'panel qslots' }, slotEls[order[0]], slotEls[order[1]]),
     h('div', { class: 'memo-wrap' }, field('摘要', memoInput, { name: 'memo' })),
     previewEl,
+    attach.el,
     errorsEl,
     saveBtn,
     h('p', { class: 'center small' }, h('a', { href: '#/journal/new', class: 'link', text: '振替伝票で入力する（複合仕訳など）' })),
@@ -251,7 +255,8 @@ export async function render({ app, outlet, params, query }) {
       quickLast[template.id] = last;
       journals.push(saved);
       dirty = false;
-      showToast(`No.${saved.no} を登録しました`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${state.date.slice(0, 7)}`), duration: 5000 });
+      const attached = attach.hasPending() ? await attach.commit(saved) : 0;
+      showToast(`No.${saved.no} を登録しました${attached ? `（証憑${attached}件）` : ''}`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${state.date.slice(0, 7)}`), duration: 5000 });
       // 続けて入力できるよう、日付と科目を残して金額・摘要を空にする
       state.amount = '';
       state.memo = '';

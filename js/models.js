@@ -87,3 +87,8 @@ export function createTemplate(fields = {}, now = new Date()) {
 export function createBudget(fields = {}, now = new Date()) {
   return { id: newId(), periodId: '', accountId: '', months: {}, ...stamp(now), ...fields };
 }
+
+/** 証憑の添付の情報（ファイルの中身は attachmentData に同じ id で保存する） */
+export function createAttachment(fields = {}, now = new Date()) {
+  return { id: newId(), journalId: null, kind: 'paper', name: '', type: '', size: 0, sha256: '', date: '', amount: null, partner: '', memo: '', thumb: null, ...stamp(now), ...fields };
+}

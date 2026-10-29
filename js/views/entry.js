@@ -24,6 +24,7 @@ export async function render({ app, outlet }) {
       row('#/import/bank', '銀行明細の取り込み', 'ネットバンキングのCSVから仕訳をまとめて作る', 'bank', 'data'),
       row('#/import/card', 'クレジットカード明細の取り込み', '利用明細のCSVから未払金の仕訳をまとめて作る', 'expense', 'data'),
       row('#/assets', '固定資産台帳', 'パソコン・車・設備などの登録と減価償却費の計算', 'asset', 'close'),
+      row('#/attachments', '証憑の一覧', '添付した領収書・請求書を日付・金額・取引先で探す', 'attach', 'data'),
     ),
   );
 }

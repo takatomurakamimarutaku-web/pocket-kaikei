@@ -1,26 +1,42 @@
 // 電子帳簿保存：優良な電子帳簿の要件とこのアプリの対応、事務手続の書類のひな形、令和9年分以後の青色申告特別控除75万円
 import { h, put, saveFile, showToast } from '../ui.js';
-import { EBOOK_REQUIREMENTS, ebookProcedureText } from '../e-book.js';
+import { EBOOK_REQUIREMENTS, ebookProcedureText, ETRADE_REQUIREMENTS, etradeRuleText } from '../e-book.js';
 import { APP_VERSION } from '../version.js';
 import { todayString } from '../period.js';
 
 export async function render({ app, outlet }) {
   const { settings } = await app.load();
   const text = ebookProcedureText({ businessName: settings.businessName, entityType: settings.entityType, version: APP_VERSION, today: todayString() });
+  const ruleText = etradeRuleText({ businessName: settings.businessName, entityType: settings.entityType, today: todayString() });
 
-  async function download() {
-    const result = await saveFile(new Blob([text], { type: 'text/plain' }), 'pocket-kaikei-jimu-tetsuzuki.txt');
+  const download = (body, fileName) => async () => {
+    const result = await saveFile(new Blob([body], { type: 'text/plain' }), fileName);
     if (result !== 'cancelled') showToast('ひな形を書き出しました');
-  }
+  };
 
-  async function copy() {
+  const copy = (body) => async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(body);
       showToast('ひな形をコピーしました');
     } catch {
       showToast('コピーできませんでした。テキストで書き出してください');
     }
-  }
+  };
+
+  const requirementList = (list) =>
+    h(
+      'ol',
+      { class: 'ebook-reqs' },
+      list.map((r) =>
+        h(
+          'li',
+          {},
+          h('div', { class: 'ebook-req-head' }, h('strong', { text: r.title }), h('span', { class: 'muted small', text: r.basis })),
+          h('p', { text: r.app }),
+          r.user ? h('p', { class: 'ebook-user' }, h('span', { class: 'ebook-tag', text: 'あなたがすること' }), r.user) : null,
+        ),
+      ),
+    );
 
   put(
     outlet,
@@ -42,19 +58,7 @@ export async function render({ app, outlet }) {
       'section',
       { class: 'panel' },
       h('h2', { class: 'section-title', text: '要件とPocket会計の対応' }),
-      h(
-        'ol',
-        { class: 'ebook-reqs' },
-        EBOOK_REQUIREMENTS.map((r) =>
-          h(
-            'li',
-            {},
-            h('div', { class: 'ebook-req-head' }, h('strong', { text: r.title }), h('span', { class: 'muted small', text: r.basis })),
-            h('p', { text: r.app }),
-            r.user ? h('p', { class: 'ebook-user' }, h('span', { class: 'ebook-tag', text: 'あなたがすること' }), r.user) : null,
-          ),
-        ),
-      ),
+      requirementList(EBOOK_REQUIREMENTS),
       h(
         'div',
         { class: 'actions no-print' },
@@ -72,8 +76,35 @@ export async function render({ app, outlet }) {
       h(
         'div',
         { class: 'actions no-print' },
-        h('button', { type: 'button', class: 'btn', text: 'テキストで書き出す', onclick: download }),
-        h('button', { type: 'button', class: 'btn', text: 'コピー', onclick: copy }),
+        h('button', { type: 'button', class: 'btn', text: 'テキストで書き出す', onclick: download(text, 'pocket-kaikei-jimu-tetsuzuki.txt') }),
+        h('button', { type: 'button', class: 'btn', text: 'コピー', onclick: copy(text) }),
+      ),
+    ),
+    h(
+      'section',
+      { class: 'panel' },
+      h('h2', { class: 'section-title', text: '電子取引のデータの保存' }),
+      h('p', { text: 'メールで受け取った PDF の請求書や、ネットで買い物をしたときの領収書のデータは、紙に印刷して保存するのではなく、データのまま保存する必要があります（電子帳簿保存法第7条）。仕訳の画面の「証憑」で「ファイルを選ぶ」から添付すると、ファイルをそのまま保存します。' }),
+      requirementList(ETRADE_REQUIREMENTS),
+      h(
+        'div',
+        { class: 'actions no-print' },
+        h('a', { href: '#/attachments', class: 'btn', text: '証憑の一覧で検索する' }),
+      ),
+      h('p', { class: 'notice', text: '紙で受け取った領収書を撮影した画像は、スキャナ保存の要件（200dpi以上・カラー256階調以上、タイムスタンプ又は訂正・削除の記録、入力期間、14インチ以上のカラーディスプレイなど）をすべて満たすとは言えないため、紙の原本を捨てずに保存してください。撮影した画像は、A4 を 200dpi 相当以上で残す大きさ（長辺2,400ピクセル）で保存します。' }),
+      h('p', { class: 'muted small', text: '出典：国税庁「電子取引データの保存方法をご確認ください」、電子帳簿保存法一問一答【電子取引関係】問29・問43、【スキャナ保存関係】問12。' }),
+    ),
+    h(
+      'section',
+      { class: 'panel' },
+      h('h2', { class: 'section-title', text: '電子取引データの事務処理規程（ひな形）' }),
+      h('p', { class: 'muted small', text: '改ざんの防止の要件は、この規程を定めて守ることで満たせます（規則4①四、一問一答 問29）。国税庁のサンプル（法人の例・個人事業者の例）を参考に、Pocket会計で保存する前提に書き直したひな形です。保存までの日数や担当者を実態に合わせて直してください。' }),
+      h('pre', { class: 'ebook-template', text: ruleText }),
+      h(
+        'div',
+        { class: 'actions no-print' },
+        h('button', { type: 'button', class: 'btn', text: 'テキストで書き出す', onclick: download(ruleText, 'pocket-kaikei-denshi-torihiki-kitei.txt') }),
+        h('button', { type: 'button', class: 'btn', text: 'コピー', onclick: copy(ruleText) }),
       ),
     ),
   );

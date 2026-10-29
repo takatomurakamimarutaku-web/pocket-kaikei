@@ -169,6 +169,8 @@ test('スキーマ移行：バージョン4のデータを残したまま予算�
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('budgets'); // バージョン4の構成にする
+      open.result.deleteObjectStore('attachments');
+      open.result.deleteObjectStore('attachmentData');
       open.transaction.objectStore('templates').put({ id: 't1', name: '家賃', lines: [], repeatDay: null, createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {

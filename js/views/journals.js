@@ -8,10 +8,14 @@ import { normalize } from '../search.js';
 import { journalsCsv, csvFileName } from '../csv.js';
 import { searchJournals, hasCriteria } from '../journal-history.js';
 import { parseYen } from '../money.js';
+import { icon } from '../icons.js';
 
 export async function render({ app, outlet, query }) {
   const data = await app.load();
   const { period, journals, accountById, subById } = data;
+  // 証憑を添付した仕訳に印を付ける
+  const attachCount = new Map();
+  for (const a of await app.db.listAttachments()) if (a.journalId) attachCount.set(a.journalId, (attachCount.get(a.journalId) || 0) + 1);
   const months = monthsInPeriod(period);
   const today = todayString().slice(0, 7);
   let month = query.month === 'all' ? 'all' : months.includes(query.month) ? query.month : months.includes(today) ? today : months[0];
@@ -104,7 +108,7 @@ export async function render({ app, outlet, query }) {
     meta.textContent = `${hasCriteria(crit) ? '詳しい検索：会計期間の全体から ' : ''}${items.length}件・借方合計 ${formatYen(total)}円`;
     put(list, 
       ...(items.length
-        ? items.map((j) => journalCard(j, accountById, subById))
+        ? items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0 }))
         : [emptyState(journals.length ? '条件に合う仕訳はありません' : 'まだ仕訳がありません', journals.length ? null : h('a', { href: '#/entry', class: 'btn btn-primary', text: '取引を入力する' }))]),
     );
   }
@@ -135,8 +139,8 @@ export async function render({ app, outlet, query }) {
   paint();
 }
 
-/** 仕訳1件のカード（振替伝票の行を並べる） */
-export function journalCard(j, accountById, subById) {
+/** 仕訳1件のカード（振替伝票の行を並べる）。attachments：添付した証憑の件数 */
+export function journalCard(j, accountById, subById, { attachments = 0 } = {}) {
   const sideCell = (s) => {
     if (!s.accountId) return h('div', { class: 'jc-side jc-empty' });
     const acc = accountById.get(s.accountId);
@@ -155,7 +159,13 @@ export function journalCard(j, accountById, subById) {
   return h(
     'a',
     { class: 'jcard', href: `#/journal/${encodeURIComponent(j.id)}/edit` },
-    h('div', { class: 'jc-head' }, h('span', { class: 'jc-date', text: j.date.slice(5).replace('-', '/') }), h('span', { class: 'jc-no', text: `No.${j.no}` })),
+    h(
+      'div',
+      { class: 'jc-head' },
+      h('span', { class: 'jc-date', text: j.date.slice(5).replace('-', '/') }),
+      attachments ? h('span', { class: 'jc-attach', title: `証憑${attachments}件`, 'aria-label': `証憑${attachments}件` }, icon('attach'), attachments > 1 ? String(attachments) : null) : null,
+      h('span', { class: 'jc-no', text: `No.${j.no}` }),
+    ),
     h(
       'div',
       { class: 'jc-rows' },

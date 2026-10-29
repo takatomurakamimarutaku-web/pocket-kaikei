@@ -5,6 +5,7 @@ import { validateJournal } from './journal.js';
 import { historyEntry, journalChanged } from './journal-history.js';
 import { validateTemplate } from './templates.js';
 import { validateBudget } from './budget.js';
+import { validateAttachment, sha256Hex, toArrayBuffer, EDITABLE_FIELDS } from './attachments.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
@@ -16,8 +17,10 @@ import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 5;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets'];
+export const DB_VERSION = 6;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData'];
+/** 証憑の添付（バックアップで画像を含めないときは書き出し・置き換えの対象から外す） */
+export const ATTACHMENT_STORES = ['attachments', 'attachmentData'];
 const ALL_STORES = ['meta', ...DATA_STORES];
 
 /** 締めた会計期間を変更しようとしたときのメッセージ */
@@ -64,6 +67,11 @@ export function migrate(db, oldVersion, tx) {
   if (oldVersion < 5) {
     // 予算（会計期間・科目ごとの月別の金額）
     db.createObjectStore('budgets', { keyPath: 'id' }).createIndex('periodId', 'periodId');
+  }
+  if (oldVersion < 6) {
+    // 証憑の添付：情報（attachments）とファイルの中身（attachmentData。id は attachments と同じ）
+    db.createObjectStore('attachments', { keyPath: 'id' }).createIndex('journalId', 'journalId');
+    db.createObjectStore('attachmentData', { keyPath: 'id' });
   }
 }
 
@@ -222,6 +230,20 @@ async function putAsset(tx, asset) {
   const next = { ...record, createdAt: before?.createdAt ?? record.createdAt, updatedAt: now() };
   store.put(next);
   return next;
+}
+
+/**
+ * 証憑をつなぐ仕訳の確認（トランザクションの中で呼ぶ）。仕訳が締めた期間にあれば変更させない
+ * missingOk：仕訳が削除されていてもよい（削除した仕訳の証憑も残して直せるようにする）
+ */
+async function checkAttachmentJournal(tx, journalId, { missingOk = false } = {}) {
+  if (!journalId) return;
+  const journal = await req(tx.objectStore('journals').get(journalId));
+  if (!journal) {
+    if (missingOk) return;
+    throw new ValidationError(['証憑をつなぐ仕訳が見つかりません（先に仕訳を登録してください）']);
+  }
+  if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
 }
 
 export class Repository {
@@ -852,6 +874,69 @@ export class Repository {
     });
   }
 
+  // ---- 証憑の添付 ----
+
+  /** 証憑の情報（中身は含まない） */
+  listAttachments() {
+    return this.run(['attachments'], 'readonly', (tx) => req(tx.objectStore('attachments').getAll()));
+  }
+
+  listAttachmentsByJournal(journalId) {
+    return this.run(['attachments'], 'readonly', async (tx) => (await req(tx.objectStore('attachments').index('journalId').getAll(journalId))).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)));
+  }
+
+  /** ファイルの中身（ArrayBuffer）。無ければ null */
+  getAttachmentData(id) {
+    return this.run(['attachmentData'], 'readonly', async (tx) => (await req(tx.objectStore('attachmentData').get(id)))?.data ?? null);
+  }
+
+  /**
+   * 証憑の追加。ハッシュ値（SHA-256）と大きさはここで中身から計算して記録する。
+   * 中身は後から変えられない（同じ id で2回保存すると誤り）。仕訳を指定するときは、その仕訳があり、締めた期間でないこと
+   * @param {object} meta createAttachment で作った情報
+   * @param {ArrayBuffer|Uint8Array} data ファイルの中身
+   */
+  async saveAttachment(meta, data) {
+    const buffer = toArrayBuffer(data);
+    const record = { ...meta, size: buffer.byteLength, sha256: await sha256Hex(buffer) };
+    const errors = validateAttachment(record);
+    if (errors.length) throw new ValidationError(errors);
+    return this.run(['attachments', 'attachmentData', 'journals', 'periods'], 'readwrite', async (tx) => {
+      if (await req(tx.objectStore('attachments').get(record.id))) throw new ValidationError(['この証憑はすでに保存されています（中身は変えられません）']);
+      await checkAttachmentJournal(tx, record.journalId);
+      tx.objectStore('attachments').put(record);
+      tx.objectStore('attachmentData').put({ id: record.id, data: buffer, createdAt: record.createdAt, updatedAt: record.createdAt });
+      return record;
+    });
+  }
+
+  /** 証憑の情報（種類・取引年月日・金額・取引先・メモ）の修正。中身とハッシュ値は変えない */
+  updateAttachment(id, patch) {
+    return this.run(['attachments', 'journals', 'periods'], 'readwrite', async (tx) => {
+      const before = await req(tx.objectStore('attachments').get(id));
+      if (!before) throw new ValidationError(['証憑が見つかりません']);
+      await checkAttachmentJournal(tx, before.journalId, { missingOk: true });
+      const picked = Object.fromEntries(EDITABLE_FIELDS.filter((k) => k in patch).map((k) => [k, patch[k]]));
+      const next = { ...before, ...picked, updatedAt: now() };
+      const errors = validateAttachment(next);
+      if (errors.length) throw new ValidationError(errors);
+      tx.objectStore('attachments').put(next);
+      return next;
+    });
+  }
+
+  /** 証憑の削除（情報と中身を消し、tombstone を残す） */
+  deleteAttachment(id) {
+    return this.run(['attachments', 'attachmentData', 'journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
+      const before = await req(tx.objectStore('attachments').get(id));
+      if (!before) return;
+      await checkAttachmentJournal(tx, before.journalId, { missingOk: true });
+      tx.objectStore('attachments').delete(id);
+      tx.objectStore('attachmentData').delete(id);
+      tx.objectStore('tombstones').put(tombstone('attachments', id));
+    });
+  }
+
   // ---- バックアップ ----
 
   async counts() {
@@ -862,8 +947,8 @@ export class Repository {
     });
   }
 
-  /** 全データの取得（バックアップ用） */
-  dumpAll() {
+  /** 全データの取得（バックアップ用）。attachments を偽にすると証憑（情報と中身）を読まない */
+  dumpAll({ attachments = true } = {}) {
     return this.run(ALL_STORES, 'readonly', async (tx) => {
       const meta = tx.objectStore('meta');
       const out = {
@@ -871,22 +956,23 @@ export class Repository {
         currentPeriodId: (await req(meta.get('currentPeriodId')))?.value ?? null,
         deviceId: (await req(meta.get('deviceId')))?.value ?? null,
       };
-      for (const n of DATA_STORES) out[n] = await req(tx.objectStore(n).getAll());
+      for (const n of DATA_STORES) out[n] = attachments || !ATTACHMENT_STORES.includes(n) ? await req(tx.objectStore(n).getAll()) : [];
       return out;
     });
   }
 
   /**
    * 復元（置き換え）。検証済みのデータを受け取り、全削除→登録を1トランザクションで行う。
-   * 端末ID はこの端末のものを残す
+   * 端末ID はこの端末のものを残す。証憑の画像を含めないで書き出したバックアップ（attachmentsOmitted）なら、この端末の証憑を残す
    */
   replaceAll(data) {
     return this.run(ALL_STORES, 'readwrite', async (tx) => {
       const meta = tx.objectStore('meta');
-      for (const n of DATA_STORES) await req(tx.objectStore(n).clear());
+      const stores = data.attachmentsOmitted ? DATA_STORES.filter((n) => !ATTACHMENT_STORES.includes(n)) : DATA_STORES;
+      for (const n of stores) await req(tx.objectStore(n).clear());
       meta.put({ key: 'settings', value: data.settings });
       meta.put({ key: 'currentPeriodId', value: data.currentPeriodId });
-      for (const n of DATA_STORES) for (const r of data[n] || []) tx.objectStore(n).put(r);
+      for (const n of stores) for (const r of data[n] || []) tx.objectStore(n).put(r);
       // 目印の導入前のバックアップなら、テンプレートの科目に目印を補う
       const ts = now();
       for (const a of fillHints(data.settings.entityType, data.accounts || [])) tx.objectStore('accounts').put({ ...a, updatedAt: ts });

@@ -19,7 +19,7 @@ test('スキーマ：ストアとインデックスが作成される', async ()
   const repo = await openDB({ indexedDB: new IDBFactory() });
   assert.equal(repo.db.name, DB_NAME);
   assert.equal(repo.db.version, DB_VERSION);
-  assert.deepEqual([...repo.db.objectStoreNames].sort(), ['accounts', 'assets', 'budgets', 'journalHistory', 'journals', 'meta', 'periods', 'subAccounts', 'templates', 'tombstones']);
+  assert.deepEqual([...repo.db.objectStoreNames].sort(), ['accounts', 'assets', 'attachmentData', 'attachments', 'budgets', 'journalHistory', 'journals', 'meta', 'periods', 'subAccounts', 'templates', 'tombstones']);
   const tx = repo.db.transaction(['journals', 'accounts'], 'readonly');
   assert.deepEqual([...tx.objectStore('journals').indexNames].sort(), ['date', 'periodId']);
   assert.equal(tx.objectStore('accounts').index('code').unique, true);
@@ -204,6 +204,8 @@ test('スキーマ移行：バージョン1のデータを残したまま固定�
       open.result.deleteObjectStore('journalHistory');
       open.result.deleteObjectStore('templates');
       open.result.deleteObjectStore('budgets');
+      open.result.deleteObjectStore('attachments');
+      open.result.deleteObjectStore('attachmentData');
       open.transaction.objectStore('meta').put({ key: 'settings', value: { businessName: '旧データ' } });
     };
     open.onsuccess = () => {

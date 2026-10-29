@@ -206,3 +206,18 @@ export function propertyTaxCsv(r) {
   for (const d of r.decreases) out.push([d.kind, d.asset.assetNo || '', d.asset.name, d.asset.quantity ?? 1, era(d.asset.acquiredOn), d.asset.cost, d.life ?? '', d.reason]);
   return toCsv(out);
 }
+
+/**
+ * 証憑の索引（国税庁の「索引簿の作成例」と同じく、取引年月日・取引金額・取引先とファイルを対応させる一覧）
+ * @param {Array} list 証憑の情報
+ * @param {{ journalById: Map }} ctx
+ */
+export function attachmentsCsv(list, { journalById, kindLabels, fileName }) {
+  const slash = (d) => (d ? d.replaceAll('-', '/') : '');
+  const rows = [['取引年月日', '取引金額', '取引先', '種類', '保存用のファイル名', '元のファイル名', '大きさ（バイト）', 'SHA-256', '仕訳No.', '仕訳の日付', 'メモ', '登録日時']];
+  for (const a of list) {
+    const j = a.journalId ? journalById.get(a.journalId) : null;
+    rows.push([slash(a.date), a.amount ?? '', a.partner, kindLabels[a.kind] ?? a.kind, fileName(a), a.name, a.size, a.sha256, j ? j.no : '', j ? slash(j.date) : '', a.memo, a.createdAt]);
+  }
+  return toCsv(rows);
+}
