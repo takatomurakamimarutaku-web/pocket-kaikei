@@ -286,6 +286,24 @@ mkdirSync(OUT, { recursive: true });
     if (!(await page.locator('.check-line.ok').count())) errors.push('青色申告決算書の貸借対照表が一致しない');
   }
 
+  // 印刷/PDF：帳票はヘッダーに印刷ボタンが出る。印刷用の表示で PDF にして、ページ数と操作部品が消えることを確かめる
+  const printPdf = async (hash, name, minPages = 1) => {
+    await go(hash);
+    if (!(await page.locator('#print').isVisible())) errors.push(`${hash} に印刷ボタンがない`);
+    await page.emulateMedia({ media: 'print' });
+    if (await page.locator('.tabbar').isVisible()) errors.push(`${hash} の印刷にタブが出る`);
+    if (!(await page.locator('#print-head').isVisible())) errors.push(`${hash} の印刷に見出しがない`);
+    const pdf = await page.pdf({ path: join(OUT, `${entity}-print-${name}.pdf`), format: 'A4', printBackground: true });
+    await page.emulateMedia({ media: null });
+    const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    if (pages < minPages) errors.push(`${hash} の PDF が ${pages} ページ（${minPages} ページ以上のはず）`);
+  };
+  await printPdf('#/reports/trial', 'trial');
+  await printPdf('#/reports/bs', 'bs');
+  if (entity === 'individual') await printPdf('#/reports/blue-return?page=1', 'blue-return', 4);
+  await go('#/settings');
+  if (await page.locator('#print').isVisible()) errors.push('帳票以外の画面に印刷ボタンが出る');
+
   // 決算・繰越
   await go('#/closing');
   await shot('26-closing', true);

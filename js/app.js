@@ -4,6 +4,7 @@ import { createRouter } from './router.js';
 import { h, showToast } from './ui.js';
 import { friendlyError } from './errors.js';
 import { APP_VERSION } from './version.js';
+import { formatPeriod, todayString } from './period.js';
 import * as setupView from './views/setup.js';
 import * as homeView from './views/home.js';
 import * as journalsView from './views/journals.js';
@@ -31,26 +32,26 @@ import * as closingView from './views/closing.js';
 import * as assetsView from './views/assets.js';
 import * as assetFormView from './views/asset-form.js';
 
-// back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先
+// back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
 const routes = [
   { path: '/setup', view: setupView, title: '初期設定', tab: null, setup: true },
   { path: '/home', view: homeView, title: 'ホーム', tab: 'home' },
-  { path: '/journals', view: journalsView, title: '仕訳帳', tab: 'journals' },
+  { path: '/journals', view: journalsView, title: '仕訳帳', tab: 'journals', print: true },
   { path: '/entry', view: entryView, title: '入力', tab: 'entry' },
   { path: '/quick/:kind', view: quickEntryView, title: 'かんたん入力', tab: 'entry', back: '#/entry' },
-  { path: '/cashbook', view: cashbookView, title: '出納帳', tab: 'entry', back: '#/entry' },
+  { path: '/cashbook', view: cashbookView, title: '出納帳', tab: 'entry', back: '#/entry', print: true },
   { path: '/import/bank', view: bankImportView, title: '銀行明細の取り込み', tab: 'entry', back: '#/entry' },
   { path: '/journal/new', view: journalFormView, title: '振替伝票の入力', tab: 'entry', back: '#/entry' },
   { path: '/journal/:id/edit', view: journalFormView, title: '仕訳の編集', tab: 'journals', back: '#/journals' },
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
-  { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports' },
-  { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports' },
-  { path: '/reports/monthly', view: monthlyView, title: '月次推移表', tab: 'reports', back: '#/reports' },
-  { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports' },
-  { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports' },
-  { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports' },
-  { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports' },
-  { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports' },
+  { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/monthly', view: monthlyView, title: '月次推移表', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },
@@ -59,7 +60,7 @@ const routes = [
   { path: '/opening', view: openingView, title: '期首残高', tab: 'more', back: '#/more' },
   { path: '/periods', view: periodsView, title: '会計期間', tab: 'more', back: '#/more' },
   { path: '/closing', view: closingView, title: '決算・繰越', tab: 'more', back: '#/more' },
-  { path: '/assets', view: assetsView, title: '固定資産台帳', tab: 'more', back: '#/more' },
+  { path: '/assets', view: assetsView, title: '固定資産台帳', tab: 'more', back: '#/more', print: true },
   { path: '/asset/new', view: assetFormView, title: '固定資産の登録', tab: 'more', back: '#/assets' },
   { path: '/asset/:id', view: assetFormView, title: '固定資産の編集', tab: 'more', back: '#/assets' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
@@ -70,6 +71,8 @@ const titleEl = document.getElementById('title');
 const backBtn = document.getElementById('back');
 const headerEl = document.querySelector('.app-header');
 const tabbar = document.querySelector('.tabbar');
+const printBtn = document.getElementById('print');
+const printHead = document.getElementById('print-head');
 
 async function start() {
   let db;
@@ -128,6 +131,8 @@ async function start() {
       app.leaveGuard = null;
       app.setTitle(route.title);
       backBtn.hidden = !route.back;
+      printBtn.hidden = !route.print;
+      if (route.print) fillPrintHead(route.title).catch(() => {});
       headerEl.classList.toggle('is-root', !route.back);
       tabbar.hidden = Boolean(route.setup);
       for (const a of document.querySelectorAll('.tabbar a')) {
@@ -154,6 +159,17 @@ async function start() {
 
   const onScroll = () => headerEl.classList.toggle('is-scrolled', window.scrollY > 4);
   window.addEventListener('scroll', onScroll, { passive: true });
+
+  printBtn.addEventListener('click', () => window.print());
+  // 印刷の見出し：事業者名・帳票名・会計期間・印刷日（画面には出さない）
+  async function fillPrintHead(title) {
+    const [settings, period] = await Promise.all([db.getSettings(), db.getCurrentPeriod()]);
+    printHead.replaceChildren(
+      h('p', { class: 'print-title', text: title }),
+      h('p', { text: [settings?.businessName, period ? formatPeriod(period) : ''].filter(Boolean).join('　') }),
+      h('p', { text: `印刷日 ${todayString().replaceAll('-', '/')}` }),
+    );
+  }
 
   backBtn.addEventListener('click', () => leaveIfAllowed(() => router.goBack(current?.back)));
   // 入力途中の画面から、タブ・リンクで離れるときに確認する
