@@ -6,9 +6,10 @@ import { compareAccounts } from '../accounts.js';
 import { isCashAccount } from '../quick.js';
 import { monthsInPeriod, monthRange, todayString } from '../period.js';
 import { formatYen } from '../money.js';
+import { ledgerBookDoc, docHead } from '../print-forms.js';
 
 export async function render({ app, outlet, query }) {
-  const { period, accounts, subAccounts, journals } = await app.load();
+  const { settings, period, accounts, subAccounts, journals } = await app.load();
   const used = new Set(journals.flatMap((j) => j.lines.map((l) => l.accountId)));
   for (const ob of period.openingBalances || []) if (ob.amount) used.add(ob.accountId);
   // 有効な口座と、無効でも当期に動きのある口座
@@ -73,6 +74,16 @@ export async function render({ app, outlet, query }) {
     const ctx = { accountId, subAccountId: subId || null, accounts, subAccounts, period, journals };
     const lg = generalLedger({ ...ctx, from, to });
     const negative = lg.account.role === 'cash' ? firstNegativeDate(ctx) : null;
+    // 印刷：出納帳の様式（入金・出金・残高）
+    const subName = subId ? subAccounts.find((x) => x.id === subId)?.name ?? '' : '';
+    app.printDoc = ({ printedAt }) =>
+      ledgerBookDoc([{ ...lg, subName }], {
+        head: docHead({ settings, period, from, to, printedAt }),
+        carriedLabel: carriedLabel(period, from),
+        title: lg.account.role === 'cash' ? '現金出納帳' : '預金出納帳',
+        debitLabel: '入金',
+        creditLabel: '出金',
+      });
     const add = (kind, label, cls) => h('a', { class: `btn ${cls}`, href: `#/quick/${kind}?${params()}`, text: label });
     put(
       body,

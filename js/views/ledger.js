@@ -4,6 +4,7 @@ import { generalLedger, generalLedgers, carriedLabel } from '../ledger.js';
 import { ledgerCsv, csvFileName } from '../csv.js';
 import { compareAccounts, groupLabel, GROUPS } from '../accounts.js';
 import { monthRangePicker, ledgerSection } from './report-common.js';
+import { ledgerBookDoc, docHead } from '../print-forms.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -46,6 +47,12 @@ export async function render({ app, outlet, query }) {
     const ctx = { accounts, subAccounts, period, journals, from, to };
     const ledgers = accountId === ALL ? generalLedgers(ctx) : [generalLedger({ ...ctx, accountId, subAccountId: subId || null })];
     const subName = subId ? subAccounts.find((s) => s.id === subId)?.name ?? '' : '';
+    // 印刷：科目ごとに改ページした総勘定元帳の様式
+    app.printDoc = ({ printedAt }) =>
+      ledgerBookDoc(
+        ledgers.map((lg) => ({ ...lg, subName })),
+        { head: docHead({ settings, period, from, to, printedAt }), carriedLabel: carriedLabel(period, from), title: subId ? '補助元帳' : '総勘定元帳' },
+      );
     const csv = () => saveFile(new Blob([ledgerCsv(ledgers, { carried: carriedLabel(period, from), subName })], { type: 'text/csv' }), csvFileName('ledger'));
     put(
       body,

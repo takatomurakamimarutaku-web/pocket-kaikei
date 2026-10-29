@@ -1,7 +1,8 @@
 // 仕訳帳：月別表示・並び順（日付順・入力順・伝票No順）・検索・CSV 出力。タップで編集
 import { h, put, emptyState, saveFile, showToast, field, segmented } from '../ui.js';
 import { JOURNAL_ORDERS, matchJournal, linesToRows, voucherOf, parseVoucherNo } from '../journal.js';
-import { monthsInPeriod, todayString } from '../period.js';
+import { monthsInPeriod, monthRange, todayString } from '../period.js';
+import { journalBookDoc, docHead } from '../print-forms.js';
 import { formatYen } from '../money.js';
 import { TAX_BY_CODE } from '../tax.js';
 import { normalize } from '../search.js';
@@ -12,7 +13,7 @@ import { icon } from '../icons.js';
 
 export async function render({ app, outlet, query }) {
   const data = await app.load();
-  const { period, journals, accountById, subById, departmentById } = data;
+  const { settings, period, journals, accountById, subById, departmentById } = data;
   // 証憑を添付した仕訳に印を付ける
   const attachCount = new Map();
   for (const a of await app.db.listAttachments()) if (a.journalId) attachCount.set(a.journalId, (attachCount.get(a.journalId) || 0) + 1);
@@ -121,6 +122,11 @@ export async function render({ app, outlet, query }) {
     );
   }
 
+  // 印刷：表示中の仕訳（月・検索・並び順）を仕訳日記帳の様式で
+  app.printDoc = ({ printedAt }) => {
+    const range = month === 'all' || hasCriteria(crit) ? { from: period.startDate, to: period.endDate } : monthRange(period, month, month);
+    return journalBookDoc({ journals: visible(), accountById, subById, departmentById, head: docHead({ settings, period, ...range, printedAt }) });
+  };
   put(outlet, 
     h('div', { class: 'month-bar' }, prev, monthLabel, next, allBtn),
     h('div', { class: 'search-bar' }, search),
