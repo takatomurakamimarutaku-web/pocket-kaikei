@@ -20,6 +20,7 @@ import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js';
 import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
+import { validateLock } from './lock.js';
 
 export const DB_NAME = 'pocket-kaikei';
 export const DB_VERSION = 6;
@@ -1151,4 +1152,214 @@ export class Repository {
 /** 必須の役割の科目がそろっているか（復元データの検証用） */
 export function missingRoles(entityType, accounts) {
   return (REQUIRED_ROLES[entityType] || []).filter((r) => !findByRole(accounts, r));
+}
+
+// ---- この端末の設定（帳簿の一覧・画面ロック） ----
+// 帳簿ごとに IndexedDB のデータベースを分ける（最初の帳簿は従来の pocket-kaikei、追加した帳簿は pocket-kaikei-<id>）。
+// 帳簿の一覧・今の帳簿・画面ロックは端末ごとの設定なので、帳簿とは別のデータベースに持ち、バックアップ・同期の対象にしない
+
+export const DEVICE_DB_NAME = 'pocket-kaikei-device';
+export const DEVICE_DB_VERSION = 1;
+const BOOK_LABEL_MAX = 60;
+
+/** 端末の設定のデータベースを開く。テストでは fake-indexeddb の IDBFactory を渡す */
+export function openDeviceStore({ indexedDB = globalThis.indexedDB, name = DEVICE_DB_NAME } = {}) {
+  return new Promise((resolve, reject) => {
+    if (!indexedDB) {
+      reject(new Error('この環境ではIndexedDBが使えません'));
+      return;
+    }
+    const open = indexedDB.open(name, DEVICE_DB_VERSION);
+    open.onupgradeneeded = (e) => {
+      const db = open.result;
+      if (e.oldVersion < 1) {
+        db.createObjectStore('books', { keyPath: 'id' });
+        db.createObjectStore('kv', { keyPath: 'key' });
+      }
+    };
+    open.onsuccess = () => {
+      const db = open.result;
+      db.onversionchange = () => db.close();
+      resolve(new DeviceStore(db, indexedDB));
+    };
+    open.onerror = () => reject(open.error);
+    open.onblocked = () => reject(new Error('ほかのタブでアプリが開かれているため、データベースを更新できません'));
+  });
+}
+
+export class DeviceStore {
+  constructor(db, indexedDB) {
+    this.db = db;
+    this.indexedDB = indexedDB;
+  }
+
+  close() {
+    this.db.close();
+  }
+
+  async run(stores, mode, fn) {
+    const tx = this.db.transaction(stores, mode);
+    const done = txDone(tx);
+    let result;
+    try {
+      result = await fn(tx);
+    } catch (e) {
+      try {
+        tx.abort();
+      } catch {
+        /* 既に終了 */
+      }
+      await done.catch(() => {});
+      throw e;
+    }
+    await done;
+    return result;
+  }
+
+  async getValue(key) {
+    const r = await this.run(['kv'], 'readonly', (tx) => req(tx.objectStore('kv').get(key)));
+    return r ? r.value : null;
+  }
+
+  setValue(key, value) {
+    return this.run(['kv'], 'readwrite', (tx) => {
+      tx.objectStore('kv').put({ key, value });
+    });
+  }
+
+  /** 帳簿の一覧（作った順） */
+  async listBooks() {
+    const books = await this.run(['books'], 'readonly', (tx) => req(tx.objectStore('books').getAll()));
+    return books.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  }
+
+  /** 今の帳簿。帳簿が1つも無ければ、従来のデータベース（pocket-kaikei）を最初の帳簿にする */
+  currentBook() {
+    return this.run(['books', 'kv'], 'readwrite', async (tx) => {
+      const books = tx.objectStore('books');
+      const kv = tx.objectStore('kv');
+      const list = await req(books.getAll());
+      const currentId = (await req(kv.get('currentBookId')))?.value;
+      let book = list.find((b) => b.id === currentId);
+      if (book) return book;
+      book = list.find((b) => b.dbName === DB_NAME) || list[0];
+      if (!book) {
+        const at = now();
+        book = { id: newId(), dbName: DB_NAME, label: '', createdAt: at, updatedAt: at };
+        books.put(book);
+      }
+      kv.put({ key: 'currentBookId', value: book.id });
+      return book;
+    });
+  }
+
+  /** 帳簿を追加する（データベースは開いたときに作られる） */
+  addBook() {
+    return this.run(['books'], 'readwrite', (tx) => {
+      const at = now();
+      const id = newId();
+      const book = { id, dbName: `${DB_NAME}-${id}`, label: '', createdAt: at, updatedAt: at };
+      tx.objectStore('books').put(book);
+      return book;
+    });
+  }
+
+  /** 今の帳簿を切り替える（データベースは画面の側で開き直す） */
+  switchBook(id) {
+    return this.run(['books', 'kv'], 'readwrite', async (tx) => {
+      const book = await req(tx.objectStore('books').get(id));
+      if (!book) throw new ValidationError(['帳簿が見つかりません']);
+      tx.objectStore('kv').put({ key: 'currentBookId', value: id });
+      return book;
+    });
+  }
+
+  /** 帳簿の表示名（事業者名）を覚える。変わったときだけ書く */
+  setBookLabel(id, label) {
+    return this.run(['books'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('books');
+      const book = await req(store.get(id));
+      const text = String(label || '').slice(0, BOOK_LABEL_MAX);
+      if (!book || book.label === text) return book;
+      const next = { ...book, label: text, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 帳簿を削除する（データベースごと消す。今の帳簿は消せない） */
+  async deleteBook(id) {
+    const book = await this.run(['books', 'kv'], 'readonly', async (tx) => {
+      const b = await req(tx.objectStore('books').get(id));
+      if (!b) throw new ValidationError(['帳簿が見つかりません']);
+      if ((await req(tx.objectStore('kv').get('currentBookId')))?.value === id) throw new ValidationError(['今開いている帳簿は削除できません。ほかの帳簿に切り替えてから削除してください']);
+      return b;
+    });
+    // 先にデータベースを消す（ほかのタブで開いていて消せなければ、一覧に残してやり直せるようにする）
+    await deleteDatabase(this.indexedDB, book.dbName);
+    await this.run(['books'], 'readwrite', (tx) => {
+      tx.objectStore('books').delete(id);
+    });
+    return book;
+  }
+
+  /** 画面ロックの設定（無ければ null） */
+  getLock() {
+    return this.getValue('lock');
+  }
+
+  async saveLock(lock) {
+    const errors = validateLock(lock);
+    if (errors.length) throw new ValidationError(errors);
+    const at = now();
+    const cur = await this.getLock();
+    const next = { ...lock, id: cur?.id || newId(), createdAt: cur?.createdAt || at, updatedAt: at };
+    await this.setValue('lock', next);
+    return next;
+  }
+
+  async clearLock() {
+    await this.run(['kv'], 'readwrite', (tx) => {
+      tx.objectStore('kv').delete('lock');
+      tx.objectStore('kv').delete('lockFailures');
+    });
+  }
+
+  /** 続けて間違えた回数と最後に間違えた時刻 */
+  async getFailures() {
+    return (await this.getValue('lockFailures')) || { count: 0, lastAt: 0 };
+  }
+
+  async recordFailure(at = Date.now()) {
+    const cur = await this.getFailures();
+    const next = { count: cur.count + 1, lastAt: at };
+    await this.setValue('lockFailures', next);
+    return next;
+  }
+
+  resetFailures() {
+    return this.run(['kv'], 'readwrite', (tx) => {
+      tx.objectStore('kv').delete('lockFailures');
+    });
+  }
+
+  /** すべての帳簿のデータベースと端末の設定を消す（パスコードを忘れたとき）。開いている帳簿は先に閉じておく */
+  async eraseAll() {
+    const books = await this.listBooks();
+    for (const b of books) await deleteDatabase(this.indexedDB, b.dbName);
+    await this.run(['books', 'kv'], 'readwrite', async (tx) => {
+      await req(tx.objectStore('books').clear());
+      await req(tx.objectStore('kv').clear());
+    });
+  }
+}
+
+/** データベースを消す。ほかのタブで開いていて消せないときはエラー */
+function deleteDatabase(indexedDB, name) {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.deleteDatabase(name);
+    r.onsuccess = () => resolve();
+    r.onerror = () => reject(r.error);
+    r.onblocked = () => reject(new Error('ほかのタブでこの帳簿が開かれているため、削除できません'));
+  });
 }

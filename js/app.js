@@ -1,5 +1,7 @@
 // 起動処理
-import { openDB } from './db.js';
+import { openDB, openDeviceStore } from './db.js';
+import { needsLock } from './lock.js';
+import { lockScreen, isLocked } from './views/lock-screen.js';
 import { createRouter } from './router.js';
 import { h, showToast } from './ui.js';
 import { friendlyError } from './errors.js';
@@ -7,6 +9,8 @@ import { APP_VERSION } from './version.js';
 import { isDesktopApp } from './install.js';
 import { formatPeriod, todayString } from './period.js';
 import * as setupView from './views/setup.js';
+import * as lockSettingsView from './views/lock-settings.js';
+import * as booksView from './views/books.js';
 import * as homeView from './views/home.js';
 import * as journalsView from './views/journals.js';
 import * as journalFormView from './views/journal-form.js';
@@ -101,6 +105,8 @@ const routes = [
   { path: '/reports/breakdown', view: breakdownView, title: '勘定科目内訳明細書', tab: 'reports', back: '#/reports', print: true },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },
+  { path: '/books', view: booksView, title: '帳簿の切替', tab: 'more', back: '#/more' },
+  { path: '/lock', view: lockSettingsView, title: '画面ロック', tab: 'more', back: '#/more' },
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },
   { path: '/account/new', view: accountEditView, title: '科目の追加', tab: 'more', back: '#/accounts' },
   { path: '/account/:id', view: accountEditView, title: '科目の編集', tab: 'more', back: '#/accounts' },
@@ -126,17 +132,49 @@ const printBtn = document.getElementById('print');
 const printHead = document.getElementById('print-head');
 
 async function start() {
-  let db;
+  let db, device, book, lock;
   try {
-    db = await openDB();
+    // 帳簿の一覧と画面ロックは端末の設定（帳簿とは別のデータベース）。今の帳簿のデータベースを開く
+    device = await openDeviceStore();
+    book = await device.currentBook();
+    lock = await device.getLock();
+    db = await openDB({ name: book.dbName });
   } catch (e) {
     outlet.replaceChildren(errorView(friendlyError(e, 'データを開くことが')));
     return;
   }
   let current = null;
 
+  /** パスコードを忘れたとき：すべての帳簿と端末の設定を消して初期設定から */
+  async function eraseEverything() {
+    db.close();
+    await device.eraseAll();
+    history.replaceState(null, '', '#/setup');
+    location.reload();
+  }
+  const lockNow = () => (lock ? lockScreen({ device, lock, onErase: eraseEverything }) : Promise.resolve());
+
   const app = {
     db,
+    device,
+    book,
+    lock: lockNow,
+    /** 画面ロックの設定を変えたあとに読み直す */
+    refreshLock: async () => {
+      lock = await device.getLock();
+    },
+    /** 帳簿を切り替える（今の帳簿のデータベースを閉じて、切り替えた帳簿のデータベースを開く） */
+    switchBook: async (id, hash = '#/home') => {
+      const next = await device.switchBook(id);
+      const nextDb = await openDB({ name: next.dbName });
+      db.close();
+      db = nextDb;
+      app.db = nextDb;
+      app.book = next;
+      await fillAccountHints(db);
+      if (location.hash === hash) router.refresh();
+      else router.navigate(hash, { replace: true });
+    },
     navigate: (hash, opts) => router.navigate(hash, opts),
     goBack: (fallback) => router.goBack(fallback),
     refresh: () => router.refresh(),
@@ -177,6 +215,13 @@ async function start() {
       if (settings && route.setup) {
         router.navigate('#/home', { replace: true });
         return null;
+      }
+      // 帳簿の一覧に出す名前（事業者名）を覚えておく
+      if (settings && settings.businessName !== app.book.label) {
+        device
+          .setBookLabel(app.book.id, settings.businessName)
+          .then((b) => b && (app.book = b))
+          .catch(() => {});
       }
       current = route;
       app.leaveGuard = null;
@@ -241,6 +286,20 @@ async function start() {
   }
 
   await fillAccountHints(db);
+  // 画面ロック：解除するまで帳簿の画面を出さない。裏に回った時間で自動ロックする
+  await lockNow();
+  let hiddenAt = null;
+  document.addEventListener('visibilitychange', () => {
+    if (!lock || isLocked()) return;
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+      // 「すぐ」はアプリの切替画面に帳簿を出さないよう、裏に回ったときにロックする
+      if (lock.timeout === 0) lockNow();
+    } else {
+      if (needsLock({ hiddenAt, now: Date.now(), timeout: lock.timeout })) lockNow();
+      hiddenAt = null;
+    }
+  });
   router.start();
   requestPersistence();
   notifyUpdated(db);

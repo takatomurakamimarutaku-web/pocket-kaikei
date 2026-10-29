@@ -73,7 +73,7 @@ export async function render({ app, outlet }) {
       h('p', {}, '端末の故障や機種変更に備えて、定期的に', h('a', { href: '#/backup', text: 'バックアップ' }), 'してください。'),
     ),
     h('h2', { class: 'section-title', text: 'データの初期化' }),
-    h('div', { class: 'panel small' }, h('p', { text: 'すべての仕訳・科目・設定を消して、初期設定からやり直します。' }), h('button', { type: 'button', class: 'btn btn-danger-text', text: 'すべてのデータを消す', onclick: reset })),
+    h('div', { class: 'panel small' }, h('p', { text: 'この帳簿のすべての仕訳・科目・設定を消して、初期設定からやり直します（ほかの帳簿と画面ロックは残ります）。' }), h('button', { type: 'button', class: 'btn btn-danger-text', text: 'すべてのデータを消す', onclick: reset })),
   );
 
   async function save() {
