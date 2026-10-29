@@ -7,6 +7,7 @@ import { shouldRemindBackup } from '../backup.js';
 import { currentInstallState } from '../install.js';
 import { ENTITY_LABELS, TAX_STATUS_LABELS } from '../models.js';
 import { openingDiff } from '../ledger.js';
+import { periodContext } from './period-common.js';
 
 export async function render({ app, outlet }) {
   const data = await app.load();
@@ -23,6 +24,8 @@ export async function render({ app, outlet }) {
   const thisMonth = todayString().slice(0, 7);
   const monthCount = journals.filter((j) => j.date.startsWith(thisMonth)).length;
   const diff = individual ? 0 : openingDiff(period, accounts);
+  const pctx = await periodContext(app, data);
+  const today = todayString();
 
   put(outlet, 
     install === 'ios-browser'
@@ -40,6 +43,14 @@ export async function render({ app, outlet }) {
           h('span', { text: lastBackupAt ? `前回のバックアップから日数が経っています（${lastBackupAt.slice(0, 10).replaceAll('-', '/')}）。` : 'まだバックアップがありません。データはこの端末の中だけに保存されています。' }),
           h('a', { href: '#/backup', class: 'link', text: 'バックアップする' }),
         )
+      : null,
+    pctx.next
+      ? h('div', { class: 'notice' }, h('span', { text: `過去の会計期間（${formatPeriod(period)}）を表示しています。` }), h('a', { href: '#/periods', class: 'link', text: '会計期間を切り替える' }))
+      : today > period.endDate
+        ? h('div', { class: 'notice' }, h('span', { text: '会計期間が終わりました。決算整理をして、次の期間へ繰り越してください。' }), h('a', { href: '#/closing', class: 'link', text: '決算・繰越へ' }))
+        : null,
+    pctx.stale
+      ? h('div', { class: 'notice' }, h('span', { text: '前期の帳簿が繰越の後に変更されています。期首残高を更新してください。' }), h('a', { href: '#/periods', class: 'link', text: '会計期間へ' }))
       : null,
     diff
       ? h('div', { class: 'notice' }, h('span', { text: `期首残高の借方と貸方が一致していません（差額 ${formatYen(Math.abs(diff))}円）。` }), h('a', { href: '#/opening', class: 'link', text: '期首残高を確認' }))
@@ -67,7 +78,7 @@ export async function render({ app, outlet }) {
       h('a', { href: '#/journals', class: 'btn', text: '仕訳帳' }),
       h('a', { href: '#/reports/trial', class: 'btn', text: '試算表' }),
     ),
-    journals.length === 0
+    journals.length === 0 && !pctx.prev
       ? h(
           'div',
           { class: 'panel' },

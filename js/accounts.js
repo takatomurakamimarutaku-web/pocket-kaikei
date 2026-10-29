@@ -70,6 +70,7 @@ export const HINTS = {
   sales: '売上高',
   purchases: '仕入高',
   officer_loan: '役員借入金',
+  inventory: '商品',
 };
 
 /** 事業者ごとに必ず存在する役割 */
@@ -93,7 +94,7 @@ const CORPORATION = [
   ['120', '受取手形', 'current_assets', N],
   ['121', '売掛金', 'current_assets', N, { hint: 'receivable' }],
   ['130', '有価証券', 'current_assets', N],
-  ['140', '商品', 'current_assets', N],
+  ['140', '商品', 'current_assets', N, { hint: 'inventory' }],
   ['141', '貯蔵品', 'current_assets', N],
   ['150', '前払金', 'current_assets', N],
   ['151', '前払費用', 'current_assets', N],
@@ -188,7 +189,7 @@ const INDIVIDUAL = [
   ['120', '受取手形', 'current_assets', N],
   ['121', '売掛金', 'current_assets', N, { hint: 'receivable' }],
   ['130', '有価証券', 'current_assets', N],
-  ['140', '商品', 'current_assets', N],
+  ['140', '商品', 'current_assets', N, { hint: 'inventory' }],
   ['150', '前払金', 'current_assets', N],
   ['151', '貸付金', 'current_assets', N],
   ['152', '未収入金', 'current_assets', N],
@@ -288,19 +289,21 @@ export function findByHint(accounts, hint) {
 }
 
 /**
- * 目印を持たないテンプレートの科目に、コードで目印を補う（目印の導入前に作ったデータ・復元データ用）
- * @returns {Array} 目印を補った科目（変更が無ければ空）
+ * 目印を持たないテンプレートの科目に、コードで目印を補う（目印の導入前に作ったデータ・復元データ、
+ * 後から目印を増やしたときの既存データ用）。同じ目印を持つ科目が既にあれば付けない
+ * @returns {Array} 変更した科目（変更が無ければ空）
  */
 export function fillHints(entityType, accounts) {
   const byCode = new Map((TEMPLATES[entityType] || []).filter((r) => r[4]?.hint).map((r) => [r[0], r[4].hint]));
   const taken = new Set(accounts.map((a) => a.hint).filter(Boolean));
   const out = [];
   for (const a of accounts) {
-    if (!a.template || a.hint !== undefined) continue;
-    const hint = byCode.get(a.code) ?? null;
-    const next = { ...a, hint: hint && !taken.has(hint) ? hint : null };
-    if (next.hint) taken.add(next.hint);
-    out.push(next);
+    if (!a.template || a.hint) continue;
+    const hint = byCode.get(a.code);
+    if (hint && !taken.has(hint)) {
+      taken.add(hint);
+      out.push({ ...a, hint });
+    } else if (a.hint === undefined) out.push({ ...a, hint: null });
   }
   return out;
 }

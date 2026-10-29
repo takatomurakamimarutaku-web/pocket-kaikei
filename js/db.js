@@ -100,6 +100,44 @@ function usedAccountIds(journals, periods) {
   return { accounts, subs };
 }
 
+/**
+ * 期首残高の検証と整形（トランザクションの中で呼ぶ）。BS 科目のみ。
+ * 個人は元入金を資産合計−負債合計で計算して上書き、法人は貸借が一致しなければ ValidationError
+ */
+async function normalizeOpening(tx, balances) {
+  const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+  const accounts = await req(tx.objectStore('accounts').getAll());
+  const subs = await req(tx.objectStore('subAccounts').getAll());
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const subById = new Map(subs.map((s) => [s.id, s]));
+  const errors = [];
+  const list = [];
+  for (const b of balances) {
+    const acc = accountById.get(b.accountId);
+    if (!acc) {
+      errors.push('存在しない勘定科目があります');
+      continue;
+    }
+    if (!isBsGroup(acc.group)) errors.push(`「${acc.name}」は損益の科目なので期首残高を入力できません`);
+    if (b.subAccountId && subById.get(b.subAccountId)?.accountId !== acc.id) errors.push(`「${acc.name}」の補助科目が正しくありません`);
+    if (!isYen(b.amount)) errors.push(`「${acc.name}」の金額は整数で入力してください`);
+    if (b.amount) list.push({ accountId: b.accountId, subAccountId: b.subAccountId || null, amount: b.amount });
+  }
+  if (errors.length) throw new ValidationError(errors);
+  let result = list;
+  if (settings?.entityType === 'individual') {
+    const capital = findByRole(accounts, 'owner_capital');
+    result = list.filter((b) => b.accountId !== capital.id);
+    const amount = computeOwnerCapital(result, accounts);
+    if (amount) result.push({ accountId: capital.id, subAccountId: null, amount });
+  } else {
+    // 法人：借方合計と貸方合計が一致しない期首残高は保存しない
+    const diff = result.reduce((s, b) => s + fromNormal(b.amount, accountById.get(b.accountId)), 0);
+    if (diff) throw new ValidationError([`借方と貸方の合計が一致しません（差額 ${Math.abs(diff).toLocaleString('ja-JP')}円）`]);
+  }
+  return result;
+}
+
 export class Repository {
   constructor(db) {
     this.db = db;
@@ -196,6 +234,8 @@ export class Repository {
       const store = tx.objectStore('periods');
       const period = await req(store.get(periodId));
       if (!period) throw new Error('会計期間が見つかりません');
+      const others = (await req(store.getAll())).filter((p) => p.id !== periodId);
+      if (others.some((p) => p.startDate <= endDate && startDate <= p.endDate)) throw new ValidationError(['ほかの会計期間と重なります']);
       const journals = await req(tx.objectStore('journals').index('periodId').getAll(periodId));
       const outside = journals.filter((j) => j.date < startDate || j.date > endDate).length;
       if (outside) throw new ValidationError([`新しい期間の外になる仕訳が${outside}件あります`]);
@@ -211,41 +251,45 @@ export class Repository {
    */
   saveOpeningBalances(periodId, balances) {
     return this.run(['meta', 'periods', 'accounts', 'subAccounts'], 'readwrite', async (tx) => {
-      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
-      const accounts = await req(tx.objectStore('accounts').getAll());
-      const subs = await req(tx.objectStore('subAccounts').getAll());
-      const accountById = new Map(accounts.map((a) => [a.id, a]));
-      const subById = new Map(subs.map((s) => [s.id, s]));
-      const errors = [];
-      const list = [];
-      for (const b of balances) {
-        const acc = accountById.get(b.accountId);
-        if (!acc) {
-          errors.push('存在しない勘定科目があります');
-          continue;
-        }
-        if (!isBsGroup(acc.group)) errors.push(`「${acc.name}」は損益の科目なので期首残高を入力できません`);
-        if (b.subAccountId && subById.get(b.subAccountId)?.accountId !== acc.id) errors.push(`「${acc.name}」の補助科目が正しくありません`);
-        if (!isYen(b.amount)) errors.push(`「${acc.name}」の金額は整数で入力してください`);
-        if (b.amount) list.push({ accountId: b.accountId, subAccountId: b.subAccountId || null, amount: b.amount });
-      }
-      if (errors.length) throw new ValidationError(errors);
-      let result = list;
-      if (settings?.entityType === 'individual') {
-        const capital = findByRole(accounts, 'owner_capital');
-        result = list.filter((b) => b.accountId !== capital.id);
-        const amount = computeOwnerCapital(result, accounts);
-        if (amount) result.push({ accountId: capital.id, subAccountId: null, amount });
-      } else {
-        // 法人：借方合計と貸方合計が一致しない期首残高は保存しない
-        const diff = result.reduce((s, b) => s + fromNormal(b.amount, accountById.get(b.accountId)), 0);
-        if (diff) throw new ValidationError([`借方と貸方の合計が一致しません（差額 ${Math.abs(diff).toLocaleString('ja-JP')}円）`]);
-      }
+      const result = await normalizeOpening(tx, balances);
       const store = tx.objectStore('periods');
       const period = await req(store.get(periodId));
       if (!period) throw new Error('会計期間が見つかりません');
       const next = { ...period, openingBalances: result, updatedAt: now() };
       store.put(next);
+      return next;
+    });
+  }
+
+  listPeriods() {
+    return this.run(['periods'], 'readonly', async (tx) => (await req(tx.objectStore('periods').getAll())).sort((a, b) => (a.startDate < b.startDate ? -1 : 1)));
+  }
+
+  /** 表示・入力する会計期間を切り替える */
+  setCurrentPeriod(periodId) {
+    return this.run(['meta', 'periods'], 'readwrite', async (tx) => {
+      if (!(await req(tx.objectStore('periods').get(periodId)))) throw new Error('会計期間が見つかりません');
+      tx.objectStore('meta').put({ key: 'currentPeriodId', value: periodId });
+    });
+  }
+
+  /**
+   * 年度繰越：次の会計期間を期首残高つきで作り、現在の期間にする（1つのトランザクション）
+   * @param {object} period createPeriod で作った期間（startDate・endDate）
+   * @param {Array} balances 期首残高（closing.carryForwardBalances の結果）
+   */
+  createNextPeriod(period, balances) {
+    return this.run(ALL_STORES, 'readwrite', async (tx) => {
+      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+      const errors = validatePeriod(period, settings?.entityType);
+      if (Object.keys(errors).length) throw new ValidationError(errors);
+      const store = tx.objectStore('periods');
+      const periods = await req(store.getAll());
+      if (periods.some((p) => p.startDate <= period.endDate && period.startDate <= p.endDate)) throw new ValidationError(['この期間と重なる会計期間が既にあります']);
+      const result = await normalizeOpening(tx, balances);
+      const next = { ...period, openingBalances: result, nextJournalNo: 1 };
+      store.put(next);
+      tx.objectStore('meta').put({ key: 'currentPeriodId', value: next.id });
       return next;
     });
   }
