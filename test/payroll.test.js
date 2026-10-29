@@ -475,6 +475,7 @@ test('スキーマ移行：バージョン9のデータを残したまま従業�
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('employees'); // バージョン9の構成にする
       open.result.deleteObjectStore('payrolls');
+      open.result.deleteObjectStore('yearEnds');
       open.transaction.objectStore('invoices').put({ id: 'i1', kind: 'estimate', createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {

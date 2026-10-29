@@ -92,15 +92,17 @@ export function sumItems(items) {
  * 給与1件の合計
  * taxable：課税の支給額、gross：総支給額（＋非課税の通勤手当）、social：社会保険料等（健康保険・厚生年金・雇用保険）
  * afterSocial：社会保険料等控除後の給与等の金額（源泉所得税の計算のもと）、deductions：控除の合計、net：差引支給額
+ * yearEnd：年末調整の過不足（＋は不足額の徴収、−は超過額の還付）。控除の合計に含める
  */
 export function payrollTotals(p) {
   const taxable = sumItems(p.earnings);
   const commute = p.commute || 0;
   const social = (p.health || 0) + (p.pension || 0) + (p.employment || 0);
   const others = sumItems(p.deductions);
-  const deductions = social + (p.incomeTax || 0) + (p.residentTax || 0) + others;
+  const yearEnd = p.yearEndTax || 0;
+  const deductions = social + (p.incomeTax || 0) + (p.residentTax || 0) + others + yearEnd;
   const gross = taxable + commute;
-  return { taxable, commute, gross, social, afterSocial: taxable - social, others, deductions, net: gross - deductions };
+  return { taxable, commute, gross, social, afterSocial: taxable - social, others, yearEnd, deductions, net: gross - deductions };
 }
 
 /**
@@ -358,6 +360,8 @@ export function validatePayroll(p, { employees = null } = {}) {
     if (!isNonNegYen(p[k] ?? 0)) errors.push(`${label}は0以上の整数で入力してください`);
   }
   if (p.kind === 'bonus' && !isNonNegYen(p.prevAfterSocial ?? 0)) errors.push('前月の給与（社会保険料等を引いた後）は0以上の整数で入力してください');
+  if (!isYen(p.yearEndTax ?? 0) || Math.abs(p.yearEndTax ?? 0) > MAX_PAY) errors.push('年末調整の過不足額が不正です');
+  if ((p.yearEndTax ?? 0) !== 0 && !p.yearEndId) errors.push('年末調整の過不足額に年末調整の記録がありません');
   if (len(p.note) > MAX_NOTE) errors.push(`メモは${MAX_NOTE}文字以内にしてください`);
   if (errors.length) return errors;
   const t = payrollTotals(p);
@@ -490,6 +494,10 @@ export function payrollJournal(p, { accounts, settings, periodId }) {
   deposit('social', (p.health || 0) + (p.pension || 0), '社会保険料');
   deposit('employment', p.employment || 0, '雇用保険料');
   deposit('incomeTax', p.incomeTax || 0, '源泉所得税');
+  // 年末調整：不足額は預り金に足し、超過額（還付）は預り金から払う
+  const yearEnd = p.yearEndTax || 0;
+  if (yearEnd > 0) deposit('incomeTax', yearEnd, '年末調整 不足額');
+  if (yearEnd < 0) lines.push({ side: 'debit', accountId: accountOf('deposit').id, subAccountId: cfg.subs.incomeTax, amount: -yearEnd, taxCategory: 'none', memo: clip(`${base} 年末調整 還付`) });
   deposit('residentTax', p.residentTax || 0, '住民税');
   for (const d of p.deductions || []) deposit('other', d.amount, d.name);
   if (t.net > 0) lines.push({ side: 'credit', accountId: accountOf('payment').id, subAccountId: null, amount: t.net, taxCategory: 'none', memo: clip(`${base} 差引支給額`) });
@@ -568,7 +576,7 @@ export function payrollDraft(employee, { kind = 'salary', payDate, title, payrol
  */
 export function copyPayroll(src, { payDate, payrolls = [] }) {
   const p = structuredClone(src);
-  for (const k of ['id', 'postedAt', 'createdAt', 'updatedAt']) delete p[k];
+  for (const k of ['id', 'postedAt', 'createdAt', 'updatedAt', 'yearEndTax', 'yearEndId']) delete p[k];
   Object.assign(p, { payDate, title: src.kind === 'salary' ? defaultTitle('salary', payDate) : src.title, journalId: null });
   if (p.kind === 'bonus') p.prevAfterSocial = previousMonthSalary(payrolls, src.employeeId, payDate).amount;
   return applyAuto(p);
@@ -616,23 +624,41 @@ function lastDay(ym) {
   return `${ym}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
 }
 
-/**
- * 源泉所得税の納付の集計（所得税徴収高計算書に書く内容）。仕訳を登録した給与だけを数える
- * @returns {Array<{ ...period, rows: Array<{id,label,persons,amount,tax}>, tax, first, last, posted, drafts }>}
- *   amount：支給額（課税の支給額。非課税の通勤手当を含めない）、persons：実人員（納期の特例は月ごとの実人員の合計）
- */
-export function withholdingSummary(payrolls, { year, special }) {
-  return withholdingPeriods(year, special).map((per) => {
+/** 1年分の納付の集計。carry：前の年から引ききれずに残った年末調整の超過税額 */
+function yearSummary(payrolls, year, special, carry) {
+  const list = withholdingPeriods(year, special).map((per) => {
     const inRange = payrolls.filter((p) => per.from <= p.payDate && p.payDate <= per.to);
-    const list = inRange.filter((p) => p.journalId);
+    const posted = inRange.filter((p) => p.journalId);
     const rows = WITHHOLDING_ROWS.map((r) => {
-      const items = list.filter((p) => withholdingCategory(p) === r.id);
+      const items = posted.filter((p) => withholdingCategory(p) === r.id);
       const persons = per.months.reduce((s, m) => s + new Set(items.filter((p) => p.payDate.startsWith(m)).map((p) => p.employeeId)).size, 0);
       return { ...r, persons, amount: items.reduce((s, p) => s + payrollTotals(p).taxable, 0), tax: items.reduce((s, p) => s + (p.incomeTax || 0), 0) };
     });
-    const dates = list.map((p) => p.payDate).sort();
-    return { ...per, rows, tax: rows.reduce((s, r) => s + r.tax, 0), first: dates[0] ?? null, last: dates[dates.length - 1] ?? null, posted: list.length, drafts: inRange.length - list.length };
+    const tax = rows.reduce((s, r) => s + r.tax, 0);
+    const shortage = posted.reduce((s, p) => s + Math.max(0, p.yearEndTax || 0), 0);
+    const excess = posted.reduce((s, p) => s + Math.max(0, -(p.yearEndTax || 0)), 0);
+    const carryIn = carry;
+    const net = tax + shortage - excess - carryIn;
+    carry = Math.max(0, -net);
+    const dates = posted.map((p) => p.payDate).sort();
+    return { ...per, rows, tax, shortage, excess, carryIn, payable: Math.max(0, net), carry, first: dates[0] ?? null, last: dates[dates.length - 1] ?? null, posted: posted.length, drafts: inRange.length - posted.length };
   });
+  return { list, carry };
+}
+
+/**
+ * 源泉所得税の納付の集計（所得税徴収高計算書に書く内容）。仕訳を登録した給与だけを数える
+ * 年末調整の不足税額は足し、超過税額は引く。引ききれない超過税額は、その後に納付する税額から順に引く（年をまたいでも続ける。残りは carry）
+ *   出典：令和8年分 年末調整のしかた（過納額の還付）https://www.nta.go.jp/publication/pamph/gensen/nencho2026/pdf/110.pdf
+ * @returns {Array<{ ...period, rows: Array<{id,label,persons,amount,tax}>, tax, shortage, excess, carryIn, payable, carry, first, last, posted, drafts }>}
+ *   amount：支給額（課税の支給額。非課税の通勤手当を含めない）、persons：実人員（納期の特例は月ごとの実人員の合計）
+ *   tax：徴収税額の計、payable：納付する税額（本税）
+ */
+export function withholdingSummary(payrolls, { year, special }) {
+  const years = payrolls.filter((p) => p.journalId).map((p) => Number(p.payDate.slice(0, 4)));
+  let carry = 0;
+  for (let y = years.length ? Math.min(...years) : year; y < year; y++) carry = yearSummary(payrolls, y, special, carry).carry;
+  return yearSummary(payrolls, year, special, carry).list;
 }
 
 /**
@@ -687,10 +713,10 @@ export function paymentJournal({ kind, key, date, amount, companyShare = 0, paym
 // ---- CSV ----
 
 export function payrollsCsv(list) {
-  const rows = [['支給日', '氏名', '区分', '種類', '題名', '課税支給額', '通勤手当（非課税）', '総支給額', '健康保険料', '厚生年金保険料', '雇用保険料', '源泉所得税', '住民税', 'その他の控除', '控除合計', '差引支給額', '仕訳']];
+  const rows = [['支給日', '氏名', '区分', '種類', '題名', '課税支給額', '通勤手当（非課税）', '総支給額', '健康保険料', '厚生年金保険料', '雇用保険料', '源泉所得税', '住民税', 'その他の控除', '年末調整（＋徴収・－還付）', '控除合計', '差引支給額', '仕訳']];
   for (const p of list) {
     const t = payrollTotals(p);
-    rows.push([p.payDate, p.name, EMPLOYEE_KIND_LABEL[p.employeeKind], PAY_KINDS[p.kind], payrollTitle(p), t.taxable, t.commute, t.gross, p.health || 0, p.pension || 0, p.employment || 0, p.incomeTax || 0, p.residentTax || 0, t.others, t.deductions, t.net, p.journalId ? '登録済み' : '未登録']);
+    rows.push([p.payDate, p.name, EMPLOYEE_KIND_LABEL[p.employeeKind], PAY_KINDS[p.kind], payrollTitle(p), t.taxable, t.commute, t.gross, p.health || 0, p.pension || 0, p.employment || 0, p.incomeTax || 0, p.residentTax || 0, t.others, t.yearEnd, t.deductions, t.net, p.journalId ? '登録済み' : '未登録']);
   }
   return toCsv(rows);
 }

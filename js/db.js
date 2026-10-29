@@ -24,10 +24,11 @@ import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
 import { validateInvoice, validateInvoiceSettings, normalizeRegistrationNo, isDuplicateNumber, invoiceJournal, postingDate, compareInvoices, INVOICE_KINDS } from './invoices.js';
 import { validateEmployee, validatePayroll, validatePayrollSettings, payrollJournal, paymentJournal, compareEmployees, comparePayrolls, PayrollSetupError, PAYMENT_KINDS, DEPOSIT_KINDS, PAYROLL_ACCOUNT_FIELDS } from './payroll.js';
+import { validateYearEnd, yearEndCalc, yearEndSnapshot, snapshotChanges } from './year-end.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 10;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices', 'employees', 'payrolls'];
+export const DB_VERSION = 11;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices', 'employees', 'payrolls', 'yearEnds'];
 /** 証憑の添付（バックアップで画像を含めないときは書き出し・置き換えの対象から外す） */
 export const ATTACHMENT_STORES = ['attachments', 'attachmentData'];
 const ALL_STORES = ['meta', ...DATA_STORES];
@@ -109,6 +110,10 @@ export function migrate(db, oldVersion, tx) {
     // 給与計算：従業員と、給与・賞与の支給
     db.createObjectStore('employees', { keyPath: 'id' });
     db.createObjectStore('payrolls', { keyPath: 'id' }).createIndex('employeeId', 'employeeId');
+  }
+  if (oldVersion < 11) {
+    // 年末調整：従業員ごと・年分ごとの申告書の内容と計算の結果
+    db.createObjectStore('yearEnds', { keyPath: 'id' }).createIndex('employeeId', 'employeeId');
   }
 }
 
@@ -328,8 +333,47 @@ function cleanPayroll(p, stamps) {
     deductions: cleanItems(p.deductions),
     ...(p.kind === 'bonus' ? { prevAfterSocial: p.prevAfterSocial ?? 0, longPeriod: !!p.longPeriod } : {}),
     note: cleanText(p.note),
+    yearEndTax: p.yearEndTax ?? 0,
+    yearEndId: p.yearEndId ?? null,
     journalId: p.journalId ?? null,
     postedAt: p.postedAt ?? null,
+    ...stamps,
+  };
+}
+
+/** 年末調整の配偶者・扶養親族の保存する形 */
+const cleanFamily = (x) => ({
+  name: cleanText(x.name),
+  relation: cleanText(x.relation),
+  birthDate: x.birthDate || '',
+  income: x.income ?? 0,
+  disability: x.disability || 'none',
+  parentCohabiting: !!x.parentCohabiting,
+  nonResident: !!x.nonResident,
+  claimedByOther: !!x.claimedByOther,
+});
+const amountOr0 = (v) => v ?? 0;
+
+/** 年末調整の保存する形 */
+function cleanYearEnd(ye, stamps) {
+  const ins = ye.insurance || {};
+  const prev = ye.previous || {};
+  const person = ye.person || {};
+  return {
+    id: ye.id || newId(),
+    employeeId: ye.employeeId,
+    year: ye.year,
+    status: ye.status,
+    person: { disability: person.disability || 'none', widow: person.widow || 'none', student: !!person.student, otherIncome: amountOr0(person.otherIncome) },
+    spouse: ye.spouse ? cleanFamily(ye.spouse) : null,
+    dependents: (Array.isArray(ye.dependents) ? ye.dependents : []).map(cleanFamily),
+    insurance: Object.fromEntries(['lifeNew', 'lifeOld', 'care', 'pensionNew', 'pensionOld', 'earthquake', 'oldLongTerm', 'socialDeclared', 'smallBusiness'].map((k) => [k, amountOr0(ins[k])])),
+    housingLoan: amountOr0(ye.housingLoan),
+    previous: { name: cleanText(prev.name), pay: amountOr0(prev.pay), social: amountOr0(prev.social), tax: amountOr0(prev.tax), retiredOn: prev.retiredOn || '' },
+    note: cleanText(ye.note),
+    result: ye.result ?? null,
+    fixedAt: ye.fixedAt ?? null,
+    settledPayrollId: ye.settledPayrollId ?? null,
     ...stamps,
   };
 }
@@ -1303,8 +1347,9 @@ export class Repository {
 
   /** 従業員の削除：給与の記録が無い人だけ（記録がある人は「在籍していない」にする） */
   deleteEmployee(id) {
-    return this.run(['employees', 'payrolls', 'tombstones'], 'readwrite', async (tx) => {
+    return this.run(['employees', 'payrolls', 'yearEnds', 'tombstones'], 'readwrite', async (tx) => {
       if (await req(tx.objectStore('payrolls').index('employeeId').count(id))) throw new ValidationError(['給与の記録があるため削除できません。辞めた人は「在籍」を外してください']);
+      if (await req(tx.objectStore('yearEnds').index('employeeId').count(id))) throw new ValidationError(['年末調整の記録があるため削除できません。辞めた人は「在籍」を外してください']);
       tx.objectStore('employees').delete(id);
       tx.objectStore('tombstones').put(tombstone('employees', id));
     });
@@ -1338,7 +1383,9 @@ export class Repository {
       for (const p of list) {
         const original = p.id ? (await req(store.get(p.id))) || null : null;
         if (original?.journalId) throw new ValidationError(['仕訳を登録した給与は変更できません。直すときは「計上を取り消す」を押してください']);
-        const record = cleanPayroll({ ...p, journalId: null, postedAt: null }, { createdAt: original?.createdAt ?? at, updatedAt: at });
+        if (original?.yearEndId && original.employeeId !== p.employeeId) throw new ValidationError(['年末調整の精算に使っている給与は、従業員を変えられません']);
+        // 年末調整の過不足は、年末調整の画面からだけ付け外しする
+        const record = cleanPayroll({ ...p, yearEndTax: original?.yearEndTax ?? 0, yearEndId: original?.yearEndId ?? null, journalId: null, postedAt: null }, { createdAt: original?.createdAt ?? at, updatedAt: at });
         const e = validatePayroll(record, { employees });
         errors.push(...e.map((m) => (list.length > 1 ? `${record.name}：${m}` : m)));
         records.push(record);
@@ -1356,6 +1403,7 @@ export class Repository {
       const p = await req(store.get(id));
       if (!p) return null;
       if (p.journalId) throw new ValidationError(['仕訳を登録した給与は削除できません。先に「計上を取り消す」を押してください']);
+      if (p.yearEndId) throw new ValidationError(['年末調整の精算に使っている給与は削除できません。先に年末調整の画面で「精算を外す」を押してください']);
       store.delete(id);
       tx.objectStore('tombstones').put(tombstone('payrolls', id));
       return p;
@@ -1425,6 +1473,130 @@ export class Repository {
       const next = { ...p, journalId: null, postedAt: null, updatedAt: at };
       store.put(next);
       return { payroll: next, journal };
+    });
+  }
+
+  // ---- 年末調整 ----
+
+  listYearEnds() {
+    return this.run(['yearEnds'], 'readonly', (tx) => req(tx.objectStore('yearEnds').getAll()));
+  }
+
+  getYearEnd(id) {
+    return this.run(['yearEnds'], 'readonly', (tx) => req(tx.objectStore('yearEnds').get(id)));
+  }
+
+  /** 年末調整の入力の保存（下書きだけ。1人1年分に1件） */
+  saveYearEnd(ye) {
+    return this.run(['yearEnds', 'employees'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('yearEnds');
+      const original = ye.id ? (await req(store.get(ye.id))) || null : null;
+      if (original && original.status !== 'draft') throw new ValidationError(['確定した年末調整は変更できません。直すときは「確定を取り消す」を押してください']);
+      if (!(await req(tx.objectStore('employees').get(ye.employeeId)))) throw new ValidationError(['従業員が見つかりません']);
+      const all = await req(store.index('employeeId').getAll(ye.employeeId));
+      if (all.some((x) => x.year === ye.year && x.id !== original?.id)) throw new ValidationError([`${ye.year}年分の年末調整はもうあります`]);
+      if (original && (original.employeeId !== ye.employeeId || original.year !== ye.year)) throw new ValidationError(['年末調整の従業員・年分は変えられません']);
+      const at = now();
+      const record = cleanYearEnd({ ...ye, status: 'draft', result: null, fixedAt: null, settledPayrollId: null }, { createdAt: original?.createdAt ?? at, updatedAt: at });
+      const errors = validateYearEnd(record);
+      if (errors.length) throw new ValidationError(errors);
+      store.put(record);
+      return record;
+    });
+  }
+
+  /** 年末調整の削除（精算した後は消せない） */
+  deleteYearEnd(id) {
+    return this.run(['yearEnds', 'tombstones'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('yearEnds');
+      const ye = await req(store.get(id));
+      if (!ye) return null;
+      if (ye.status === 'settled') throw new ValidationError(['精算した年末調整は削除できません。先に「精算を外す」を押してください']);
+      store.delete(id);
+      tx.objectStore('tombstones').put(tombstone('yearEnds', id));
+      return ye;
+    });
+  }
+
+  /** 年末調整を確定する：その時点の給与で計算した結果を残す（源泉徴収票・精算に使う） */
+  fixYearEnd(id) {
+    return this.run(['yearEnds', 'payrolls', 'employees'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('yearEnds');
+      const ye = await req(store.get(id));
+      if (!ye) throw new ValidationError(['年末調整が見つかりません']);
+      if (ye.status !== 'draft') throw new ValidationError(['この年末調整はもう確定しています']);
+      const [payrolls, employee] = await Promise.all([req(tx.objectStore('payrolls').index('employeeId').getAll(ye.employeeId)), req(tx.objectStore('employees').get(ye.employeeId))]);
+      const result = yearEndCalc(ye, { payrolls, employee });
+      if (!result.eligible) throw new ValidationError(result.reasons);
+      const at = now();
+      const next = { ...ye, status: 'fixed', result: yearEndSnapshot(result), fixedAt: at, updatedAt: at };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 確定の取消（精算した後は、先に精算を外す） */
+  unfixYearEnd(id) {
+    return this.run(['yearEnds'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('yearEnds');
+      const ye = await req(store.get(id));
+      if (!ye) throw new ValidationError(['年末調整が見つかりません']);
+      if (ye.status === 'settled') throw new ValidationError(['精算した年末調整は、先に「精算を外す」を押してください']);
+      if (ye.status !== 'fixed') throw new ValidationError(['この年末調整はまだ確定していません']);
+      const next = { ...ye, status: 'draft', result: null, fixedAt: null, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /**
+   * 年末調整の過不足を給与（賞与）で精算する：その給与の控除に過不足額を入れる（不足額は徴収、超過額は還付）
+   * 仕訳を登録していない、その年か翌年1月に支給する同じ人の給与だけ。確定した後に給与が変わっていれば精算できない
+   */
+  settleYearEnd(id, payrollId) {
+    return this.run(['yearEnds', 'payrolls', 'employees'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('yearEnds');
+      const payStore = tx.objectStore('payrolls');
+      const ye = await req(store.get(id));
+      if (!ye) throw new ValidationError(['年末調整が見つかりません']);
+      if (ye.status !== 'fixed') throw new ValidationError([ye.status === 'settled' ? 'この年末調整はもう精算しています' : '先に年末調整を確定してください']);
+      if (!ye.result.diff) throw new ValidationError(['過不足額が0円のため、精算はいりません']);
+      const p = await req(payStore.get(payrollId));
+      if (!p || p.employeeId !== ye.employeeId) throw new ValidationError(['精算する給与が見つかりません']);
+      if (p.journalId) throw new ValidationError(['仕訳を登録した給与では精算できません。先にその給与の「計上を取り消す」を押してください']);
+      if (p.yearEndId) throw new ValidationError(['この給与はほかの年末調整の精算に使っています']);
+      if (p.payDate < `${ye.year}-01-01` || p.payDate > `${ye.year + 1}-01-31`) throw new ValidationError([`精算は、${ye.year}年か${ye.year + 1}年1月に支給する給与でしてください`]);
+      const [payrolls, employees] = await Promise.all([req(payStore.index('employeeId').getAll(ye.employeeId)), req(tx.objectStore('employees').getAll())]);
+      const changes = snapshotChanges(ye.result, yearEndCalc(ye, { payrolls, employee: employees.find((e) => e.id === ye.employeeId) }));
+      if (changes.length) throw new ValidationError([`確定した後に${changes.map((c) => c.label).join('・')}が変わっています。「確定を取り消す」を押して計算し直してください`]);
+      const at = now();
+      const nextPay = { ...p, yearEndTax: ye.result.diff, yearEndId: ye.id, updatedAt: at };
+      const errors = validatePayroll(nextPay, { employees });
+      if (errors.length) throw new ValidationError(errors);
+      payStore.put(nextPay);
+      const next = { ...ye, status: 'settled', settledPayrollId: p.id, updatedAt: at };
+      store.put(next);
+      return { yearEnd: next, payroll: nextPay };
+    });
+  }
+
+  /** 精算を外す（給与の仕訳を登録した後は、先に計上を取り消す） */
+  unsettleYearEnd(id) {
+    return this.run(['yearEnds', 'payrolls'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('yearEnds');
+      const payStore = tx.objectStore('payrolls');
+      const ye = await req(store.get(id));
+      if (!ye) throw new ValidationError(['年末調整が見つかりません']);
+      if (ye.status !== 'settled') throw new ValidationError(['この年末調整はまだ精算していません']);
+      const at = now();
+      const p = ye.settledPayrollId ? await req(payStore.get(ye.settledPayrollId)) : null;
+      if (p && p.yearEndId === ye.id) {
+        if (p.journalId) throw new ValidationError(['精算した給与の仕訳を登録してあります。先にその給与の「計上を取り消す」を押してください']);
+        payStore.put({ ...p, yearEndTax: 0, yearEndId: null, updatedAt: at });
+      }
+      const next = { ...ye, status: 'fixed', settledPayrollId: null, updatedAt: at };
+      store.put(next);
+      return next;
     });
   }
 

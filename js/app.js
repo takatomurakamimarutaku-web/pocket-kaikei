@@ -71,6 +71,8 @@ import * as payrollFormView from './views/payroll-form.js';
 import * as payrollSlipView from './views/payroll-view.js';
 import * as payrollSettingsView from './views/payroll-settings.js';
 import * as payrollPaymentsView from './views/payroll-payments.js';
+import * as yearEndView from './views/year-end.js';
+import * as yearEndFormView from './views/year-end-form.js';
 import * as employeesView from './views/employees.js';
 import * as employeeFormView from './views/employee-form.js';
 
@@ -96,6 +98,9 @@ const routes = [
   { path: '/payroll', view: payrollView, title: '給与計算', tab: 'entry', back: '#/entry' },
   { path: '/payroll/settings', view: payrollSettingsView, title: '給与の設定', tab: 'entry', back: '#/payroll' },
   { path: '/payroll/payments', view: payrollPaymentsView, title: '税・保険料の納付', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/year-end', view: yearEndView, title: '年末調整', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/year-end/new', view: yearEndFormView, title: '年末調整の入力', tab: 'entry', back: '#/payroll/year-end' },
+  { path: '/payroll/year-end/:id', view: yearEndFormView, title: '年末調整', tab: 'entry', back: '#/payroll/year-end' },
   { path: '/payroll/employees', view: employeesView, title: '従業員', tab: 'entry', back: '#/payroll' },
   { path: '/payroll/employees/new', view: employeeFormView, title: '従業員の登録', tab: 'entry', back: '#/payroll/employees' },
   { path: '/payroll/employees/:id', view: employeeFormView, title: '従業員', tab: 'entry', back: '#/payroll/employees' },

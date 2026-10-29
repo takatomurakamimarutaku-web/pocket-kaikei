@@ -65,6 +65,7 @@ test('スキーマ移行：バージョン2のデータを残したまま履歴�
       open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.result.deleteObjectStore('employees'); // バージョン10で追加
       open.result.deleteObjectStore('payrolls');
+      open.result.deleteObjectStore('yearEnds');
       open.result.deleteObjectStore('journalHistory'); // バージョン2の構成にする
       open.result.deleteObjectStore('templates');
       open.result.deleteObjectStore('budgets');

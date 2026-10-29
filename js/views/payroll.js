@@ -91,7 +91,7 @@ export async function render({ app, outlet, query }) {
         { class: 'pay-card', href: `#/payroll/${p.id}` },
         h('div', { class: 'pay-card-head' }, h('span', { class: 'pay-date', text: `${p.payDate.slice(5).replace('-', '/')} 支給` }), h('span', { class: 'pay-kind', text: `${PAY_KINDS[p.kind]}・${payrollTitle(p)}` }), h('span', { class: p.journalId ? 'badge badge-ok' : 'badge', text: p.journalId ? '仕訳済み' : '下書き' })),
         h('div', { class: 'pay-card-body' }, h('span', { class: 'pay-name', text: p.name }), h('span', { class: 'pay-net num', text: `${formatYen(t.net)}円` })),
-        h('p', { class: 'muted small', text: `${EMPLOYEE_KIND_LABEL[p.employeeKind]}　総支給 ${formatYen(t.gross)}円　源泉所得税 ${formatYen(p.incomeTax || 0)}円` }),
+        h('p', { class: 'muted small', text: `${EMPLOYEE_KIND_LABEL[p.employeeKind]}　総支給 ${formatYen(t.gross)}円　源泉所得税 ${formatYen(p.incomeTax || 0)}円${t.yearEnd ? `　年末調整 ${t.yearEnd > 0 ? '徴収' : '還付'} ${formatYen(Math.abs(t.yearEnd))}円` : ''}` }),
       ),
     );
   }
@@ -143,6 +143,7 @@ export async function render({ app, outlet, query }) {
       'ul',
       { class: 'menu-group pay-menu' },
       menuRow({ href: '#/payroll/employees', label: '従業員', sub: `在籍 ${active.length}人。基本給・通勤手当・社会保険料・扶養親族等の数`, icon: 'payroll', tone: 'entry' }),
+      menuRow({ href: '#/payroll/year-end', label: '年末調整', sub: '扶養控除等・保険料控除などの申告書の内容から年税額を計算し、過不足を12月の給与などで精算', icon: 'calc', tone: 'tax' }),
       menuRow({ href: '#/payroll/payments', label: '源泉所得税・住民税・社会保険料の納付', sub: '納付書（所得税徴収高計算書）に書く金額と納期限、納付の仕訳', icon: 'calendar', tone: 'close' }),
       menuRow({ href: '#/payroll/settings', label: '給与の設定', sub: '科目・預り金の補助科目・納期の特例', icon: 'settings', tone: 'setting' }),
     ),
