@@ -146,27 +146,37 @@ export function cashEffects(lines, accountById) {
     const account = accountById.get(l.accountId);
     if (!account || isCash(account) || !l.amount) continue;
     const effect = l.side === 'credit' ? l.amount : -l.amount;
-    out.push({ key: cashPlanKeyOf(account, effect), effect });
+    out.push({ key: cashPlanKeyOf(account, effect), effect, accountId: l.accountId });
   }
   return out;
+}
+
+/** 予算を資金の予定にしない科目（減価償却費・棚卸高・引当金の繰入繰戻は資金が動かない） */
+const NON_CASH_HINTS = ['depreciation', 'mfg_depreciation', 'opening_materials', 'closing_materials', 'opening_wip', 'closing_wip', 'opening_finished', 'closing_finished'];
+function isNonCashBudget(account) {
+  return NON_CASH_HINTS.includes(account.hint) || ['opening_inventory', 'closing_inventory'].includes(account.role) || ['reserves_provision', 'reserves_reversal'].includes(account.group);
 }
 
 /**
  * 資金繰り表（月別）
  *   今月までは実績（登録済みの仕訳）。来月からは予定：登録済みの先日付の仕訳＋まだ作っていない毎月の定型仕訳
- * @param {{ accounts, period, journals, templates?, today: string }} p today は 'YYYY-MM-DD'
+ *   予算（budgets）を渡すと、予算を入れた科目は来月から予算の額をその月に入出金する前提で予定にする
+ *   （その科目の先日付の仕訳・定型仕訳は重ねない。掛けの期間は考えない）
+ * @param {{ accounts, period, journals, templates?, budgets?, today: string }} p today は 'YYYY-MM-DD'
  * @returns {{ months: Array<{ month, plan: boolean, opening, values: Record<string, number>, income, outgo, operating, finance, net, closing }>, opening }}
  *   values は行ごとの金額。収入・支出は正の数で、財務・設備は資金の増減（＋が入金）
  */
-export function cashPlan({ accounts, period, journals, templates = [], today }) {
+export function cashPlan({ accounts, period, journals, templates = [], budgets = [], today }) {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const months = monthsInPeriod(period);
   const thisMonth = today.slice(0, 7);
+  const budgetByAccount = new Map(budgets.filter((b) => b.periodId === period.id && accountById.has(b.accountId)).map((b) => [b.accountId, b]));
+  const byBudget = (month, accountId) => month > thisMonth && budgetByAccount.has(accountId);
   const sums = new Map(months.map((m) => [m, {}]));
   const add = (month, effects) => {
     const t = sums.get(month);
     if (!t) return;
-    for (const e of effects) t[e.key] = (t[e.key] || 0) + e.effect;
+    for (const e of effects) if (!byBudget(month, e.accountId)) t[e.key] = (t[e.key] || 0) + e.effect;
   };
   for (const j of journals) {
     if (j.date < period.startDate || j.date > period.endDate) continue;
@@ -175,6 +185,15 @@ export function cashPlan({ accounts, period, journals, templates = [], today }) 
   for (const m of months) {
     if (m <= thisMonth) continue;
     for (const s of recurringStatus({ templates, journals, month: m, period })) if (!s.done && s.inPeriod) add(m, cashEffects(s.template.lines, accountById));
+    const t = sums.get(m);
+    for (const [accountId, b] of budgetByAccount) {
+      const account = accountById.get(accountId);
+      const amount = b.months[m] || 0;
+      if (!amount || isNonCashBudget(account)) continue;
+      const effect = GROUP_BY_ID[account.group].side === 'credit' ? amount : -amount;
+      const key = cashPlanKeyOf(account, effect);
+      t[key] = (t[key] || 0) + effect;
+    }
   }
   const opening = openingRows({ accounts, period })
     .filter((r) => isCash(r.account))

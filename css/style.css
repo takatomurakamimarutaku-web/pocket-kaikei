@@ -792,3 +792,18 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .cash-plan thead th .cp-kind { display: block; font-size: 0.66rem; font-weight: 600; }
 .cash-plan th.is-plan, .cash-plan td.is-plan { background: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
 .cash-plan thead th.is-plan .cp-kind { color: var(--primary-strong); }
+
+/* 予算の入力 */
+.budget-list { list-style: none; margin: 0 0 var(--sp-3); padding: 4px 12px; }
+.budget-row { padding: 8px 0; border-bottom: 1px solid var(--separator); }
+.budget-row:last-child { border-bottom: 0; }
+.budget-head { display: grid; grid-template-columns: 1fr 9em auto; align-items: center; gap: 8px; }
+.budget-name { font-weight: 600; font-size: 0.92rem; }
+input.budget-input { text-align: right; font-variant-numeric: tabular-nums; padding: 8px; min-width: 0; }
+.budget-months { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; margin-top: 8px; }
+.budget-months[hidden] { display: none; }
+.budget-month { display: grid; grid-template-columns: 2.4em 1fr; align-items: center; gap: 4px; }
+#bud-ratio { width: 6em; }
+.budget-summaries { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.budget-summary { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.budget-summary strong { font-size: 1.05rem; }

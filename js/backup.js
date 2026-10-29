@@ -7,15 +7,16 @@ import { missingRoles } from './db.js';
 import { openingDiff } from './ledger.js';
 import { validateAsset } from './depreciation.js';
 import { validateTemplate } from './templates.js';
+import { validateBudget } from './budget.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 4;
+export const BACKUP_VERSION = 5;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets'];
 
 /** バックアップの内容（JSON にする前のオブジェクト） */
 export function createBackup(data, { appVersion = '', exportedAt = new Date() } = {}) {
@@ -50,11 +51,13 @@ const UPGRADES = {
   2: (obj) => ({ ...obj, version: 3, journalHistory: [] }),
   // 3 → 4：定型仕訳（templates）を追加
   3: (obj) => ({ ...obj, version: 4, templates: [] }),
+  // 4 → 5：予算（budgets）を追加
+  4: (obj) => ({ ...obj, version: 5, budgets: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -139,6 +142,10 @@ export function parseBackup(text) {
   for (const t of obj.templates) {
     if (!hasBase(t) || validateTemplate(t, { accounts: obj.accounts, subAccounts: obj.subAccounts }).length) bad('定型仕訳');
     unique(t, '定型仕訳');
+  }
+  for (const b of obj.budgets) {
+    if (!hasBase(b) || validateBudget(b, { accounts: obj.accounts, periods: obj.periods }).length) bad('予算');
+    unique(b, '予算');
   }
 
   return {

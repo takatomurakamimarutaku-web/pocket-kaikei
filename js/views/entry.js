@@ -23,6 +23,7 @@ export async function render({ app, outlet }) {
       row('#/cashbook', '現金出納帳・預金出納帳', '口座ごとの入金・出金と残高', 'cashbook', 'report'),
       row('#/import/bank', '銀行明細の取り込み', 'ネットバンキングのCSVから仕訳をまとめて作る', 'bank', 'data'),
       row('#/import/card', 'クレジットカード明細の取り込み', '利用明細のCSVから未払金の仕訳をまとめて作る', 'expense', 'data'),
+      row('#/assets', '固定資産台帳', 'パソコン・車・設備などの登録と減価償却費の計算', 'asset', 'close'),
     ),
   );
 }

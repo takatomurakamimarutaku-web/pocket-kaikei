@@ -7,14 +7,14 @@ import { formatPeriod, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { zeroToggle, openingWarning } from './report-common.js';
 
-export async function render({ app, outlet, route }) {
+export async function render({ app, outlet, route, query }) {
   const { settings, period, accounts, journals } = await app.load();
   const individual = settings.entityType === 'individual';
   const head = [
     h('p', { class: 'muted small', text: `${settings.businessName}　${formatPeriod(period)}` }),
     openingWarning(individual ? 0 : openingDiff(period, accounts)),
   ];
-  if (route.kind === 'plan') return renderPlan({ app, outlet, period, accounts, journals, head });
+  if (route.kind === 'plan') return renderPlan({ app, outlet, period, accounts, journals, head, query });
 
   const cf = cashFlowStatement({ entityType: settings.entityType, accounts, period, journals });
   let showZero = false;
@@ -76,10 +76,30 @@ export async function render({ app, outlet, route }) {
   paint();
 }
 
-function renderPlan({ outlet, period, accounts, journals, head, app }) {
-  return app.db.listTemplates().then((templates) => {
-    const today = todayString();
-    const plan = cashPlan({ accounts, period, journals, templates, today });
+async function renderPlan({ outlet, period, accounts, journals, head, app, query }) {
+  const [templates, budgets] = await Promise.all([app.db.listTemplates(), app.db.listBudgets(period.id)]);
+  const today = todayString();
+  let useBudget = budgets.length > 0 && query.budget !== '0';
+  const body = h('div');
+  const budgetToggle = budgets.length
+    ? h(
+        'label',
+        { class: 'check small' },
+        h('input', {
+          type: 'checkbox',
+          checked: useBudget,
+          onchange: (e) => {
+            useBudget = e.target.checked;
+            history.replaceState(history.state, '', `#/reports/cash-plan${useBudget ? '' : '?budget=0'}`);
+            paint();
+          },
+        }),
+        '予定に予算を使う',
+      )
+    : null;
+
+  function paint() {
+    const plan = cashPlan({ accounts, period, journals, templates, budgets: useBudget ? budgets : [], today });
     const label = (m) => `${Number(m.month.slice(5))}月`;
     const planFrom = plan.months.findIndex((m) => m.plan);
     const chart = barLineChart({
@@ -119,20 +139,25 @@ function renderPlan({ outlet, period, accounts, journals, head, app }) {
       ),
     );
     const minPlan = plan.months.filter((m) => m.plan).reduce((min, m) => (min == null || m.closing < min.closing ? m : min), null);
-    put(
-      outlet,
-      head,
-      minPlan && minPlan.closing < 0 ? h('p', { class: 'check-line ng', text: `${Number(minPlan.month.slice(5))}月末に資金が不足する見込みです（${formatYen(minPlan.closing)}円）` }) : null,
-      chart,
-      table,
-      h(
-        'ul',
-        { class: 'plain-list small muted' },
-        h('li', { text: '今月までは登録した仕訳の実績、来月からは予定です。予定は、先の日付で登録した仕訳と、まだ作っていない毎月の定型仕訳（現金・預金を使うもの）から作ります。' }),
-        h('li', {}, '家賃・給料・借入金の返済などは ', h('a', { href: '#/templates', class: 'link', text: '定型仕訳' }), ' で「毎月作る」にすると予定に入ります。'),
-        h('li', { text: '行は仕訳の相手科目で分けています（売上・売掛金・前受金→売上の入金、仕入・外注（製造）・買掛金→仕入の支払、経費・未払金→経費の支払、事業主貸・事業主借・資本金→事業主・資本など）。' }),
-        h('li', { text: '設備・財務の行は、入金（借入れ・売却）がプラス、支払（返済・購入・引出し）がマイナスです。' }),
-      ),
-    );
-  });
+    put(body, minPlan && minPlan.closing < 0 ? h('p', { class: 'check-line ng', text: `${Number(minPlan.month.slice(5))}月末に資金が不足する見込みです（${formatYen(minPlan.closing)}円）` }) : null, chart, table);
+  }
+
+  put(
+    outlet,
+    head,
+    budgetToggle,
+    body,
+    h(
+      'ul',
+      { class: 'plain-list small muted' },
+      h('li', { text: '今月までは登録した仕訳の実績、来月からは予定です。予定は、先の日付で登録した仕訳と、まだ作っていない毎月の定型仕訳（現金・預金を使うもの）から作ります。' }),
+      h('li', {}, '家賃・給料・借入金の返済などは ', h('a', { href: '#/templates', class: 'link', text: '定型仕訳' }), ' で「毎月作る」にすると予定に入ります。'),
+      budgets.length
+        ? h('li', { text: '「予定に予算を使う」では、予算を入れた科目は予算の額をその月に入出金する前提で予定にします（掛けの期間は考えません。減価償却費など資金の動かない科目は除きます）。' })
+        : h('li', {}, h('a', { href: '#/budget', class: 'link', text: '予算' }), ' を入れると、売上や経費の予定にも使えます。'),
+      h('li', { text: '行は仕訳の相手科目で分けています（売上・売掛金・前受金→売上の入金、仕入・外注（製造）・買掛金→仕入の支払、経費・未払金→経費の支払、事業主貸・事業主借・資本金→事業主・資本など）。' }),
+      h('li', { text: '設備・財務の行は、入金（借入れ・売却）がプラス、支払（返済・購入・引出し）がマイナスです。' }),
+    ),
+  );
+  paint();
 }
