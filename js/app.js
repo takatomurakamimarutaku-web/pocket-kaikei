@@ -25,6 +25,8 @@ import * as openingView from './views/opening.js';
 import * as backupView from './views/backup.js';
 import * as periodsView from './views/periods.js';
 import * as closingView from './views/closing.js';
+import * as assetsView from './views/assets.js';
+import * as assetFormView from './views/asset-form.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先
 const routes = [
@@ -51,6 +53,9 @@ const routes = [
   { path: '/opening', view: openingView, title: '期首残高', tab: 'more', back: '#/more' },
   { path: '/periods', view: periodsView, title: '会計期間', tab: 'more', back: '#/more' },
   { path: '/closing', view: closingView, title: '決算・繰越', tab: 'more', back: '#/more' },
+  { path: '/assets', view: assetsView, title: '固定資産台帳', tab: 'more', back: '#/more' },
+  { path: '/asset/new', view: assetFormView, title: '固定資産の登録', tab: 'more', back: '#/assets' },
+  { path: '/asset/:id', view: assetFormView, title: '固定資産の編集', tab: 'more', back: '#/assets' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
 ];
 

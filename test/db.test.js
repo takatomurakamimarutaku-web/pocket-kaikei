@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { openDB, DB_VERSION, DB_NAME, ValidationError } from '../js/db.js';
+import { openDB, DB_VERSION, DB_NAME, ValidationError, migrate } from '../js/db.js';
 import { templateAccounts, findByRole } from '../js/accounts.js';
-import { createAccount, createPeriod, createSettings, createSubAccount, createJournal } from '../js/models.js';
+import { createAccount, createPeriod, createSettings, createSubAccount, createJournal, createAsset } from '../js/models.js';
 
 async function setupRepo(entityType = 'individual', period = { startDate: '2026-01-01', endDate: '2026-12-31' }) {
   const repo = await openDB({ indexedDB: new IDBFactory() });
@@ -19,7 +19,7 @@ test('スキーマ：ストアとインデックスが作成される', async ()
   const repo = await openDB({ indexedDB: new IDBFactory() });
   assert.equal(repo.db.name, DB_NAME);
   assert.equal(repo.db.version, DB_VERSION);
-  assert.deepEqual([...repo.db.objectStoreNames].sort(), ['accounts', 'journals', 'meta', 'periods', 'subAccounts', 'tombstones']);
+  assert.deepEqual([...repo.db.objectStoreNames].sort(), ['accounts', 'assets', 'journals', 'meta', 'periods', 'subAccounts', 'tombstones']);
   const tx = repo.db.transaction(['journals', 'accounts'], 'readonly');
   assert.deepEqual([...tx.objectStore('journals').indexNames].sort(), ['date', 'periodId']);
   assert.equal(tx.objectStore('accounts').index('code').unique, true);
@@ -191,5 +191,46 @@ test('目印：目印の導入前のバックアップを復元すると、テ�
   data.accounts = data.accounts.map(({ hint, ...a }) => a);
   await repo.replaceAll(data);
   assert.equal((await repo.getAccount(byName['仕入高'].id)).hint, 'purchases');
+  repo.close();
+});
+
+test('スキーマ移行：バージョン1のデータを残したまま固定資産のストアを追加する', async () => {
+  const idb = new IDBFactory();
+  await new Promise((resolve, reject) => {
+    const open = idb.open(DB_NAME, 1);
+    open.onupgradeneeded = () => {
+      migrate(open.result, 0, open.transaction);
+      open.result.deleteObjectStore('assets'); // バージョン1の構成にする
+      open.transaction.objectStore('meta').put({ key: 'settings', value: { businessName: '旧データ' } });
+    };
+    open.onsuccess = () => {
+      open.result.close();
+      resolve();
+    };
+    open.onerror = () => reject(open.error);
+  });
+  const repo = await openDB({ indexedDB: idb });
+  assert.equal(repo.db.version, 2);
+  assert.ok(repo.db.objectStoreNames.contains('assets'));
+  assert.equal((await repo.getSettings()).businessName, '旧データ');
+  assert.deepEqual(await repo.listAssets(), []);
+  repo.close();
+});
+
+test('固定資産：検証して保存、法人は事業割合100%、削除は tombstone、使っている科目は削除できない', async () => {
+  const { repo, byName } = await setupRepo('corporation', { startDate: '2026-04-01', endDate: '2027-03-31' });
+  const a = createAsset({ name: ' 複合機 ', accountId: byName['工具器具備品'].id, acquiredOn: '2026-05-01', startedOn: '2026-05-10', cost: 600000, usefulLife: 5, businessRatio: 50 });
+  const saved = await repo.saveAsset(a);
+  assert.equal(saved.name, '複合機');
+  assert.equal(saved.businessRatio, 100);
+  await assert.rejects(repo.saveAsset({ ...a, cost: 0 }), (e) => e instanceof ValidationError && Boolean(e.errors.cost));
+  const custom = createAccount({ code: '207', name: '器具', group: 'tangible_fixed_assets' });
+  await repo.saveAccount(custom);
+  await repo.saveAsset({ ...a, accountId: custom.id });
+  await assert.rejects(repo.deleteAccount(custom.id), /固定資産台帳/);
+  await repo.deleteAsset(a.id);
+  assert.deepEqual(await repo.listAssets(), []);
+  const dump = await repo.dumpAll();
+  assert.ok(dump.tombstones.some((t) => t.store === 'assets' && t.id === a.id));
   repo.close();
 });

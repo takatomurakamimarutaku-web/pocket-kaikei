@@ -71,6 +71,8 @@ export const HINTS = {
   purchases: '仕入高',
   officer_loan: '役員借入金',
   inventory: '商品',
+  depreciation: '減価償却費',
+  accumulated_depreciation: '減価償却累計額',
 };
 
 /** 事業者ごとに必ず存在する役割 */
@@ -110,7 +112,7 @@ const CORPORATION = [
   ['204', '車両運搬具', 'tangible_fixed_assets', T],
   ['205', '工具器具備品', 'tangible_fixed_assets', T],
   ['206', '土地', 'tangible_fixed_assets', 'purchase_exempt'],
-  ['219', '減価償却累計額', 'tangible_fixed_assets', N, { contra: true }],
+  ['219', '減価償却累計額', 'tangible_fixed_assets', N, { contra: true, hint: 'accumulated_depreciation' }],
   ['220', 'ソフトウェア', 'intangible_fixed_assets', T],
   ['221', '電話加入権', 'intangible_fixed_assets', T],
   ['240', '投資有価証券', 'investments', N],
@@ -167,7 +169,7 @@ const CORPORATION = [
   ['623', '保険料', 'sga', 'purchase_exempt'],
   ['624', '租税公課', 'sga', N],
   ['625', '支払報酬料', 'sga', T],
-  ['626', '減価償却費', 'sga', N],
+  ['626', '減価償却費', 'sga', N, { hint: 'depreciation' }],
   ['699', '雑費', 'sga', T],
   ['700', '受取利息', 'non_operating_income', 'sales_exempt'],
   ['701', '受取配当金', 'non_operating_income', N],
@@ -226,7 +228,7 @@ const INDIVIDUAL = [
   ['607', '損害保険料', 'sga', 'purchase_exempt'],
   ['608', '修繕費', 'sga', T],
   ['609', '消耗品費', 'sga', T],
-  ['610', '減価償却費', 'sga', N],
+  ['610', '減価償却費', 'sga', N, { hint: 'depreciation' }],
   ['611', '福利厚生費', 'sga', T],
   ['612', '給料賃金', 'sga', N],
   ['613', '外注工賃', 'sga', T],

@@ -1,0 +1,97 @@
+// 固定資産台帳：この会計期間の期首帳簿価額・償却費・期末帳簿価額
+import { h, put, emptyState } from '../ui.js';
+import { assetRegister, smeUsage, depreciationSchedule, METHOD_BY_ID, CATEGORY_BY_ID } from '../depreciation.js';
+import { formatYen } from '../money.js';
+import { formatPeriod } from '../period.js';
+
+const slash = (d) => d.replaceAll('-', '/');
+
+export async function render({ app, outlet }) {
+  const { settings, period, accountById } = await app.load();
+  const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
+  const individual = settings.entityType === 'individual';
+  const register = assetRegister(assets, periods, period);
+  const shown = new Set(register.map((x) => x.asset.id));
+  // 台帳に出ない資産（償却が終わった・除却した・まだ使っていない）
+  const others = assets.filter((a) => !shown.has(a.id)).sort((a, b) => (a.startedOn < b.startedOn ? 1 : -1));
+  const total = register.reduce((s, x) => s + (x.row?.amount || 0), 0);
+  const business = register.reduce((s, x) => s + (x.row?.business || 0), 0);
+  const sme = smeUsage(assets, period);
+
+  const card = ({ asset, opening, row, closing }) =>
+    h(
+      'li',
+      {},
+      h(
+        'a',
+        { class: 'acc-row asset-row', href: `#/asset/${encodeURIComponent(asset.id)}` },
+        h(
+          'span',
+          { class: 'acc-main' },
+          h('span', { class: 'acc-title', text: asset.name }),
+          h(
+            'span',
+            { class: 'acc-tags' },
+            h('span', { class: 'badge', text: METHOD_BY_ID[asset.method]?.short ?? asset.method }),
+            asset.usefulLife && (asset.method === 'straight' || asset.method === 'declining') ? h('span', { class: 'muted small', text: `${asset.usefulLife}年` }) : null,
+            individual && asset.businessRatio < 100 ? h('span', { class: 'badge', text: `事業${asset.businessRatio}%` }) : null,
+            asset.disposedOn ? h('span', { class: 'badge badge-warn', text: `除却 ${slash(asset.disposedOn)}` }) : null,
+          ),
+          h('span', { class: 'muted small', text: `${accountById.get(asset.accountId)?.name ?? ''}・${slash(asset.startedOn)} から使用・取得価額 ${formatYen(asset.cost)}円` }),
+          h(
+            'span',
+            { class: 'asset-flow small' },
+            h('span', { text: `期首 ${formatYen(opening)}` }),
+            h('span', { class: 'asset-dep', text: `償却 ${formatYen(row?.amount || 0)}` }),
+            h('span', { text: `期末 ${formatYen(closing)}` }),
+          ),
+        ),
+      ),
+    );
+
+  put(
+    outlet,
+    h('p', { class: 'muted small', text: `会計期間 ${formatPeriod(period)}` }),
+    h('div', { class: 'actions' }, h('a', { href: '#/asset/new', class: 'btn btn-primary', text: '＋ 固定資産を追加' })),
+    assets.length
+      ? h(
+          'section',
+          { class: 'panel' },
+          h('div', { class: 'stat-grid' },
+            h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: 'この期間の償却費' }), h('span', { class: 'stat-value num', text: `${formatYen(total)}円` })),
+            individual ? h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: 'うち経費になる額' }), h('span', { class: 'stat-value num', text: `${formatYen(business)}円` })) : null,
+          ),
+          h('p', { class: 'small' }, '決算整理の仕訳は ', h('a', { href: '#/closing', class: 'link', text: '決算・繰越' }), ' の画面から期末日の日付で登録します。'),
+        )
+      : null,
+    sme.over ? h('p', { class: 'notice', text: `少額減価償却資産の特例の合計（${formatYen(sme.total)}円）が、この期間の上限 ${formatYen(sme.limit)}円 を超えています。超える分は通常の減価償却か一括償却にしてください。` }) : null,
+    register.length
+      ? [h('h2', { class: 'menu-group-title', text: 'この期間の固定資産' }), h('ul', { class: 'menu-group' }, register.map(card))]
+      : assets.length
+        ? h('p', { class: 'muted small', text: 'この期間に償却する固定資産はありません。' })
+        : emptyState('パソコン・車・設備など、長く使う高額なものを登録すると、減価償却費を毎年計算します。', h('a', { href: '#/asset/new', class: 'btn btn-primary', text: '固定資産を追加' }), { title: '固定資産はまだありません' }),
+    others.length
+      ? [
+          h('h2', { class: 'menu-group-title', text: 'そのほかの資産（償却済み・除却済み・これから使う）' }),
+          h(
+            'ul',
+            { class: 'menu-group' },
+            others.map((a) => {
+              const last = depreciationSchedule(a, periods).at(-1);
+              const state = a.startedOn > period.endDate ? `${slash(a.startedOn)} から使用` : a.disposedOn && a.disposedOn < period.startDate ? `${slash(a.disposedOn)} に除却` : '償却済み';
+              return h(
+                'li',
+                {},
+                h(
+                  'a',
+                  { class: 'acc-row asset-plain', href: `#/asset/${encodeURIComponent(a.id)}` },
+                  h('span', { class: 'acc-main' }, h('span', { class: 'acc-title', text: a.name }), h('span', { class: 'muted small', text: `${CATEGORY_BY_ID[a.category]?.label ?? ''}・${state}・帳簿価額 ${formatYen(last && a.startedOn <= period.endDate ? last.closing : a.cost)}円` })),
+                ),
+              );
+            }),
+          ),
+        ]
+      : null,
+    h('p', { class: 'muted small', text: '償却費は国税庁の償却率表（平成19年4月1日以後の定額法、平成24年4月1日以後の200%定率法）で計算します。1円未満は切り捨てます。' }),
+  );
+}

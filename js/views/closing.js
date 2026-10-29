@@ -1,4 +1,4 @@
-// 決算・繰越：期末棚卸の決算整理仕訳、そのほかの決算整理の案内、次の会計期間への繰越
+// 決算・繰越：期末棚卸・減価償却の決算整理仕訳、そのほかの決算整理の案内、次の会計期間への繰越
 import { h, put, field, showToast, confirmDialog, errorBox, amountCell } from '../ui.js';
 import { carryForwardBalances, nextPeriodDates, inventoryAccounts, findInventoryJournals, inventoryLines } from '../closing.js';
 import { trialBalance, computeOwnerCapital } from '../ledger.js';
@@ -10,6 +10,7 @@ import { createJournal, createPeriod } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { periodContext, closedNotice } from './period-common.js';
+import { assetRegister, depreciationLines, findDepreciationJournals, smeUsage } from '../depreciation.js';
 
 export async function render({ app, outlet }) {
   const data = await app.load();
@@ -17,6 +18,7 @@ export async function render({ app, outlet }) {
   const entityType = settings.entityType;
   const individual = entityType === 'individual';
   const ctx = await periodContext(app, data);
+  const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
 
   // ---- 1. 期末の棚卸 ----
   function inventorySection() {
@@ -64,22 +66,90 @@ export async function render({ app, outlet }) {
     );
   }
 
-  // ---- 2. そのほかの決算整理 ----
+  // ---- 2. 減価償却 ----
+  function depreciationSection() {
+    const title = h('h2', { class: 'section-title', text: '2. 減価償却' });
+    const link = h('a', { href: '#/assets', class: 'btn btn-block', text: '固定資産台帳を開く' });
+    const { lines, total, errors } = depreciationLines({ assets, periods, period, accounts, entityType });
+    const done = findDepreciationJournals(journals);
+    if (done.length) {
+      const booked = done.reduce((s, j) => s + j.lines.filter((l) => l.side === 'credit').reduce((t, l) => t + l.amount, 0), 0);
+      return h(
+        'section',
+        { class: 'panel' },
+        title,
+        h('p', { text: '減価償却の仕訳は登録済みです。' }),
+        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${j.date.replaceAll('-', '/')}）` })))),
+        booked !== total ? h('p', { class: 'notice', text: `固定資産台帳の償却費（${formatYen(total)}円）と仕訳の金額（${formatYen(booked)}円）が違います。台帳を直した場合は、仕訳を削除してから登録し直してください。` }) : null,
+        link,
+      );
+    }
+    if (!assets.length) {
+      return h('section', { class: 'panel' }, title, h('p', { class: 'small', text: '固定資産台帳に登録すると、減価償却費を計算して決算整理の仕訳を登録できます。' }), link);
+    }
+    const rows = assetRegister(assets, periods, period).filter((x) => x.row?.amount);
+    const errorsEl = h('div');
+    const sme = smeUsage(assets, period);
+    const save = async () => {
+      if (errors.length) return put(errorsEl, errorBox(errors));
+      const journal = createJournal({ periodId: period.id, date: period.endDate, lines, source: 'depreciation' });
+      const v = validateJournal(journal, { accounts, subAccounts, period });
+      if (v.length) return put(errorsEl, errorBox(v));
+      try {
+        const saved = await app.db.saveJournal(journal);
+        showToast(`減価償却の仕訳（No.${saved.no}）を登録しました`);
+        app.refresh();
+      } catch (e) {
+        put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));
+      }
+    };
+    return h(
+      'section',
+      { class: 'panel' },
+      title,
+      rows.length
+        ? [
+            h('p', { class: 'small', text: `固定資産台帳から計算した償却費を、期末日（${period.endDate.replaceAll('-', '/')}）の仕訳で登録します。` }),
+            h(
+              'div',
+              { class: 'table-wrap' },
+              h(
+                'table',
+                { class: 'report' },
+                h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: '資産' }), h('th', { scope: 'col', text: '償却費' }), individual ? h('th', { scope: 'col', text: '経費' }) : null)),
+                h(
+                  'tbody',
+                  {},
+                  rows.map(({ asset, row }) => h('tr', {}, h('th', { scope: 'row', text: asset.name }), amountCell('td', row.amount), individual ? amountCell('td', row.business) : null)),
+                  h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '合計' }), amountCell('td', total), individual ? amountCell('td', rows.reduce((s, x) => s + x.row.business, 0)) : null),
+                ),
+              ),
+            ),
+            sme.over ? h('p', { class: 'notice', text: `少額減価償却資産の特例の合計が上限（${formatYen(sme.limit)}円）を超えています。台帳で確認してください。` }) : null,
+            errorsEl,
+            h('button', { type: 'button', class: 'btn btn-primary btn-block', text: '減価償却の仕訳を登録する', onclick: save }),
+          ]
+        : h('p', { class: 'small', text: 'この期間に償却する固定資産はありません。' }),
+      link,
+    );
+  }
+
+  // ---- 3. そのほかの決算整理 ----
   const others = individual
-    ? ['減価償却費（固定資産の機能は今後追加予定です）', '家事関連費の按分（私用分を事業主貸へ）', '未払・前払の費用、売上の計上漏れ', '貸倒引当金の繰入・繰戻（使う場合）']
-    : ['減価償却費（固定資産の機能は今後追加予定です）', '未払費用・前払費用、売上・仕入の計上漏れ', '法人税、住民税及び事業税／未払法人税等', '未払消費税等（課税事業者で税込経理の場合は租税公課など）'];
+    ? ['家事関連費の按分（私用分を事業主貸へ）', '未払・前払の費用、売上の計上漏れ', '貸倒引当金の繰入・繰戻（使う場合）']
+    : ['未払費用・前払費用、売上・仕入の計上漏れ', '法人税、住民税及び事業税／未払法人税等', '未払消費税等（課税事業者で税込経理の場合は租税公課など）'];
   const othersSection = h(
     'section',
     { class: 'panel' },
-    h('h2', { class: 'section-title', text: '2. そのほかの決算整理' }),
+    h('h2', { class: 'section-title', text: '3. そのほかの決算整理' }),
     h('p', { class: 'small', text: '必要なものを振替伝票で、期末日の日付で入力してください。' }),
     h('ul', { class: 'plain-list small' }, others.map((t) => h('li', { text: t }))),
     h('a', { href: '#/journal/new', class: 'btn btn-block', text: '振替伝票で入力する' }),
   );
 
-  // ---- 3. 次の期間へ繰越 ----
+  // ---- 4. 次の期間へ繰越 ----
   function carrySection() {
-    const title = h('h2', { class: 'section-title', text: '3. 次の期間へ繰り越す' });
+    const title = h('h2', { class: 'section-title', text: '4. 次の期間へ繰り越す' });
     if (ctx.next) {
       return h(
         'section',
@@ -156,6 +226,7 @@ export async function render({ app, outlet }) {
     h('p', { class: 'muted small', text: `会計期間 ${formatPeriod(period)}` }),
     closedNotice(period),
     period.closed ? null : inventorySection(),
+    period.closed ? null : depreciationSection(),
     period.closed ? null : othersSection,
     carrySection(),
     h('p', { class: 'center small' }, h('a', { href: '#/backup', class: 'link', text: 'バックアップを取る' })),

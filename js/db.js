@@ -5,10 +5,11 @@ import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId } from './models.js';
+import { validateAsset } from './depreciation.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 1;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'tombstones'];
+export const DB_VERSION = 2;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones'];
 const ALL_STORES = ['meta', ...DATA_STORES];
 
 /** 締めた会計期間を変更しようとしたときのメッセージ */
@@ -37,6 +38,10 @@ export function migrate(db, oldVersion, tx) {
     journals.createIndex('periodId', 'periodId');
     journals.createIndex('date', 'date');
     db.createObjectStore('tombstones', { keyPath: 'id' }).createIndex('store', 'store');
+  }
+  if (oldVersion < 2) {
+    // 固定資産台帳
+    db.createObjectStore('assets', { keyPath: 'id' }).createIndex('accountId', 'accountId');
   }
 }
 
@@ -381,12 +386,13 @@ export class Repository {
 
   /** 科目の削除：自分で追加し、どこにも使っていない科目だけ。補助科目も削除する */
   deleteAccount(id) {
-    return this.run(['accounts', 'subAccounts', 'journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
+    return this.run(['accounts', 'subAccounts', 'journals', 'periods', 'assets', 'tombstones'], 'readwrite', async (tx) => {
       const acc = await req(tx.objectStore('accounts').get(id));
       if (!acc) return;
       if (acc.template || acc.role) throw new ValidationError(['テンプレートの科目は削除できません。使わない場合は無効にしてください']);
       const { accounts: used } = usedAccountIds(await req(tx.objectStore('journals').getAll()), await req(tx.objectStore('periods').getAll()));
       if (used.has(id)) throw new ValidationError(['仕訳か期首残高で使われているため削除できません。無効にしてください']);
+      if (await req(tx.objectStore('assets').index('accountId').count(id))) throw new ValidationError(['固定資産台帳で使われているため削除できません。無効にしてください']);
       const subs = await req(tx.objectStore('subAccounts').index('accountId').getAll(id));
       for (const s of subs) {
         tx.objectStore('subAccounts').delete(s.id);
@@ -479,6 +485,46 @@ export class Repository {
       if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       tx.objectStore('journals').put(journal);
       tx.objectStore('tombstones').delete(journal.id);
+    });
+  }
+
+  // ---- 固定資産 ----
+
+  listAssets() {
+    return this.run(['assets'], 'readonly', (tx) => req(tx.objectStore('assets').getAll()));
+  }
+
+  getAsset(id) {
+    return this.run(['assets'], 'readonly', (tx) => req(tx.objectStore('assets').get(id)));
+  }
+
+  /** 固定資産の追加・更新（検証してから保存）。法人は事業で使う割合を100%にする */
+  saveAsset(asset) {
+    return this.run(['meta', 'accounts', 'assets'], 'readwrite', async (tx) => {
+      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+      const accounts = await req(tx.objectStore('accounts').getAll());
+      const record = {
+        ...asset,
+        name: String(asset.name ?? '').trim(),
+        memo: String(asset.memo ?? '').trim(),
+        businessRatio: settings?.entityType === 'individual' ? asset.businessRatio : 100,
+        disposedOn: asset.disposedOn || null,
+      };
+      const errors = validateAsset(record, { entityType: settings?.entityType, accounts });
+      if (Object.keys(errors).length) throw new ValidationError(errors);
+      const store = tx.objectStore('assets');
+      const before = await req(store.get(record.id));
+      const next = { ...record, createdAt: before?.createdAt ?? record.createdAt, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  deleteAsset(id) {
+    return this.run(['assets', 'tombstones'], 'readwrite', async (tx) => {
+      if (!(await req(tx.objectStore('assets').get(id)))) return;
+      tx.objectStore('assets').delete(id);
+      tx.objectStore('tombstones').put(tombstone('assets', id));
     });
   }
 
