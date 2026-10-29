@@ -12,6 +12,7 @@ import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
 import { closedNotice } from './period-common.js';
 import { linesForTemplate, repeatLabel, TEMPLATE_SOURCE } from '../templates.js';
+import { attachmentPanel } from './attachment-panel.js';
 
 const SIDE_LABEL = { debit: '借方', credit: '貸方' };
 
@@ -269,6 +270,8 @@ export async function render({ app, outlet, params, query, route }) {
   if (locked) {
     app.setTitle(editing ? '仕訳の表示' : '仕訳の入力');
     put(outlet, closedNotice({ closed: true }), editing ? journalCardLike(editing) : null);
+    // 添付した証憑は表示だけできる
+    if (editing && (await app.db.listAttachmentsByJournal(editing.id)).length) outlet.append(attachmentPanel({ app, data, journalId: editing.id, locked: true, current: () => editing }).el);
     await appendHistory();
     return;
   }
@@ -288,6 +291,11 @@ export async function render({ app, outlet, params, query, route }) {
     );
   }
 
+  // 証憑（領収書・請求書）の添付。新しい仕訳は登録したときに一緒に保存する
+  const attach = templateMode
+    ? null
+    : attachmentPanel({ app, data, journalId: editing?.id ?? null, current: () => ({ date, lines: rowsToLines(rows).lines }), onPending: () => (dirty = true) });
+
   const form = h(
     'form',
     { class: 'journal-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), templateMode ? saveTemplate() : save()) },
@@ -304,6 +312,7 @@ export async function render({ app, outlet, params, query, route }) {
       : field('日付', dateInput, { name: 'date' }),
     rowsEl,
     templateMode ? null : h('label', { class: 'check small adjusting-check' }, adjustingInput, '決算整理仕訳（月次推移の試算表で「決算整理」の列に分けて表示）'),
+    attach?.el,
     errorsEl,
     h('div', { class: 'form-footer' }, totalsEl, saveBtn),
     editing
@@ -358,8 +367,9 @@ export async function render({ app, outlet, params, query, route }) {
         app.goBack('#/journals');
         return;
       }
+      const attached = attach.hasPending() ? await attach.commit(saved) : 0;
       // 続けて入力できるよう、日付を残して伝票を空にする
-      showToast(`No.${saved.no} を登録しました`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${date.slice(0, 7)}`), duration: 5000 });
+      showToast(`No.${saved.no} を登録しました${attached ? `（証憑${attached}件）` : ''}`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${date.slice(0, 7)}`), duration: 5000 });
       if (source || fromTemplate) {
         app.navigate('#/journal/new', { replace: true });
         return;
@@ -425,7 +435,7 @@ export async function render({ app, outlet, params, query, route }) {
   async function remove() {
     const ok = await confirmDialog({
       title: `No.${editing.no} を削除しますか？`,
-      message: '削除した直後は「元に戻す」で取り消せます。',
+      message: '削除した直後は「元に戻す」で取り消せます。添付した証憑は消さずに残します（証憑の一覧で確かめられます）。',
       buttons: [
         { label: 'キャンセル', value: false },
         { label: '削除する', value: true, variant: 'danger' },

@@ -113,6 +113,8 @@ test('スキーマ移行：バージョン3のデータを残したまま定型�
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('templates'); // バージョン3の構成にする
       open.result.deleteObjectStore('budgets');
+      open.result.deleteObjectStore('attachments');
+      open.result.deleteObjectStore('attachmentData');
       open.transaction.objectStore('journals').put({ id: 'j1', periodId: 'p1', date: '2026-01-01', no: 1, lines: [], createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {

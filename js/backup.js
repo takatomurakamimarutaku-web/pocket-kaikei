@@ -8,19 +8,29 @@ import { openingDiff } from './ledger.js';
 import { validateAsset } from './depreciation.js';
 import { validateTemplate } from './templates.js';
 import { validateBudget } from './budget.js';
+import { validateAttachment, bytesToBase64, base64ToBytes, sha256Hex, toArrayBuffer } from './attachments.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 5;
+export const BACKUP_VERSION = 6;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData'];
 
-/** バックアップの内容（JSON にする前のオブジェクト） */
-export function createBackup(data, { appVersion = '', exportedAt = new Date() } = {}) {
-  const counts = Object.fromEntries(STORES.map((n) => [n, (data[n] || []).length]));
+/**
+ * バックアップの内容（JSON にする前のオブジェクト）
+ * 証憑の中身（attachmentData の data）は base64 の文字列にする。includeAttachments を偽にすると証憑を含めず、
+ * attachmentsOmitted を付ける（復元したとき、その端末の証憑を残す）
+ */
+export function createBackup(data, { appVersion = '', exportedAt = new Date(), includeAttachments = true } = {}) {
+  const stores = {
+    ...Object.fromEntries(STORES.map((n) => [n, data[n] || []])),
+    attachments: includeAttachments ? data.attachments || [] : [],
+    attachmentData: includeAttachments ? (data.attachmentData || []).map((r) => ({ ...r, data: typeof r.data === 'string' ? r.data : bytesToBase64(r.data) })) : [],
+  };
+  const counts = Object.fromEntries(STORES.map((n) => [n, stores[n].length]));
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -30,7 +40,8 @@ export function createBackup(data, { appVersion = '', exportedAt = new Date() } 
     counts,
     settings: data.settings,
     currentPeriodId: data.currentPeriodId,
-    ...Object.fromEntries(STORES.map((n) => [n, data[n] || []])),
+    ...(includeAttachments ? {} : { attachmentsOmitted: true }),
+    ...stores,
   };
 }
 
@@ -53,11 +64,14 @@ const UPGRADES = {
   3: (obj) => ({ ...obj, version: 4, templates: [] }),
   // 4 → 5：予算（budgets）を追加
   4: (obj) => ({ ...obj, version: 5, budgets: [] }),
+  // 5 → 6：証憑の添付（attachments・attachmentData）を追加
+  5: (obj) => ({ ...obj, version: 6, attachments: [], attachmentData: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, exportedAt }}
+ * 証憑の中身は base64 から ArrayBuffer に戻す（ハッシュ値の照合は非同期のため verifyAttachments で行う）
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, attachmentsOmitted, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -147,13 +161,44 @@ export function parseBackup(text) {
     if (!hasBase(b) || validateBudget(b, { accounts: obj.accounts, periods: obj.periods }).length) bad('予算');
     unique(b, '予算');
   }
+  if (obj.attachmentsOmitted !== undefined && typeof obj.attachmentsOmitted !== 'boolean') bad('証憑');
+  const omitted = obj.attachmentsOmitted === true;
+  if (omitted && (obj.attachments.length || obj.attachmentData.length)) bad('証憑');
+  const attachmentById = new Map();
+  for (const a of obj.attachments) {
+    if (!hasBase(a) || validateAttachment(a).length) bad('証憑');
+    unique(a, '証憑');
+    attachmentById.set(a.id, a);
+  }
+  // 中身は証憑と同じ id。証憑1件に中身が1件ずつあり、大きさが一致すること
+  const dataIds = new Set();
+  const attachmentData = obj.attachmentData.map((r) => {
+    const a = isObj(r) ? attachmentById.get(r.id) : null;
+    if (!a || dataIds.has(r.id) || !isStr(r.createdAt) || !isStr(r.updatedAt)) bad('証憑の中身');
+    const bytes = base64ToBytes(r.data);
+    if (!bytes || bytes.length !== a.size) bad('証憑の中身');
+    dataIds.add(r.id);
+    return { ...r, data: toArrayBuffer(bytes) };
+  });
+  if (dataIds.size !== attachmentById.size) bad('証憑の中身');
 
   return {
     settings: s,
     currentPeriodId: obj.currentPeriodId,
     ...Object.fromEntries(STORES.map((n) => [n, obj[n]])),
+    attachmentData,
+    attachmentsOmitted: omitted,
     exportedAt: obj.exportedAt,
   };
+}
+
+/** 証憑の中身のハッシュ値（SHA-256）が記録と一致するか確かめる。一致しなければ BackupError */
+export async function verifyAttachments(data) {
+  const byId = new Map(data.attachments.map((a) => [a.id, a]));
+  for (const r of data.attachmentData) {
+    const a = byId.get(r.id);
+    if (!a || (await sha256Hex(r.data)) !== a.sha256) throw new BackupError(`証憑「${a?.name ?? r.id}」の中身が記録（ハッシュ値）と一致しません。ファイルが壊れている可能性があります`);
+  }
 }
 
 /** バックアップを催促するか */
