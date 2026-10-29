@@ -44,10 +44,11 @@ export function axisTicks(values) {
 }
 
 /**
- * @param {{ labels: string[], bar: {label, values}, line: {label, values}, title: string }} opts
+ * @param {{ labels: string[], bar: {label, values}, line: {label, values}, title: string, planFrom?: number }} opts
+ *   planFrom：この位置から後は予定（棒を薄く、線を破線にする）
  * @returns {HTMLElement}
  */
-export function barLineChart({ labels, bar, line, title }) {
+export function barLineChart({ labels, bar, line, title, planFrom = labels.length }) {
   const W = 360;
   const H = 210;
   const pad = { l: 40, r: 8, t: 10, b: 22 };
@@ -74,10 +75,11 @@ export function barLineChart({ labels, bar, line, title }) {
       v > 0
         ? `M${x},${y0}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${y0}Z`
         : `M${x},${y0}V${top - r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top - r}V${y0}Z`;
-    return s('path', { d, class: 'ch-bar' });
+    return s('path', { d, class: i >= planFrom ? 'ch-bar ch-plan' : 'ch-bar' });
   });
-  const pts = line.values.map((v, i) => `${cx(i)},${y(v)}`).join(' ');
-  const dots = line.values.map((v, i) => s('circle', { cx: cx(i), cy: y(v), r: 4, class: 'ch-dot' }));
+  const pts = (from, to) => line.values.slice(from, to).map((v, k) => `${cx(from + k)},${y(v)}`).join(' ');
+  const dots = line.values.map((v, i) => s('circle', { cx: cx(i), cy: y(v), r: 4, class: i >= planFrom ? 'ch-dot ch-plan' : 'ch-dot' }));
+  const hasPlan = planFrom < labels.length;
   const xLabels = labels.map((l, i) => s('text', { x: cx(i), y: H - 6, class: 'ch-tick', 'text-anchor': 'middle' }, l));
   const hilite = s('rect', { x: 0, y: pad.t, width: band, height: H - pad.t - pad.b, class: 'ch-hilite', visibility: 'hidden' });
   // 選んだ月の値（グラフに重ねると棒が隠れるため、グラフの下に出す）
@@ -87,7 +89,7 @@ export function barLineChart({ labels, bar, line, title }) {
     hilite.setAttribute('x', pad.l + band * i);
     hilite.setAttribute('visibility', 'visible');
     const row = (cls, label, v) => h('div', { class: 'ch-tip-row' }, h('span', { class: `ch-sw ${cls}` }), h('span', { text: label }), h('span', { class: `num ${v < 0 ? 'neg' : ''}`, text: `${formatYen(v)}円` }));
-    tip.replaceChildren(h('div', { class: 'ch-tip-head', text: labels[i] }), row('ch-sw-bar', bar.label, bar.values[i]), row('ch-sw-line', line.label, line.values[i]));
+    tip.replaceChildren(h('div', { class: 'ch-tip-head', text: i >= planFrom ? `${labels[i]}（予定）` : labels[i] }), row('ch-sw-bar', bar.label, bar.values[i]), row('ch-sw-line', line.label, line.values[i]));
   };
   // 当たり判定は月の幅いっぱい（棒より広く）
   const hits = labels.map((l, i) =>
@@ -105,7 +107,8 @@ export function barLineChart({ labels, bar, line, title }) {
     grid,
     hilite,
     bars,
-    s('polyline', { points: pts, class: 'ch-line' }),
+    planFrom > 0 ? s('polyline', { points: pts(0, planFrom), class: 'ch-line' }) : null,
+    hasPlan ? s('polyline', { points: pts(Math.max(0, planFrom - 1), labels.length), class: 'ch-line ch-plan' }) : null,
     dots,
     xLabels,
     hits,
@@ -119,6 +122,7 @@ export function barLineChart({ labels, bar, line, title }) {
     { class: 'ch-legend' },
     h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw ch-sw-bar' }), bar.label),
     h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw ch-sw-line' }), line.label),
+    hasPlan ? h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw ch-sw-plan' }), '予定（薄い棒・破線）') : null,
   );
   return h('figure', { class: 'chart panel' }, h('figcaption', { class: 'chart-title', text: title }), legend, h('div', { class: 'chart-area' }, svgEl), tip);
 }

@@ -14,6 +14,7 @@ import * as journalHistoryView from './views/journal-history.js';
 import * as templatesView from './views/templates.js';
 import * as checksView from './views/checks.js';
 import * as analysisView from './views/analysis.js';
+import * as cashFlowView from './views/cash-flow.js';
 import * as entryView from './views/entry.js';
 import * as quickEntryView from './views/quick-entry.js';
 import * as cashbookView from './views/cashbook.js';
@@ -72,6 +73,8 @@ const routes = [
   { path: '/reports/monthly', view: monthlyView, title: '月次推移表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/manufacturing', view: manufacturingView, title: '製造原価報告書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/cash-flow', view: cashFlowView, kind: 'statement', title: 'キャッシュフロー計算書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/cash-plan', view: cashFlowView, kind: 'plan', title: '資金繰り表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/analysis', view: analysisView, title: '経営分析', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports', print: true },
