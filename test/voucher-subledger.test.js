@@ -108,7 +108,9 @@ test('Repository：伝票No を自動で付け、書き換えた番号の次か�
   assert.equal(a3.no, 1);
   const hist = (await repo.listJournalHistory(period.id)).filter((x) => x.journalId === a.id && x.action === 'update');
   const accountById = new Map((await repo.listAccounts()).map((x) => [x.id, x]));
-  const last = hist.sort((x, y) => (x.at < y.at ? -1 : 1)).at(-1);
+  // 同じミリ秒に2回保存すると日時で並べられないので、伝票No を変えた訂正を選ぶ
+  const last = hist.find((x) => x.after.voucherNo === 50);
+  assert.equal(hist.length, 2);
   assert.ok(describeChange(last.before, last.after, { accountById, subById: new Map(), formatYen: String }).includes('伝票No 1 → 50'));
   // 不正な番号は保存しない
   await assert.rejects(repo.saveJournal(j('2026-01-10', 100, { voucherNo: 0 })), (err) => err instanceof ValidationError && /伝票No/.test(err.errors[0]));
@@ -150,6 +152,7 @@ test('スキーマ移行：バージョン7の仕訳に入力No と同じ伝票N
     open.onupgradeneeded = () => {
       // バージョン7の構成（ストアは同じ。伝票No の無いデータを入れる）
       migrate(open.result, 0, open.transaction);
+      open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.transaction.objectStore('periods').put({ id: 'p1', startDate: '2026-01-01', endDate: '2026-12-31', openingBalances: [], nextJournalNo: 4, createdAt: 'x', updatedAt: 'x' });
       for (const no of [1, 2, 3]) open.transaction.objectStore('journals').put({ id: `j${no}`, periodId: 'p1', no, date: '2026-01-0' + no, lines: [], createdAt: 'x', updatedAt: 'x' });
     };
@@ -161,7 +164,7 @@ test('スキーマ移行：バージョン7の仕訳に入力No と同じ伝票N
   });
   const repo = await openDB({ indexedDB: idb });
   assert.equal(repo.db.version, DB_VERSION);
-  assert.equal(DB_VERSION, 8);
+  assert.ok(DB_VERSION >= 8);
   const journals = await repo.listJournals('p1');
   assert.deepEqual(journals.map((x) => [x.no, x.voucherNo]).sort(), [[1, 1], [2, 2], [3, 3]]);
   assert.equal((await repo.listPeriods())[0].nextVoucherNo, 4);

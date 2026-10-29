@@ -39,6 +39,7 @@ const P = {
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><path d="M12 14.5v2.5"/>',
   books: '<path d="M4 5.5h5v14H4z"/><path d="M9 5.5h5v14H9z"/><path d="M14.5 6.2l4.2-1.1 3.4 13.2-4.2 1.1z"/>',
   dept: '<rect x="9" y="3.5" width="6" height="5" rx="1"/><rect x="3" y="15.5" width="6" height="5" rx="1"/><rect x="15" y="15.5" width="6" height="5" rx="1"/><path d="M12 8.5v3.5M6 15.5V12h12v3.5"/>',
+  invoice: '<path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6"/><path d="M9 16h3"/>',
   history: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4v3.5h3.5"/><path d="M12 8v4.2l2.8 1.8"/>',
 };
 

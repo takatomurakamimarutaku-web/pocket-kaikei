@@ -19,7 +19,7 @@ test('スキーマ：ストアとインデックスが作成される', async ()
   const repo = await openDB({ indexedDB: new IDBFactory() });
   assert.equal(repo.db.name, DB_NAME);
   assert.equal(repo.db.version, DB_VERSION);
-  assert.deepEqual([...repo.db.objectStoreNames].sort(), ['accounts', 'assets', 'attachmentData', 'attachments', 'budgets', 'departments', 'journalHistory', 'journals', 'meta', 'periods', 'subAccounts', 'templates', 'tombstones']);
+  assert.deepEqual([...repo.db.objectStoreNames].sort(), ['accounts', 'assets', 'attachmentData', 'attachments', 'budgets', 'departments', 'invoices', 'journalHistory', 'journals', 'meta', 'periods', 'subAccounts', 'templates', 'tombstones']);
   const tx = repo.db.transaction(['journals', 'accounts'], 'readonly');
   assert.deepEqual([...tx.objectStore('journals').indexNames].sort(), ['date', 'periodId']);
   assert.equal(tx.objectStore('accounts').index('code').unique, true);
@@ -201,6 +201,7 @@ test('スキーマ移行：バージョン1のデータを残したまま固定�
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('departments'); // バージョン7で追加
+      open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.result.deleteObjectStore('assets'); // バージョン1の構成にする
       open.result.deleteObjectStore('journalHistory');
       open.result.deleteObjectStore('templates');

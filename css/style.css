@@ -955,3 +955,82 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .changelog-title { font-weight: 700; margin: var(--sp-2) 0 var(--sp-1); }
 .changelog-items { margin: 0; padding-left: 1.2em; }
 .changelog-items li + li { margin-top: 4px; }
+
+/* 請求書・見積書 */
+.inv-list { list-style: none; margin: var(--sp-3) 0; padding: 0; display: grid; gap: var(--sp-2); }
+.inv-card { display: block; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); box-shadow: var(--shadow); color: inherit; text-decoration: none; }
+.inv-card:active { background: var(--surface-2); }
+.inv-card.is-void { opacity: 0.7; }
+.inv-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-footnote); color: var(--muted); font-weight: 700; }
+.inv-card-head .badge { margin-left: auto; }
+.inv-card-body { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.inv-customer { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.inv-amount { font-weight: 800; white-space: nowrap; }
+.inv-subject { margin: 2px 0 0; }
+.segmented + .notice, .segmented + .btn-block { margin-top: var(--sp-3); }
+.invoice-form .section-title { margin-top: var(--sp-4); }
+.inv-customer-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5em; gap: 10px; }
+.inv-lines { display: grid; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.inv-line { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); }
+.inv-line-head { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-footnote); color: var(--muted); font-weight: 700; }
+.inv-line-nums { display: grid; grid-template-columns: 4.2em 3.6em minmax(0, 1fr) 6.6em; gap: 6px; }
+.inv-line-nums > * { min-width: 0; }
+.inv-line-nums input:nth-child(1), .inv-line-nums input:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }
+.inv-line-amount { margin: 0; text-align: right; font-size: var(--fs-footnote); color: var(--muted); }
+.inv-line-amount .num { color: var(--text); font-weight: 700; }
+.inv-lines > .btn { justify-self: start; }
+.inv-totals { margin-bottom: var(--sp-3); }
+.inv-totals-table { width: 100%; }
+.inv-totals-table td.small { white-space: nowrap; }
+.inv-status p { margin: 0 0 4px; }
+.inv-status { margin-bottom: var(--sp-3); }
+.invoice-paper { margin: 0 0 var(--sp-4); padding: 18px 14px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--card-border); box-shadow: var(--shadow); overflow-x: auto; }
+.inv-actions { display: grid; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.inv-subactions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.invoice-doc { position: relative; min-width: 320px; font-size: 0.8rem; line-height: 1.5; color: var(--text); }
+.invoice-doc p { margin: 0; }
+.idoc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 4px 12px; padding-bottom: 6px; border-bottom: 2px solid var(--text); margin-bottom: 10px; }
+.idoc-title { margin: 0; font-size: 1.35rem; letter-spacing: 0.4em; font-weight: 800; }
+.idoc-meta, .idoc-dates { margin: 0; display: grid; gap: 0 10px; grid-template-columns: auto auto; justify-content: end; }
+.idoc-meta-row { display: contents; }
+.idoc-meta dt, .idoc-dates dt { color: var(--muted); }
+.idoc-meta dd, .idoc-dates dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.idoc-parties { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; margin-bottom: 10px; }
+.idoc-customer { font-size: 1.02rem; font-weight: 800; border-bottom: 1px solid var(--text); padding-bottom: 2px; margin-bottom: 4px !important; overflow-wrap: anywhere; }
+.idoc-subject { margin-bottom: 4px !important; }
+.idoc-lead { font-size: 0.74rem; color: var(--muted); }
+.idoc-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 6px; padding: 4px 6px; border: 1.5px solid var(--text); }
+.idoc-total-label { font-weight: 700; }
+.idoc-total-value { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-left: auto; }
+.idoc-from { font-size: 0.74rem; overflow-wrap: anywhere; }
+.idoc-issuer { font-weight: 800; font-size: 0.86rem; }
+.idoc-reg { font-weight: 700; }
+.idoc-dates { justify-content: start; margin-bottom: 8px; }
+.idoc-dates dd { text-align: left; }
+.idoc-lines, .idoc-sum { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.idoc-lines th, .idoc-lines td { padding: 4px 4px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+.idoc-lines thead th { font-size: 0.7rem; color: var(--muted); text-align: left; border-bottom: 1.5px solid var(--text); white-space: nowrap; }
+.idoc-lines .num, .idoc-sum .num { text-align: right; white-space: nowrap; }
+.idoc-item { overflow-wrap: anywhere; }
+.idoc-sum { margin-top: 8px; }
+.idoc-sum th, .idoc-sum td { padding: 3px 4px; border-bottom: 1px solid var(--card-border); font-weight: 400; text-align: left; }
+.idoc-sum th.idoc-taxlabel { color: var(--muted); padding-left: 10px; white-space: nowrap; }
+.idoc-sum tfoot th, .idoc-sum tfoot td { font-weight: 800; border-top: 1.5px solid var(--text); border-bottom: 0; }
+.idoc-legend { margin-top: 4px !important; font-size: 0.72rem; }
+.idoc-box { margin-top: 10px; padding: 6px 8px; border: 1px solid var(--card-border); border-radius: 4px; }
+.idoc-box-title { font-weight: 700; font-size: 0.72rem; color: var(--muted); }
+.idoc-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.idoc-void { position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%) rotate(-18deg); padding: 2px 18px; border: 3px solid var(--negative); color: var(--negative); font-size: 2rem; font-weight: 800; letter-spacing: 0.3em; opacity: 0.75; pointer-events: none; }
+@media print {
+  body:has(.invoice-doc) .print-head { display: none !important; }
+  .invoice-paper { border: 0; box-shadow: none; padding: 0; margin: 0; overflow: visible; }
+  .invoice-page > :not(.invoice-paper) { display: none !important; }
+  .invoice-doc { font-size: 10pt; min-width: 0; }
+  .idoc-title { font-size: 20pt; }
+  .idoc-customer { font-size: 13pt; }
+  .idoc-total-value { font-size: 14pt; }
+  .idoc-lines tr, .idoc-sum tr { break-inside: avoid; }
+}
+.inv-line-caps { color: var(--muted); margin-bottom: -4px; }
+.inv-line-caps span { font-size: 0.7rem; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-line-caps span:nth-child(1), .inv-line-caps span:nth-child(3) { text-align: right; }

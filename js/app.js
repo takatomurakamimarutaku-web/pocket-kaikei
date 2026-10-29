@@ -62,6 +62,10 @@ import * as assetFormView from './views/asset-form.js';
 import * as assetDisposeView from './views/asset-dispose.js';
 import * as departmentsView from './views/departments.js';
 import * as departmentPlView from './views/department-pl.js';
+import * as invoicesView from './views/invoices.js';
+import * as invoiceFormView from './views/invoice-form.js';
+import * as invoiceView from './views/invoice-view.js';
+import * as invoiceSettingsView from './views/invoice-settings.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
 const routes = [
@@ -77,6 +81,11 @@ const routes = [
   { path: '/import/card', view: bankImportView, kind: 'card', title: 'カード明細の取り込み', tab: 'entry', back: '#/entry' },
   { path: '/journal/new', view: journalFormView, title: '振替伝票の入力', tab: 'entry', back: '#/entry' },
   { path: '/journal/:id/edit', view: journalFormView, title: '仕訳の編集', tab: 'journals', back: '#/journals' },
+  { path: '/invoices', view: invoicesView, title: '請求書・見積書', tab: 'entry', back: '#/entry' },
+  { path: '/invoices/settings', view: invoiceSettingsView, title: '請求書の設定', tab: 'entry', back: '#/invoices' },
+  { path: '/invoices/new', view: invoiceFormView, title: '請求書・見積書の作成', tab: 'entry', back: '#/invoices' },
+  { path: '/invoices/:id/edit', view: invoiceFormView, title: '請求書・見積書の編集', tab: 'entry', back: '#/invoices' },
+  { path: '/invoices/:id', view: invoiceView, title: '請求書・見積書', tab: 'entry', back: '#/invoices', print: true },
   { path: '/templates', view: templatesView, title: '定型仕訳', tab: 'entry', back: '#/entry' },
   { path: '/template/new', view: journalFormView, kind: 'template', title: '定型仕訳の登録', tab: 'entry', back: '#/templates' },
   { path: '/template/:id', view: journalFormView, kind: 'template', title: '定型仕訳の編集', tab: 'entry', back: '#/templates' },
