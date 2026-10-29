@@ -90,6 +90,21 @@ export function monthlyCsv(items, months, { total = false, includeZero = false }
 }
 
 /**
+ * 製造原価報告書（statements.manufacturingReport の items）。区分の行・科目の行（「　科目名」）・合計の行
+ */
+export function manufacturingCsv(items, { includeZero = false } = {}) {
+  const rows = [['項目', '金額']];
+  for (const item of items) {
+    if (item.type === 'group') {
+      rows.push([`【${item.label}】`, '']);
+      for (const l of item.lines) if (includeZero || l.amount) rows.push([`　${l.account.name}`, l.amount]);
+      rows.push([`${item.label} 計`, item.total]);
+    } else rows.push([item.label, item.amount]);
+  }
+  return toCsv(rows);
+}
+
+/**
  * 固定資産台帳（depreciation.assetRegister の結果）。1資産1行
  * @param {{ accountById: Map, individual: boolean }} opts individual：事業で使う割合・経費になる額の列を付ける
  */

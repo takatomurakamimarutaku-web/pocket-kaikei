@@ -77,6 +77,8 @@ export function parseBackup(text) {
     throw new BackupError('振り分けルールのデータが不正です');
   }
   if (s.taxUseSplit !== undefined && typeof s.taxUseSplit !== 'boolean') throw new BackupError('事業者の設定が不正です');
+  // 製造原価を使うか（v0.16.0 で追加。法人だけ）
+  if (s.manufacturing !== undefined && (typeof s.manufacturing !== 'boolean' || (s.manufacturing && s.entityType !== 'corporation'))) throw new BackupError('事業者の設定が不正です');
   const bad = (what) => {
     throw new BackupError(`${what}のデータが不正です`);
   };

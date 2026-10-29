@@ -68,6 +68,7 @@ export function createAsset(fields = {}, now = new Date()) {
     location: '', // 設置場所（任意。償却資産申告などで使う）
     disposalType: null, // 売却（sell）・除却（retire）
     salePrice: null, // 売却額（税込）
+    expenseAccountId: null, // 償却費の科目（null なら減価償却費。製造業の工場の資産は製造経費の科目）
     memo: '',
     ...stamp(now),
     ...fields,

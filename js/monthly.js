@@ -2,7 +2,7 @@
 // 区分・段階利益の計算は statements.js をそのまま使い、決算書と同じ数字になるようにする
 import { isBsGroup, compareAccounts, GROUP_BY_ID } from './accounts.js';
 import { trialBalance, openingDcMap, toNormal } from './ledger.js';
-import { incomeStatement, balanceSheet, closingRows } from './statements.js';
+import { incomeStatement, balanceSheet, closingRows, manufacturingReport } from './statements.js';
 import { monthsInPeriod, monthRange } from './period.js';
 
 /**
@@ -50,6 +50,27 @@ export function monthlyIncome({ entityType, accounts, period, journals }) {
     netIncome: perMonth.map((p) => p.netIncome),
     sales: items[0].values,
   };
+}
+
+/**
+ * 製造原価報告書の月次推移（月ごとの発生額）。仕掛品の棚卸高は決算整理の仕訳の月に出る
+ * @returns {{ months: string[], items: Array, cost: number[] }} items の各行に total（期間合計）を付ける
+ */
+export function monthlyManufacturing({ accounts, period, journals }) {
+  const months = monthsInPeriod(period);
+  const perMonth = months.map((m) => {
+    const { from, to } = monthRange(period, m, m);
+    const rows = trialBalance({ accounts, period, journals, from, to })
+      .rows.filter((r) => !isBsGroup(r.account.group))
+      .map((r) => ({ account: r.account, dc: r.debit - r.credit }));
+    return manufacturingReport(rows);
+  });
+  const items = mergeItems(perMonth.map((p) => p.items)).map((item) => ({
+    ...item,
+    total: sum(item.values),
+    lines: item.lines?.map((l) => ({ ...l, total: sum(l.values) })),
+  }));
+  return { months, items, cost: perMonth.map((p) => p.cost) };
 }
 
 /**

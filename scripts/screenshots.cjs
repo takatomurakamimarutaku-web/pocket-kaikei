@@ -328,7 +328,7 @@ mkdirSync(OUT, { recursive: true });
   // 詳しい税区分（法人）：仕入の用途区分を使い、非課税売上・共通対応の仕入・売上の返品を入力する
   if (entity === 'corporation') {
     await go('#/settings');
-    await page.getByRole('radio', { name: '使う' }).click();
+    await page.getByRole('radiogroup', { name: '仕入の用途区分' }).getByRole('radio', { name: '使う' }).click();
     await page.getByRole('button', { name: '保存する' }).click();
     await page.waitForTimeout(400);
     const taxEntry = async (date, [dn, dt], [cn, ct], v, memo) => {
@@ -422,10 +422,45 @@ mkdirSync(OUT, { recursive: true });
   await go('#/settings');
   if (await page.locator('#print').isVisible()) errors.push('帳票以外の画面に印刷ボタンが出る');
 
+  // 製造原価報告書（法人）：設定で使うにして、材料仕入・賃金・外注加工を入力
+  if (entity === 'corporation') {
+    await go('#/reports');
+    if (await page.getByText('製造原価報告書').count()) errors.push('製造原価を使う前に帳票メニューに製造原価報告書が出る');
+    await go('#/settings');
+    await page.getByRole('radiogroup', { name: '製造原価' }).getByRole('radio', { name: '使う' }).click();
+    await shot('50-settings-manufacturing', true);
+    await page.getByRole('button', { name: '保存する' }).click();
+    await page.waitForTimeout(500);
+    const mfgEntries = [
+      ['2026-05-10', '材料仕入高', 330000, '普通預金'],
+      ['2026-05-25', '賃金', 200000, '普通預金'],
+      ['2026-06-15', '外注加工費', 110000, '普通預金'],
+      ['2026-06-30', '電力費', 22000, '普通預金'],
+    ];
+    for (const [date, debit, value, credit] of mfgEntries) {
+      await go('#/journal/new');
+      await page.fill('#j-date', date);
+      await page.dispatchEvent('#j-date', 'change');
+      await pick(0, 'debit', debit);
+      await amount(0, 'debit', value);
+      await pick(0, 'credit', credit);
+      await amount(0, 'credit', value);
+      await page.getByRole('button', { name: '登録する' }).click();
+      await page.waitForTimeout(300);
+    }
+    await go('#/reports');
+    if (!(await page.getByText('製造原価報告書').count())) errors.push('帳票メニューに製造原価報告書が出ない');
+  }
+
   // 決算・繰越
   await go('#/closing');
   await shot('26-closing', true);
-  await page.fill('#inv-amount', '45000');
+  await page.fill('#inv-goods', '45000');
+  if (entity === 'corporation') {
+    await page.fill('#inv-materials', '80000');
+    await page.fill('#inv-wip', '50000');
+    await page.fill('#inv-finished', '120000');
+  }
   await page.getByRole('button', { name: '棚卸の仕訳を登録する' }).click();
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: '減価償却の仕訳を登録する' }).click();
@@ -433,6 +468,18 @@ mkdirSync(OUT, { recursive: true });
   if (!(await page.getByText('減価償却の仕訳は登録済みです').count())) errors.push('減価償却の仕訳を登録できない');
   await go('#/reports/bs');
   if (!(await page.locator('.check-line').innerText()).includes('＝')) errors.push('減価償却後のBSが一致しない');
+  if (entity === 'corporation') {
+    await go('#/reports/manufacturing');
+    await shot('51-manufacturing', true);
+    // 材料費 330,000−80,000＋労務費 200,000＋経費 132,000＝582,000、−期末仕掛品 50,000＝532,000
+    const text = await page.locator('table.statement').innerText();
+    if (!text.includes('532,000')) errors.push(`製造原価報告書の当期製品製造原価が違う: ${text.replace(/\s+/g, ' ').slice(-80)}`);
+    await page.getByRole('radio', { name: '月次推移' }).click();
+    await shot('52-manufacturing-monthly', true);
+    await go('#/reports/pl');
+    await shot('53-pl-manufacturing', true);
+    if (!(await page.getByText('当期製品製造原価').count())) errors.push('損益計算書に当期製品製造原価が出ない');
+  }
   await go('#/closing');
   await page.getByRole('button', { name: '繰り越して次の期間を始める' }).scrollIntoViewIfNeeded();
   await shot('27-closing-after-inventory', true);

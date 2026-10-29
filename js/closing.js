@@ -76,35 +76,64 @@ export function isOpeningStale({ entityType, accounts, subAccounts, prevPeriod, 
   return balancesKey(balances) !== balancesKey(current);
 }
 
-/** 期末棚卸の科目（期首商品棚卸高・期末商品棚卸高・商品）。どれか無ければ null */
-export function inventoryAccounts(accounts) {
-  const opening = findByRole(accounts, 'opening_inventory');
-  const closing = findByRole(accounts, 'closing_inventory');
-  const goods = findByHint(accounts, 'inventory');
-  return opening && closing && goods ? { opening, closing, goods } : null;
+/**
+ * 棚卸の種類。商品は役割（期首・期末商品棚卸高）、製造業の原材料・仕掛品・製品は目印で科目を探す
+ *   asset：貸借対照表の在庫の科目、opening：期首の棚卸高（費用側）、closing：期末の棚卸高（評価勘定）
+ */
+export const INVENTORY_KINDS = [
+  { id: 'goods', label: '商品', asset: { hint: 'inventory' }, opening: { role: 'opening_inventory' }, closing: { role: 'closing_inventory' } },
+  { id: 'materials', label: '原材料', asset: { hint: 'raw_materials' }, opening: { hint: 'opening_materials' }, closing: { hint: 'closing_materials' } },
+  { id: 'wip', label: '仕掛品', asset: { hint: 'work_in_process' }, opening: { hint: 'opening_wip' }, closing: { hint: 'closing_wip' } },
+  { id: 'finished', label: '製品', asset: { hint: 'finished_goods' }, opening: { hint: 'opening_finished' }, closing: { hint: 'closing_finished' } },
+];
+
+const pick = (accounts, by) => (by.role ? findByRole(accounts, by.role) : findByHint(accounts, by.hint));
+
+/** 科目がそろっている棚卸の種類と、その科目 */
+export function inventorySets(accounts) {
+  return INVENTORY_KINDS.map((kind) => ({ kind, goods: pick(accounts, kind.asset), opening: pick(accounts, kind.opening), closing: pick(accounts, kind.closing) })).filter(
+    (s) => s.goods && s.opening && s.closing,
+  );
 }
 
-/** この期間に棚卸の仕訳（期首・期末商品棚卸高を使う仕訳）が既にあるか */
+/** 期末棚卸の科目（期首商品棚卸高・期末商品棚卸高・商品）。どれか無ければ null */
+export function inventoryAccounts(accounts) {
+  const set = inventorySets(accounts).find((s) => s.kind.id === 'goods');
+  return set ? { opening: set.opening, closing: set.closing, goods: set.goods } : null;
+}
+
+/** この期間に棚卸の仕訳（期首・期末の棚卸高の科目を使う仕訳）が既にあるか */
 export function findInventoryJournals(journals, accounts) {
-  const inv = inventoryAccounts(accounts);
-  if (!inv) return [];
-  const ids = new Set([inv.opening.id, inv.closing.id]);
+  const ids = new Set(inventorySets(accounts).flatMap((s) => [s.opening.id, s.closing.id]));
+  if (!ids.size) return [];
   return journals.filter((j) => j.lines.some((l) => ids.has(l.accountId)));
 }
 
 /**
- * 期末棚卸の決算整理仕訳（三分法）の明細
- *   期首商品棚卸高 / 商品  … 期首の在庫（商品の残高）を売上原価へ
- *   商品 / 期末商品棚卸高  … 期末の在庫を商品へ
+ * 期末棚卸の決算整理仕訳（三分法）の明細。種類ごとに
+ *   期首の棚卸高 / 在庫の科目  … 期首の在庫（在庫の科目の残高）を費用へ
+ *   在庫の科目 / 期末の棚卸高  … 期末の在庫を在庫の科目へ
+ * @param {Array<{ set, balance: number, closingAmount: number }>} entries set は inventorySets() の要素。balance は決算整理前の在庫の科目の残高
+ */
+export function inventoryJournalLines(entries, memo = '決算整理 棚卸') {
+  const line = (side, account, amount, label) => ({ side, accountId: account.id, subAccountId: null, amount, taxCategory: 'none', memo: label ? `${memo}（${label}）` : memo });
+  const lines = [];
+  const many = entries.length > 1;
+  for (const { set, balance, closingAmount } of entries) {
+    const label = many ? set.kind.label : '';
+    if (balance > 0) lines.push(line('debit', set.opening, balance, label), line('credit', set.goods, balance, label));
+    if (closingAmount > 0) lines.push(line('debit', set.goods, closingAmount, label), line('credit', set.closing, closingAmount, label));
+  }
+  return lines;
+}
+
+/**
+ * 商品だけの期末棚卸の明細（従来の形）
  * @param {number} goodsBalance 決算整理前の商品の残高（＝期首の在庫）
  * @param {number} closingAmount 期末の棚卸高（0 以上の整数）
  */
 export function inventoryLines({ accounts, goodsBalance, closingAmount, memo = '決算整理 棚卸' }) {
-  const inv = inventoryAccounts(accounts);
-  if (!inv) return [];
-  const line = (side, account, amount) => ({ side, accountId: account.id, subAccountId: null, amount, taxCategory: 'none', memo });
-  const lines = [];
-  if (goodsBalance > 0) lines.push(line('debit', inv.opening, goodsBalance), line('credit', inv.goods, goodsBalance));
-  if (closingAmount > 0) lines.push(line('debit', inv.goods, closingAmount), line('credit', inv.closing, closingAmount));
-  return lines;
+  const set = inventorySets(accounts).find((s) => s.kind.id === 'goods');
+  if (!set) return [];
+  return inventoryJournalLines([{ set, balance: goodsBalance, closingAmount }], memo);
 }
