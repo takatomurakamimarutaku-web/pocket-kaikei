@@ -7,6 +7,7 @@ import { h, showToast } from './ui.js';
 import { friendlyError } from './errors.js';
 import { APP_VERSION } from './version.js';
 import { isDesktopApp } from './install.js';
+import { renderSidebar } from './sidebar.js';
 import { formatPeriod, todayString } from './period.js';
 import * as setupView from './views/setup.js';
 import * as lockSettingsView from './views/lock-settings.js';
@@ -174,6 +175,7 @@ const titleEl = document.getElementById('title');
 const backBtn = document.getElementById('back');
 const headerEl = document.querySelector('.app-header');
 const tabbar = document.querySelector('.tabbar');
+const sidebar = document.getElementById('sidebar');
 const printBtn = document.getElementById('print');
 const printHead = document.getElementById('print-head');
 
@@ -279,6 +281,14 @@ async function start() {
       if (route.print) fillPrintHead(route.title).catch(() => {});
       headerEl.classList.toggle('is-root', !route.back);
       tabbar.hidden = Boolean(route.setup);
+      sidebar.hidden = Boolean(route.setup);
+      if (settings) {
+        db.getCurrentPeriod()
+          .then((period) => !isStale() && renderSidebar(sidebar, { settings, period, hash: location.hash }))
+          .catch(() => {});
+      }
+      // PC 幅の画面は、画面ごとに幅や並べ方を変える（css/desktop.css）
+      outlet.dataset.route = route.path;
       for (const a of document.querySelectorAll('.tabbar a')) {
         if (a.dataset.tab === route.tab) a.setAttribute('aria-current', 'page');
         else a.removeAttribute('aria-current');

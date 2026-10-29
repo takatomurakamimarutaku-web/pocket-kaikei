@@ -45,8 +45,8 @@ const GROUPS = [
   ]],
 ];
 
-export async function render({ app, outlet }) {
-  const { settings } = await app.load();
+/** 事業者の設定に合う帳票だけを、グループごとに返す（PC のサイドメニューでも使う） */
+export function visibleReportGroups(settings) {
   const corp = settings.entityType === 'corporation';
   // 製造原価報告書は法人で「製造原価を使う」にしたときだけ、青色申告決算書は青色申告の個人だけ（一般用は不動産所得だけの人には出さない）、
   // 収支内訳書は白色申告の個人だけ出す
@@ -60,12 +60,13 @@ export async function render({ app, outlet }) {
     (need === 'business' && !corp && !white && settings.realEstate !== 'only') ||
     (need === 'realEstate' && re && !white) ||
     (need === 'white' && white);
+  return GROUPS.map(([title, tone, items]) => [title, tone, items.filter(([, , , , need]) => show(need))]).filter(([, , items]) => items.length);
+}
+
+export async function render({ app, outlet }) {
+  const { settings } = await app.load();
   put(
     outlet,
-    GROUPS.map(([title, tone, items]) => {
-      const list = items.filter(([, , , , need]) => show(need));
-      if (!list.length) return null;
-      return [h('h2', { class: 'menu-group-title', text: title }), h('ul', { class: 'menu-group' }, list.map(([href, label, sub, icon]) => menuRow({ href, label, sub, icon, tone })))];
-    }),
+    visibleReportGroups(settings).map(([title, tone, list]) => [h('h2', { class: 'menu-group-title', text: title }), h('ul', { class: 'menu-group' }, list.map(([href, label, sub, icon]) => menuRow({ href, label, sub, icon, tone })))]),
   );
 }

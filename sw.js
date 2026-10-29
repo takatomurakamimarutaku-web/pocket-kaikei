@@ -1,6 +1,6 @@
 // Service Worker
 // ファイルを変更したら CACHE_VERSION を上げる。ファイルを追加・削除したら PRECACHE_URLS も更新する（npm run check で検出）
-const CACHE_VERSION = 'v56';
+const CACHE_VERSION = 'v57';
 const CACHE_NAME = `pocket-kaikei-${CACHE_VERSION}`;
 
 // 事前にキャッシュするファイル（相対パス）
@@ -9,6 +9,7 @@ const PRECACHE_URLS = [
   'index.html',
   'manifest.webmanifest',
   'css/style.css',
+  'css/desktop.css',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -63,6 +64,7 @@ const PRECACHE_URLS = [
   'js/period.js',
   'js/router.js',
   'js/search.js',
+  'js/sidebar.js',
   'js/statements.js',
   'js/tax.js',
   'js/tax-return.js',
