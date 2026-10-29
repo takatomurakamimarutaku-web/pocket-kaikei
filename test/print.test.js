@@ -311,3 +311,22 @@ test('申告書の様式：欄の番号の表は3列のマス目、資産・負�
   assert.deepEqual(bs.rows.at(-1).cells, ['合計', '1', '2', '合計', '1', '2']);
   assert.equal(bs.rows.length, 1 + 2 + 1);
 });
+
+test('推移表：A4横・区分の行は区分の計、科目は0を空欄に。決算書は縦横を選べる', async () => {
+  const { monthlyDoc } = await import('../js/print-forms.js');
+  const doc = monthlyDoc({
+    title: '月次推移表',
+    head: {},
+    columns: ['4月', '5月', '合計'],
+    sections: [{ rows: [{ kind: 'group', label: '売上高', values: [100, 0, 100] }, { kind: 'line', label: '売上高', values: [100, 0, 100] }, { kind: 'total', label: '当期純利益', values: [100, 0, 100] }] }],
+  });
+  assert.equal(doc.orientation, 'landscape');
+  const rows = doc.blocks[0].rows;
+  assert.deepEqual(rows[0].cells, ['【売上高】', '100', '0', '100']);
+  assert.deepEqual(rows[1].cells.slice(1), ['100', '', '100']);
+  assert.equal(rows[2].kind, 'total');
+  assert.equal(layoutDocument(doc)[0].w, 297);
+  const b = makeBook('corporation');
+  const { pl } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals: [] });
+  assert.equal(layoutDocument(statementDoc([{ caption: '', items: pl.items }], { head: {}, title: '損益計算書', orientation: 'landscape' }))[0].orientation, 'landscape');
+});

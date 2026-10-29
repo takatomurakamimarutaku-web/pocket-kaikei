@@ -3,7 +3,9 @@ import { h, put, amountCell, saveFile, segmented, showToast } from '../ui.js';
 import { monthlyIncome, monthlyBalance, isAllZero } from '../monthly.js';
 import { monthlyCsv, csvFileName } from '../csv.js';
 import { barLineChart } from '../chart.js';
-import { zeroToggle, openingWarning, unitPicker } from './report-common.js';
+import { zeroToggle, openingWarning, unitPicker, unitPrintOptions } from './report-common.js';
+import { monthlyDoc, docHead } from '../print-forms.js';
+import { normalizeUnit } from '../money.js';
 import { openingDiff } from '../ledger.js';
 
 export async function render({ app, outlet, query }) {
@@ -37,6 +39,48 @@ export async function render({ app, outlet, query }) {
     }
     return h('div', { class: 'table-wrap' }, h('table', { class: 'report monthly' }, h('thead', {}, head), h('tbody', {}, rows)));
   }
+
+  // 印刷：A4横の推移表。印刷条件：損益・貸借（両方も）・0円の科目・金額の単位
+  const toRows = (items, total) => {
+    const rows = [];
+    for (const item of items) {
+      const tail = (x) => (total ? [...x.values, x.total] : x.values);
+      if (item.type === 'group') {
+        const lines = item.lines.filter((l) => !isAllZero(l.values) || printZero);
+        if (!lines.length) continue;
+        rows.push({ kind: 'group', label: item.label, values: tail(item) });
+        for (const l of lines) rows.push({ kind: 'line', label: l.account.name, values: tail(l) });
+      } else rows.push({ kind: item.strong ? 'total' : 'subtotal', label: item.label, values: tail(item) });
+    }
+    return rows;
+  };
+  let printZero = false;
+  app.printDoc = ({ printedAt }) => ({
+    options: [
+      { key: 'mode', label: '印刷する表', type: 'select', choices: [['pl', '損益（月ごと）'], ['bs', '貸借（月末残高）'], ['both', '損益と貸借']], value: mode },
+      { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
+      ...unitPrintOptions(unit.value()),
+      { key: 'orientation', label: '用紙の向き', type: 'select', choices: [['landscape', 'A4横'], ['portrait', 'A4縦']], value: 'landscape' },
+    ],
+    build: (v) => {
+      printZero = v.zero;
+      const sections = [];
+      if (v.mode !== 'bs') sections.push({ caption: v.mode === 'both' ? '損益（月ごとの発生額）' : '', rows: toRows(income.items, true) });
+      if (v.mode !== 'pl') {
+        balance = balance || monthlyBalance(ctx);
+        sections.push({ caption: '資産の部（月末残高）', rows: toRows(balance.assets, false) }, { caption: individual ? '負債・資本の部（月末残高）' : '負債・純資産の部（月末残高）', rows: toRows(balance.liabilities, false) });
+      }
+      const months = v.mode === 'bs' ? (balance || monthlyBalance(ctx)).months : income.months;
+      return monthlyDoc({
+        title: v.mode === 'bs' ? '月次推移表（貸借対照表）' : v.mode === 'pl' ? '月次推移表（損益計算書）' : '月次推移表',
+        head: docHead({ settings, period, printedAt }),
+        columns: [...months.map(monthLabel), ...(v.mode === 'bs' ? [] : ['合計'])],
+        sections,
+        unit: normalizeUnit(v),
+        orientation: v.orientation,
+      });
+    },
+  });
 
   function paint() {
     history.replaceState(history.state, '', `#/reports/monthly?mode=${mode}`);
