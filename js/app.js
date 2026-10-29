@@ -103,7 +103,7 @@ async function start() {
     refresh: () => router.refresh(),
     setTitle: (t) => {
       titleEl.textContent = t;
-      document.title = `${t} | ポケット会計`;
+      document.title = `${t} | Pocket会計`;
     },
     /**
      * 画面で使うデータをまとめて読む（第1弾は件数が少ない前提で、画面ごとに読み直す）

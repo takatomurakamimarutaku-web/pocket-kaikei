@@ -1,20 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2f9e7e"/>
-      <stop offset="1" stop-color="#17594a"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <circle cx="410" cy="100" r="150" fill="#fff" opacity=".07"/>
-  <!-- 帳簿 -->
-  <rect x="126" y="104" width="260" height="316" rx="22" fill="#fff"/>
-  <rect x="126" y="104" width="40" height="316" rx="14" fill="#d9efe7"/>
-  <path d="M256 104V420" stroke="#2f9e7e" stroke-width="8"/>
-  <path d="M190 170h50M190 210h50M190 250h50M280 170h76M280 210h76M280 250h76" stroke="#9cc9ba" stroke-width="12" stroke-linecap="round"/>
-  <path d="M190 312h166" stroke="#17594a" stroke-width="10" stroke-linecap="round"/>
-  <path d="M190 336h166" stroke="#17594a" stroke-width="5" stroke-linecap="round"/>
-  <!-- 円記号 -->
-  <circle cx="356" cy="372" r="74" fill="#ffc84a" stroke="#fff" stroke-width="12"/>
-  <path d="M326 330l30 40 30-40M356 370v46M330 378h52M330 398h52" fill="none" stroke="#7a4b00" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Pocket会計：小文字 p の丸い部分がポケット、中の点がコイン -->
+  <rect width="512" height="512" fill="#00b386"/>
+  <g fill="none" stroke="#fff" stroke-width="50" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M164 142V396"/>
+    <path d="M164 142H348V214C348 286 296 330 232 336H164"/>
+  </g>
+  <circle cx="262" cy="222" r="24" fill="#fff"/>
 </svg>

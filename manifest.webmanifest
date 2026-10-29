@@ -1,6 +1,6 @@
 {
-  "name": "ポケット会計",
-  "short_name": "ポケット会計",
+  "name": "Pocket会計",
+  "short_name": "Pocket会計",
   "description": "スマホで使う複式簿記の会計アプリ（個人事業主・法人）",
   "lang": "ja",
   "start_url": "./",
