@@ -82,3 +82,8 @@ export function createAsset(fields = {}, now = new Date()) {
 export function createTemplate(fields = {}, now = new Date()) {
   return { id: newId(), name: '', lines: [], repeatDay: null, ...stamp(now), ...fields };
 }
+
+/** 予算（会計期間・科目ごと）。months は { 'YYYY-MM': 金額 }（区分の向きの正の整数） */
+export function createBudget(fields = {}, now = new Date()) {
+  return { id: newId(), periodId: '', accountId: '', months: {}, ...stamp(now), ...fields };
+}

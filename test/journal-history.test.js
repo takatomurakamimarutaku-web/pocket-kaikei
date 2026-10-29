@@ -63,6 +63,7 @@ test('スキーマ移行：バージョン2のデータを残したまま履歴�
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('journalHistory'); // バージョン2の構成にする
       open.result.deleteObjectStore('templates');
+      open.result.deleteObjectStore('budgets');
       open.transaction.objectStore('journals').put({ id: 'j1', periodId: 'p1', date: '2026-01-01', no: 1, lines: [], createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {
@@ -82,7 +83,7 @@ test('バックアップ：バージョン2のファイルは履歴を空にし�
   const { repo } = await setupRepo();
   const dump = await repo.dumpAll();
   const v3 = createBackup(dump);
-  const { journalHistory: _omit, templates: _omit2, ...rest } = v3;
+  const { journalHistory: _omit, templates: _omit2, budgets: _omit3, ...rest } = v3;
   const v2 = { ...rest, version: 2 };
   assert.deepEqual(parseBackup(JSON.stringify(v2)).journalHistory, []);
   const broken = { ...v3, journalHistory: [{ id: 'h1', createdAt: 'x', updatedAt: 'x', journalId: 'j', at: 'x', action: 'edit', before: {}, after: null }] };

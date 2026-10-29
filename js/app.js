@@ -15,6 +15,7 @@ import * as templatesView from './views/templates.js';
 import * as checksView from './views/checks.js';
 import * as analysisView from './views/analysis.js';
 import * as cashFlowView from './views/cash-flow.js';
+import * as budgetView from './views/budget.js';
 import * as entryView from './views/entry.js';
 import * as quickEntryView from './views/quick-entry.js';
 import * as cashbookView from './views/cashbook.js';
@@ -75,6 +76,8 @@ const routes = [
   { path: '/reports/manufacturing', view: manufacturingView, title: '製造原価報告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/cash-flow', view: cashFlowView, kind: 'statement', title: 'キャッシュフロー計算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/cash-plan', view: cashFlowView, kind: 'plan', title: '資金繰り表', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/budget', view: budgetView, kind: 'report', title: '予算と実績', tab: 'reports', back: '#/reports', print: true },
+  { path: '/budget', view: budgetView, kind: 'edit', title: '予算の入力', tab: 'reports', back: '#/reports/budget' },
   { path: '/reports/analysis', view: analysisView, title: '経営分析', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports', print: true },

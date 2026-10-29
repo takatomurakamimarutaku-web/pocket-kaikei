@@ -98,7 +98,7 @@ test('リポジトリ：定型仕訳の保存・一覧・削除（tombstone）�
 test('バックアップ：バージョン3のファイルは定型仕訳を空にして読み込み、不正な定型仕訳は拒否する', async () => {
   const { repo, byName } = await setupRepo();
   const v4 = createBackup(await repo.dumpAll());
-  const { templates: _omit, ...rest } = v4;
+  const { templates: _omit, budgets: _omit2, ...rest } = v4;
   assert.deepEqual(parseBackup(JSON.stringify({ ...rest, version: 3 })).templates, []);
   const broken = { ...v4, templates: [{ ...rentTemplate({ byName }), name: '' }] };
   assert.throws(() => parseBackup(JSON.stringify(broken)), /定型仕訳/);
@@ -112,6 +112,7 @@ test('スキーマ移行：バージョン3のデータを残したまま定型�
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('templates'); // バージョン3の構成にする
+      open.result.deleteObjectStore('budgets');
       open.transaction.objectStore('journals').put({ id: 'j1', periodId: 'p1', date: '2026-01-01', no: 1, lines: [], createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {

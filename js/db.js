@@ -4,19 +4,20 @@ import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
 import { historyEntry, journalChanged } from './journal-history.js';
 import { validateTemplate } from './templates.js';
+import { validateBudget } from './budget.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
-import { newId, createAccount } from './models.js';
+import { newId, createAccount, createBudget } from './models.js';
 import { validateAsset } from './depreciation.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 4;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates'];
+export const DB_VERSION = 5;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets'];
 const ALL_STORES = ['meta', ...DATA_STORES];
 
 /** 締めた会計期間を変更しようとしたときのメッセージ */
@@ -59,6 +60,10 @@ export function migrate(db, oldVersion, tx) {
   if (oldVersion < 4) {
     // 定型仕訳・毎月の繰り返し仕訳
     db.createObjectStore('templates', { keyPath: 'id' });
+  }
+  if (oldVersion < 5) {
+    // 予算（会計期間・科目ごとの月別の金額）
+    db.createObjectStore('budgets', { keyPath: 'id' }).createIndex('periodId', 'periodId');
   }
 }
 
@@ -614,7 +619,7 @@ export class Repository {
 
   /** 科目の削除：自分で追加し、どこにも使っていない科目だけ。補助科目も削除する */
   deleteAccount(id) {
-    return this.run(['accounts', 'subAccounts', 'journals', 'periods', 'assets', 'tombstones', 'templates'], 'readwrite', async (tx) => {
+    return this.run(['accounts', 'subAccounts', 'journals', 'periods', 'assets', 'tombstones', 'templates', 'budgets'], 'readwrite', async (tx) => {
       const acc = await req(tx.objectStore('accounts').get(id));
       if (!acc) return;
       if (acc.template || acc.role) throw new ValidationError(['テンプレートの科目は削除できません。使わない場合は無効にしてください']);
@@ -626,6 +631,12 @@ export class Repository {
       for (const s of subs) {
         tx.objectStore('subAccounts').delete(s.id);
         tx.objectStore('tombstones').put(tombstone('subAccounts', s.id));
+      }
+      // 予算は科目といっしょに消す
+      for (const b of await req(tx.objectStore('budgets').getAll())) {
+        if (b.accountId !== id) continue;
+        tx.objectStore('budgets').delete(b.id);
+        tx.objectStore('tombstones').put(tombstone('budgets', b.id));
       }
       tx.objectStore('accounts').delete(id);
       tx.objectStore('tombstones').put(tombstone('accounts', id));
@@ -677,6 +688,46 @@ export class Repository {
     return this.run(['templates', 'tombstones'], 'readwrite', async (tx) => {
       tx.objectStore('templates').delete(id);
       tx.objectStore('tombstones').put(tombstone('templates', id));
+    });
+  }
+
+  // ---- 予算 ----
+
+  listBudgets(periodId) {
+    return this.run(['budgets'], 'readonly', (tx) => req(tx.objectStore('budgets').index('periodId').getAll(periodId)));
+  }
+
+  /**
+   * 予算をまとめて保存する。entries：[{ accountId, months }]。月の金額がすべて0の科目は予算を消す（tombstone）
+   * 1件でも誤りがあれば何も保存しない
+   */
+  saveBudgets(periodId, entries) {
+    return this.run(['accounts', 'periods', 'budgets', 'tombstones'], 'readwrite', async (tx) => {
+      const accounts = await req(tx.objectStore('accounts').getAll());
+      const periods = await req(tx.objectStore('periods').getAll());
+      const existing = new Map((await req(tx.objectStore('budgets').index('periodId').getAll(periodId))).map((b) => [b.accountId, b]));
+      const ts = now();
+      const puts = [];
+      const deletes = [];
+      const errors = [];
+      for (const e of entries) {
+        const months = Object.fromEntries(Object.entries(e.months || {}).filter(([, v]) => v !== 0));
+        const before = existing.get(e.accountId);
+        if (!Object.keys(months).length) {
+          if (before) deletes.push(before.id);
+          continue;
+        }
+        const next = { ...(before || createBudget({ periodId, accountId: e.accountId })), months, updatedAt: ts };
+        errors.push(...validateBudget(next, { accounts, periods }));
+        puts.push(next);
+      }
+      if (errors.length) throw new ValidationError([...new Set(errors)]);
+      for (const b of puts) tx.objectStore('budgets').put(b);
+      for (const id of deletes) {
+        tx.objectStore('budgets').delete(id);
+        tx.objectStore('tombstones').put(tombstone('budgets', id));
+      }
+      return { saved: puts.length, deleted: deletes.length };
     });
   }
 
