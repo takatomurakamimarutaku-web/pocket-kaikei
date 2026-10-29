@@ -221,3 +221,24 @@ export function attachmentsCsv(list, { journalById, kindLabels, fileName }) {
   }
   return toCsv(rows);
 }
+
+/**
+ * 積上げ計算の明細（tax-return.js の stackedDetail）。明細ごとの税込金額と消費税額等
+ */
+export function stackedTaxCsv(rows, { accountById, subById }) {
+  const header = ['日付', 'No.', '売上・仕入', '科目', '補助科目', '税区分', '摘要', '税込金額', '消費税額等', '経過措置の割合', '経過措置で控除する国税'];
+  const body = rows.map((r) => [
+    r.journal.date.replaceAll('-', '/'),
+    r.journal.no,
+    r.side === 'sales' ? '売上' : '仕入',
+    accountById.get(r.line.accountId)?.name ?? '',
+    subById.get(r.line.subAccountId)?.name ?? '',
+    r.cat.label,
+    r.line.memo || '',
+    r.gross,
+    r.tax,
+    r.pct === null ? '' : `${r.pct}%`,
+    r.transitionalTax ?? '',
+  ]);
+  return toCsv([header, ...body]);
+}

@@ -108,3 +108,79 @@ test('法人のサンプルデータで内訳書とCSVが作れる', () => {
   const csv = breakdownCsv(forms.filter((f) => f.rows.length));
   assert.match(csv, /① 預貯金等の内訳書/);
 });
+
+test('⑫・⑮：選んだ科目（補助科目）の仕訳から作る。⑬は売上高と期末棚卸高の合計の1行', async () => {
+  const { makeBook } = await import('./helpers.js');
+  const b = makeBook('corporation', { startDate: '2026-04-01', endDate: '2027-03-31', subs: [['売上高', '土地売上'], ['売上高', '一般'], ['支払手数料', '特許事務所'], ['支払手数料', '銀行']] });
+  const sub = (name) => b.subAccounts.find((s) => s.name === name).id;
+  const journals = [
+    b.j('2026-05-10', [['普通預金', 30000000]], [['売上高', 30000000, 'sales_exempt', '土地売上']], '分譲地A区画 山田'),
+    b.j('2026-08-20', [['普通預金', 50000000]], [['売上高', 50000000, 'sales_exempt', '土地売上']], '分譲地B区画 佐藤'),
+    b.j('2026-06-01', [['普通預金', 2000000]], [['売上高', 2000000, null, '一般']], '一般の売上'),
+    b.j('2026-07-01', [['支払手数料', 110000, null, '特許事務所']], [['普通預金', 110000]], '商標権の使用料 7月分'),
+    b.j('2026-10-01', [['支払手数料', 110000, null, '特許事務所']], [['普通預金', 110000]], '商標権の使用料 10月分'),
+    b.j('2026-07-02', [['支払手数料', 660, null, '銀行']], [['普通預金', 660]], '振込手数料'),
+    b.j('2026-09-01', [['地代家賃', 300000]], [['普通預金', 300000]], '事務所の更新料'),
+    b.j('2027-03-31', [['商品', 1200000]], [['期末商品棚卸高', 1200000]], '期末棚卸'),
+  ];
+  const targets = {
+    land_sales: [{ accountId: b.byName['売上高'].id, subAccountId: sub('土地売上') }],
+    royalties: [{ accountId: b.byName['支払手数料'].id, subAccountId: sub('特許事務所') }],
+    rights: [{ accountId: b.byName['地代家賃'].id, subAccountId: null }, { accountId: b.byName['普通預金'].id, subAccountId: null }], // 選べない区分の科目は除く
+  };
+  const forms = breakdownStatements({ accounts: b.accounts, subAccounts: b.subAccounts, period: b.period, journals, targets });
+  const land = get(forms, 'land_sales');
+  assert.equal(land.no, '⑫');
+  assert.deepEqual(land.rows.map((r) => [r.month, r.party, r.amount]), [['2026/08', '土地売上', 50000000], ['2026/05', '土地売上', 30000000]]);
+  assert.equal(land.total, 80000000);
+  const offices = get(forms, 'offices');
+  assert.deepEqual(offices.rows, [{ party: '本店', amount: 82000000, inventory: 1200000, memo: '' }]);
+  const rights = get(forms, 'rights');
+  assert.deepEqual(rights.rows.map((r) => [r.date, r.memo, r.amount]), [['2026/09/01', '事務所の更新料', 300000]]);
+  const roy = get(forms, 'royalties');
+  assert.deepEqual(roy.rows, [{ name: '商標権の使用料 7月分', party: '特許事務所', amount: 220000, memo: '支払手数料' }]);
+  // 並び：⑪の次に⑫⑬、地代家賃の次に⑮の2つ
+  const ids = forms.map((f) => f.id);
+  assert.deepEqual(ids.slice(ids.indexOf('borrowings'), ids.indexOf('borrowings') + 3), ['borrowings', 'land_sales', 'offices']);
+  assert.deepEqual(ids.slice(ids.indexOf('rent'), ids.indexOf('rent') + 3), ['rent', 'rights', 'royalties']);
+  // 対象を選んでいなければ空
+  const none = breakdownStatements({ accounts: b.accounts, subAccounts: b.subAccounts, period: b.period, journals });
+  assert.deepEqual(get(none, 'land_sales').rows, []);
+  assert.match(get(none, 'rights').note, /対象の科目を選ぶと/);
+  assert.match(breakdownCsv([land]), /⑫ 土地の売上高等の内訳書/);
+});
+
+test('内訳書の対象の科目：設定に保存し（バックアップに入る）、形の誤りは保存も読み込みもしない', async () => {
+  const { IDBFactory } = await import('fake-indexeddb');
+  const { openDB, ValidationError } = await import('../js/db.js');
+  const { createAccount, createPeriod, createSettings } = await import('../js/models.js');
+  const { templateAccounts } = await import('../js/accounts.js');
+  const { createBackup, parseBackup, BackupError } = await import('../js/backup.js');
+  const { validateBreakdownTargets, cleanBreakdownTargets } = await import('../js/breakdown.js');
+
+  assert.equal(validateBreakdownTargets(undefined), null);
+  assert.equal(validateBreakdownTargets({ royalties: [{ accountId: 'a', subAccountId: null }] }), null);
+  assert.match(validateBreakdownTargets({ unknown: [] }), /正しくありません/);
+  assert.match(validateBreakdownTargets({ rights: [{ accountId: '' }] }), /正しくありません/);
+  assert.match(validateBreakdownTargets({ rights: 'x' }), /正しくありません/);
+
+  const repo = await openDB({ indexedDB: new IDBFactory() });
+  const accounts = templateAccounts('corporation').map((a) => createAccount(a));
+  const period = createPeriod({ startDate: '2026-04-01', endDate: '2027-03-31' });
+  await repo.setup({ settings: createSettings({ businessName: 'テスト株式会社', entityType: 'corporation' }), period, accounts });
+  const fee = accounts.find((a) => a.name === '支払手数料');
+  const saved = await repo.saveBreakdownTargets({ royalties: [{ accountId: fee.id }] });
+  assert.deepEqual(saved.breakdownTargets, { royalties: [{ accountId: fee.id, subAccountId: null }] });
+  await assert.rejects(repo.saveBreakdownTargets({ royalties: [{ subAccountId: 'x' }] }), ValidationError);
+  assert.deepEqual((await repo.getSettings()).breakdownTargets, { royalties: [{ accountId: fee.id, subAccountId: null }] });
+
+  // バックアップに入り、復元すると戻る。消えた科目は使うときに外す
+  const data = await repo.dumpAll();
+  const back = parseBackup(JSON.stringify(createBackup(data, { appVersion: 'test' })));
+  assert.deepEqual(back.settings.breakdownTargets, { royalties: [{ accountId: fee.id, subAccountId: null }] });
+  assert.deepEqual(cleanBreakdownTargets(back.settings.breakdownTargets, { accounts: accounts.filter((a) => a.id !== fee.id) }).royalties, []);
+  const broken = createBackup(data, { appVersion: 'test' });
+  broken.settings.breakdownTargets = { royalties: [{ accountId: 1 }] };
+  assert.throws(() => parseBackup(JSON.stringify(broken)), (e) => e instanceof BackupError && /内訳書の対象/.test(e.message));
+  repo.close();
+});

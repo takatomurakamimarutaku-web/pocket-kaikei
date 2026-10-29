@@ -44,6 +44,22 @@ export function addMonths(s, n) {
   return fromUTC(new Date(Date.UTC(ty, tm, Math.min(+m[3], last))));
 }
 
+/**
+ * 期間の月数。暦に従って数え、1か月に満たない端数は1か月とする（消費税の課税期間の月数の数え方）
+ * 例：2026-04-01〜2027-03-31 → 12、2026-06-15〜2027-03-31 → 10、2026-01-31〜2026-02-28 → 1（民法143条）
+ */
+export function periodMonths({ startDate, endDate }) {
+  const end = addDays(endDate, 1);
+  // n か月後の応当日（その月に応当日がなければ月末で満了するので、翌月1日）
+  const after = (n) => {
+    const t = addMonths(startDate, n);
+    return t.slice(8) === startDate.slice(8) ? t : addDays(t, 1);
+  };
+  let n = 0;
+  while (after(n + 1) <= end) n++;
+  return after(n) < end ? n + 1 : n;
+}
+
 /** 個人事業主の会計期間（暦年固定） */
 export function individualPeriod(year) {
   return { startDate: `${year}-01-01`, endDate: `${year}-12-31` };

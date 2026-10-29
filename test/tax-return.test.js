@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeTaxReturn, transitionalRate, methodAvailability, taxBuckets, taxableRatioParts } from '../js/tax-return.js';
+import { computeTaxReturn, transitionalRate, methodAvailability, taxBuckets, taxableRatioParts, stackedDetail } from '../js/tax-return.js';
 import { makeBook } from './helpers.js';
 
 const period2026 = { startDate: '2026-01-01', endDate: '2026-12-31' };
@@ -240,4 +240,107 @@ test('簡易課税：売上の返品の税額を引いてからみなし仕入�
   assert.equal(r.deduction, 191100); // (390,000−7,800)×50%
   assert.equal(r.deductionTotal, 198900);
   assert.equal(r.net, 191100);
+});
+
+function stackedBook() {
+  const book = makeBook('individual');
+  const journals = [
+    book.j('2026-02-01', [['普通預金', 10999]], [['売上高', 10999, 'sales_10']]),
+    book.j('2026-02-02', [['普通預金', 10999]], [['売上高', 10999, 'sales_10']]),
+    book.j('2026-02-03', [['普通預金', 5555]], [['売上高', 5555, 'sales_8r']]),
+    book.j('2026-03-01', [['仕入高', 1007, 'purchase_10']], [['普通預金', 1007]]),
+    book.j('2026-03-02', [['仕入高', 1007, 'purchase_10']], [['普通預金', 1007]]),
+    book.j('2026-03-03', [['仕入高', 1007, 'purchase_10']], [['普通預金', 1007]]),
+    book.j('2026-06-10', [['外注工賃', 1007, 'purchase_10_ni']], [['普通預金', 1007]]),
+  ];
+  return { book, journals };
+}
+
+test('積上げ計算：明細ごとの消費税額等（10/110・8/108）の合計×78/100。インボイスなしは明細ごとに×7.8/110×80%', () => {
+  const { journals } = stackedBook();
+  const r = computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'general', salesCalc: 'stacked', purchaseCalc: 'stacked' });
+  // 売上：10,999×10/110＝999.9→999 を2行、5,555×8/108＝411.4→411。1,998×78/100＝1,558、411×78/100＝320
+  assert.deepEqual(r.stacked, { sales10: 1998, sales8: 411, purchase10: 273, purchase8: 0 });
+  assert.equal(r.salesTax10, 1558);
+  assert.equal(r.salesTax8, 320);
+  assert.equal(r.salesTax, 1878);
+  // 課税標準額は積上げ計算でも税込×100/110 の千円未満切り捨て
+  assert.equal(r.base10, 19000);
+  // 仕入：1,007×10/110＝91.5→91 を3行。273×78/100＝212。インボイスなし：1,007×7.8/110×80%＝57.1→57
+  assert.equal(r.purchaseTax10, 212);
+  assert.deepEqual(r.transitional.map((t) => t.tax), [57]);
+  assert.equal(r.deduction, 269);
+  assert.equal(r.salesCalc, 'stacked');
+  assert.equal(r.purchaseCalc, 'stacked');
+});
+
+test('積上げ計算の端数処理：売上は切り捨て・四捨五入・切り上げ、仕入は切り捨て・四捨五入', () => {
+  const { journals } = stackedBook();
+  const calc = (o) => computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'general', salesCalc: 'stacked', purchaseCalc: 'stacked', ...o });
+  const round = calc({ salesRounding: 'round', purchaseRounding: 'round' });
+  assert.deepEqual(round.stacked, { sales10: 2000, sales8: 411, purchase10: 276, purchase8: 0 });
+  assert.equal(round.salesTax10, 1560);
+  assert.equal(round.purchaseTax10, 215);
+  const ceil = calc({ salesRounding: 'ceil', purchaseRounding: 'ceil' });
+  assert.equal(ceil.stacked.sales8, 412);
+  assert.equal(ceil.salesTax8, 321);
+  // 仕入の切り上げは認められていないので切り捨てにする
+  assert.equal(ceil.stacked.purchase10, 273);
+});
+
+test('売上を積上げ計算にすると仕入も積上げ計算。仕入だけ積上げ計算もできる', () => {
+  const { journals } = stackedBook();
+  const both = computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'general', salesCalc: 'stacked', purchaseCalc: 'gross' });
+  assert.equal(both.purchaseCalc, 'stacked');
+  assert.equal(both.purchaseTax10, 212);
+  const purchaseOnly = computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'general', salesCalc: 'gross', purchaseCalc: 'stacked' });
+  assert.equal(purchaseOnly.salesCalc, 'gross');
+  assert.equal(purchaseOnly.salesTax, 1482 + 312); // 19,000×7.8%＋5,000×6.24%
+  assert.equal(purchaseOnly.purchaseTax10, 212);
+  const gross = computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'general' });
+  assert.equal(gross.purchaseTax10, 214); // 3,021×7.8/110
+  assert.deepEqual(gross.transitional.map((t) => t.tax), [56]); // 1,007×7.8/110＝71 → ×80%
+  assert.equal(gross.stacked, null);
+});
+
+test('積上げ計算の明細：明細ごとの税込金額・消費税額等、借方の課税売上はマイナス', async () => {
+  const { book, journals } = stackedBook();
+  journals.push(book.j('2026-04-01', [['売上高', 1007, 'sales_10']], [['普通預金', 1007]]));
+  const rows = stackedDetail(journals, { from: '2026-01-01', to: '2026-12-31' });
+  assert.equal(rows.length, 8);
+  assert.deepEqual(rows.map((x) => [x.side, x.gross, x.tax, x.pct, x.transitionalTax]), [
+    ['sales', 10999, 999, null, null],
+    ['sales', 10999, 999, null, null],
+    ['sales', 5555, 411, null, null],
+    ['purchase', 1007, 91, null, null],
+    ['purchase', 1007, 91, null, null],
+    ['purchase', 1007, 91, null, null],
+    ['sales', -1007, -91, null, null],
+    ['purchase', 1007, 91, 80, 57],
+  ]);
+  const { stackedTaxCsv } = await import('../js/csv.js');
+  const csv = stackedTaxCsv(rows, { accountById: new Map(book.accounts.map((a) => [a.id, a])), subById: new Map() });
+  const lines = csv.replace(/^﻿/, '').trim().split('\r\n');
+  assert.equal(lines[0], '日付,No.,売上・仕入,科目,補助科目,税区分,摘要,税込金額,消費税額等,経過措置の割合,経過措置で控除する国税');
+  assert.match(lines[1], /^2026\/02\/01,1,売上,売上高,,/);
+  assert.match(lines.at(-1), /,1007,91,80%,57$/);
+});
+
+test('課税期間が1年に満たないとき：課税売上高を月数で年換算して5億円を判定する', () => {
+  const book = makeBook('corporation', { startDate: '2026-10-20', endDate: '2027-03-31' });
+  const journals = [
+    book.j('2026-12-01', [['普通預金', 330000000]], [['売上高', 330000000, 'sales_10']]),
+    book.j('2026-12-02', [['仕入高', 110000000, 'purchase_10']], [['普通預金', 110000000]]),
+  ];
+  const short = computeTaxReturn({ journals, period: book.period, entityType: 'corporation', method: 'general' });
+  assert.equal(short.months, 6);
+  assert.equal(short.annualTaxable, 600000000); // 3億 ÷ 6 × 12
+  assert.equal(short.fullDeduction, false);
+  assert.ok(short.warnings.some((w) => /年換算すると5億円を超えます（6か月/.test(w)));
+  // 課税売上割合が100%なので、按分しても控除額は同じ
+  assert.equal(short.deduction, 7800000);
+  const year = computeTaxReturn({ journals, period: { startDate: '2026-04-01', endDate: '2027-03-31' }, entityType: 'corporation', method: 'general' });
+  assert.equal(year.months, 12);
+  assert.equal(year.fullDeduction, true);
+  assert.deepEqual(year.warnings, []);
 });

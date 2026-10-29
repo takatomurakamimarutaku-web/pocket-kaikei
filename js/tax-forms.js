@@ -18,7 +18,10 @@ const net8 = (gross) => trunc(gross * 100, 108);
 const pos = (n) => (n > 0 ? n : 0);
 
 /** 様式の種類（計算の方法ごと） */
-export const FORM_KINDS = {
+export // 売上の税額を積上げ計算したときの「消費税額」の欄の説明
+const STACKED_NOTE = '積上げ計算：明細ごとの消費税額等の合計×78/100';
+
+const FORM_KINDS = {
   general: { first: '第一表（一般用）', sheets: ['付表1-3', '付表2-3'] },
   simplified: { first: '第一表（簡易課税用）', sheets: ['付表4-3', '付表5-3'] },
   twenty: { first: '第一表（一般用）', sheets: ['付表6'] },
@@ -39,6 +42,7 @@ const total = (no, label, c, extra = {}) => ({ no, label, a: null, b: null, c, .
 export function taxReturnForms(r, { baseSales = null } = {}) {
   const b = r.buckets;
   const method = r.method;
+  const salesTaxNote = r.salesCalc === 'stacked' ? STACKED_NOTE : '①×6.24%・7.8%';
   // 付表1-3・4-3・6 の共通部分：課税資産の譲渡等の対価の額（税抜）・課税標準額・消費税額
   const sales1 = { a: net8(b.sales8), b: net10(b.sales10) };
   // 合計の欄（C）は computeTaxReturn の結果を使い、画面の計算と必ず一致させる
@@ -65,7 +69,7 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
     rows13 = [
       abc('①-1', '課税資産の譲渡等の対価の額', sales1.a, sales1.b),
       abc('①', '課税標準額', r.base8, r.base10, { note: '①-1 の千円未満切り捨て' }),
-      abc('②', '消費税額', r.salesTax8, r.salesTax10, { note: '①×6.24%・7.8%' }),
+      abc('②', '消費税額', r.salesTax8, r.salesTax10, { note: salesTaxNote }),
       abc('③', '控除過大調整税額', adj.a, adj.b, { note: '付表2-3 ㉗＋㉘' }),
       abc('④', '控除対象仕入税額', ded.a, ded.b, { note: '付表2-3 ㉖' }),
       abc('⑤', '返還等対価に係る税額', r.returnsByRate.r8, r.returnsByRate.r10),
@@ -89,7 +93,7 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
     rows13 = [
       abc('①-1', '課税資産の譲渡等の対価の額', sales1.a, sales1.b),
       abc('①', '課税標準額', r.base8, r.base10, { note: '①-1 の千円未満切り捨て' }),
-      abc('②', '消費税額', r.salesTax8, r.salesTax10, { note: '①×6.24%・7.8%' }),
+      abc('②', '消費税額', r.salesTax8, r.salesTax10, { note: salesTaxNote }),
       abc('③', '貸倒回収に係る消費税額', r.recoveredByRate.r8, r.recoveredByRate.r10),
       abc('④', '控除対象仕入税額', ded.a, ded.b, { note: '付表5-3 ⑤' }),
       abc('⑤', '返還等対価に係る税額', r.returnsByRate.r8, r.returnsByRate.r10),
@@ -124,7 +128,7 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
     rows13 = [
       abc('①', '課税資産の譲渡等の対価の額', sales1.a, sales1.b),
       abc('②', '課税標準額', r.base8, r.base10, { note: '①の千円未満切り捨て' }),
-      abc('③', '課税標準額に対する消費税額', r.salesTax8, r.salesTax10, { note: '②×6.24%・7.8%' }),
+      abc('③', '課税標準額に対する消費税額', r.salesTax8, r.salesTax10, { note: r.salesCalc === 'stacked' ? STACKED_NOTE : '②×6.24%・7.8%' }),
       abc('④', '貸倒回収に係る消費税額', r.recoveredByRate.r8, r.recoveredByRate.r10),
       abc('⑤', '売上対価の返還等に係る消費税額', r.returnsByRate.r8, r.returnsByRate.r10),
       abc('⑥', '控除対象仕入税額の計算の基礎となる消費税額', r.basisByRate.r8, r.basisByRate.r10, { note: '③＋④−⑤' }),
@@ -173,6 +177,7 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
         ];
   const first = {
     title: `${FORM_KINDS[method].first}`,
+    // 「課税標準額に対する消費税額の計算の特例の適用」欄は使わない（申告書（一般用）の書き方 令和7年10月以後終了課税期間用）
     flags: method === 'twenty' ? ['税額控除に係る経過措置の適用（2割特例）：○'] : method === 'thirty' ? ['税額控除に係る経過措置の適用（3割特例）：○'] : [],
     rows: [
       cell('①', '課税標準額', r.base8 + r.base10, { note: '第二表 ①' }),
@@ -214,8 +219,9 @@ function sheet23(r) {
   const p10 = sumUses((u) => u.p10 - u.ret10);
   const tax8 = (x) => trunc(x * 624, 10800);
   const tax10 = (x) => trunc(x * 78, 1100);
-  const t8 = sumUses((u) => tax8(u.p8) - tax8(u.ret8));
-  const t10 = sumUses((u) => tax10(u.p10) - tax10(u.ret10));
+  // 課税仕入れの税額は computeTaxReturn の値（割戻し計算か積上げ計算）から、返品・値引きの税額を引く
+  const t8 = r.purchaseTax8 - sumUses((u) => tax8(u.ret8));
+  const t10 = r.purchaseTax10 - sumUses((u) => tax10(u.ret10));
   const trans = (rate, k) => r.transitional.filter((t) => t.rate === rate).reduce((s, t) => s + t[k], 0);
   const taxableNet = { a: net8(b.sales8) - net8(b.salesReturn8), b: net10(b.sales10) - net10(b.salesReturn10) };
   const exportNet = b.export - b.exportReturn;
