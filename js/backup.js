@@ -53,9 +53,14 @@ export function createBackup(data, { appVersion = '', exportedAt = new Date(), i
   };
 }
 
-export function backupFileName(date = new Date()) {
+export function backupFileName(date = new Date(), businessName = '') {
   const p = (n) => String(n).padStart(2, '0');
-  return `pocket-kaikei-${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}.json`;
+  // 事業所が複数あってもどの会社のものか分かるよう、事業者名を入れる（ファイル名に使えない文字と空白は _ にする）
+  const name = String(businessName || '')
+    .replace(/[\\/:*?"<>|\s\u0000-\u001f]+/g, '_')
+    .replace(/^[_.]+|[_.]+$/g, '')
+    .slice(0, 40);
+  return `pocket-kaikei-${name ? `${name}-` : ''}${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}.json`;
 }
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

@@ -5,6 +5,8 @@ import { openDB, openDeviceStore, DB_NAME, ValidationError } from '../js/db.js';
 import { validatePasscode, createLock, verifyPasscode, hashPasscode, validateLock, needsLock, failureDelay, waitRemaining, webauthnCreateOptions, webauthnGetOptions, checkClientData, bytesToBase64Url, base64UrlToBytes, lockSupported } from '../js/lock.js';
 import { templateAccounts } from '../js/accounts.js';
 import { createAccount, createPeriod, createSettings } from '../js/models.js';
+import { createBackup, parseBackup } from '../js/backup.js';
+import { buildSample, SAMPLE_NAMES } from '../js/sample.js';
 
 test('パスコード：数字4〜8桁、確認と一致すること', () => {
   assert.equal(validatePasscode('1234'), null);
@@ -91,7 +93,7 @@ test('帳簿：最初は従来のデータベースを1冊目にする。追加�
   assert.equal((await device.currentBook()).id, first.id); // 2回目も同じ
   const repo1 = await openDB({ indexedDB, name: first.dbName });
   assert.equal((await repo1.getSettings()).businessName, '山田商店');
-  await device.setBookLabel(first.id, '山田商店');
+  await device.setBookInfo(first.id, { label: '山田商店', entityType: 'individual' });
 
   const second = await device.addBook();
   assert.equal(second.dbName, `${DB_NAME}-${second.id}`);
@@ -101,8 +103,8 @@ test('帳簿：最初は従来のデータベースを1冊目にする。追加�
   assert.equal(await repo2.getSettings(), null); // 新しい帳簿は初期設定から
   await repo2.setup({ settings: createSettings({ businessName: '株式会社ヤマダ', entityType: 'corporation' }), period: createPeriod({ startDate: '2026-04-01', endDate: '2027-03-31' }), accounts: templateAccounts('corporation').map((a) => createAccount(a)) });
   assert.equal((await repo1.getSettings()).businessName, '山田商店'); // 帳簿ごとにデータが分かれる
-  await device.setBookLabel(second.id, '株式会社ヤマダ');
-  assert.deepEqual((await device.listBooks()).map((b) => b.label), ['山田商店', '株式会社ヤマダ']);
+  await device.setBookInfo(second.id, { label: '株式会社ヤマダ', entityType: 'corporation' });
+  assert.deepEqual((await device.listBooks()).map((b) => [b.label, b.entityType]), [['山田商店', 'individual'], ['株式会社ヤマダ', 'corporation']]);
 
   await assert.rejects(device.deleteBook(second.id), ValidationError); // 今の帳簿は消せない
   await assert.rejects(device.switchBook('none'), ValidationError);
@@ -113,6 +115,31 @@ test('帳簿：最初は従来のデータベースを1冊目にする。追加�
   const reopened = await openDB({ indexedDB, name: second.dbName });
   assert.equal(await reopened.getSettings(), null); // データベースごと消えている
   reopened.close();
+  repo1.close();
+  device.close();
+});
+
+test('事業所：バックアップ・サンプルのデータで新しい事業所を作る。今の事業所は残す。失敗したら何も残さない', async () => {
+  const indexedDB = new IDBFactory();
+  const device = await openDeviceStore({ indexedDB });
+  const first = await device.currentBook();
+  const repo1 = await openDB({ indexedDB, name: first.dbName });
+  await repo1.setup({ settings: createSettings({ businessName: '山田商店', entityType: 'individual' }), period: createPeriod({ startDate: '2026-01-01', endDate: '2026-12-31' }), accounts: templateAccounts('individual').map((a) => createAccount(a)) });
+
+  const data = parseBackup(JSON.stringify(createBackup(buildSample('corporation'), { appVersion: '0.0.0' })));
+  const book = await device.addBookWithData(data);
+  assert.equal(book.label, SAMPLE_NAMES.corporation);
+  assert.equal(book.entityType, 'corporation');
+  assert.equal((await device.currentBook()).id, first.id); // 切り替えは画面の側で行う
+  const repo2 = await openDB({ indexedDB, name: book.dbName });
+  assert.equal((await repo2.getSettings()).businessName, SAMPLE_NAMES.corporation);
+  assert.equal((await repo2.listJournals((await repo2.getCurrentPeriod()).id)).length, data.journals.length);
+  assert.equal((await repo1.getSettings()).businessName, '山田商店'); // 今の事業所はそのまま
+  repo2.close();
+
+  // 壊れたデータ（設定が無い）なら、作りかけの事業所を残さない
+  await assert.rejects(device.addBookWithData({ ...data, settings: null }));
+  assert.deepEqual((await device.listBooks()).map((b) => b.id), [first.id, book.id]);
   repo1.close();
   device.close();
 });

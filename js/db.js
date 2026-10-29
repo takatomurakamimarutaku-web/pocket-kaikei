@@ -1871,7 +1871,7 @@ export function missingRoles(entityType, accounts) {
   return (REQUIRED_ROLES[entityType] || []).filter((r) => !findByRole(accounts, r));
 }
 
-// ---- この端末の設定（帳簿の一覧・画面ロック） ----
+// ---- この端末の設定（事業所の一覧・画面ロック） ----
 // 帳簿ごとに IndexedDB のデータベースを分ける（最初の帳簿は従来の pocket-kaikei、追加した帳簿は pocket-kaikei-<id>）。
 // 帳簿の一覧・今の帳簿・画面ロックは端末ごとの設定なので、帳簿とは別のデータベースに持ち、バックアップ・同期の対象にしない
 
@@ -1985,31 +1985,55 @@ export class DeviceStore {
   switchBook(id) {
     return this.run(['books', 'kv'], 'readwrite', async (tx) => {
       const book = await req(tx.objectStore('books').get(id));
-      if (!book) throw new ValidationError(['帳簿が見つかりません']);
+      if (!book) throw new ValidationError(['事業所が見つかりません']);
       tx.objectStore('kv').put({ key: 'currentBookId', value: id });
       return book;
     });
   }
 
-  /** 帳簿の表示名（事業者名）を覚える。変わったときだけ書く */
-  setBookLabel(id, label) {
+  /** 事業所の表示名（事業者名）と個人・法人の別を覚える。変わったときだけ書く */
+  setBookInfo(id, { label, entityType } = {}) {
     return this.run(['books'], 'readwrite', async (tx) => {
       const store = tx.objectStore('books');
       const book = await req(store.get(id));
       const text = String(label || '').slice(0, BOOK_LABEL_MAX);
-      if (!book || book.label === text) return book;
-      const next = { ...book, label: text, updatedAt: now() };
+      const type = entityType || book?.entityType || '';
+      if (!book || (book.label === text && (book.entityType || '') === type)) return book;
+      const next = { ...book, label: text, entityType: type, updatedAt: now() };
       store.put(next);
       return next;
     });
+  }
+
+  /**
+   * 検証済みのデータ（バックアップ・サンプル）で新しい事業所を作る。今の事業所はそのまま。
+   * 途中で失敗したら、作りかけのデータベースと一覧の行を消して何も残さない
+   */
+  async addBookWithData(data) {
+    const book = await this.addBook();
+    try {
+      const repo = await openDB({ indexedDB: this.indexedDB, name: book.dbName });
+      try {
+        await repo.replaceAll(data);
+      } finally {
+        repo.close();
+      }
+      return await this.setBookInfo(book.id, { label: data.settings.businessName, entityType: data.settings.entityType });
+    } catch (e) {
+      await deleteDatabase(this.indexedDB, book.dbName).catch(() => {});
+      await this.run(['books'], 'readwrite', (tx) => {
+        tx.objectStore('books').delete(book.id);
+      });
+      throw e;
+    }
   }
 
   /** 帳簿を削除する（データベースごと消す。今の帳簿は消せない） */
   async deleteBook(id) {
     const book = await this.run(['books', 'kv'], 'readonly', async (tx) => {
       const b = await req(tx.objectStore('books').get(id));
-      if (!b) throw new ValidationError(['帳簿が見つかりません']);
-      if ((await req(tx.objectStore('kv').get('currentBookId')))?.value === id) throw new ValidationError(['今開いている帳簿は削除できません。ほかの帳簿に切り替えてから削除してください']);
+      if (!b) throw new ValidationError(['事業所が見つかりません']);
+      if ((await req(tx.objectStore('kv').get('currentBookId')))?.value === id) throw new ValidationError(['今開いている事業所は削除できません。ほかの事業所に切り替えてから削除してください']);
       return b;
     });
     // 先にデータベースを消す（ほかのタブで開いていて消せなければ、一覧に残してやり直せるようにする）
@@ -2077,6 +2101,6 @@ function deleteDatabase(indexedDB, name) {
     const r = indexedDB.deleteDatabase(name);
     r.onsuccess = () => resolve();
     r.onerror = () => reject(r.error);
-    r.onblocked = () => reject(new Error('ほかのタブでこの帳簿が開かれているため、削除できません'));
+    r.onblocked = () => reject(new Error('ほかのタブでこの事業所が開かれているため、削除できません'));
   });
 }

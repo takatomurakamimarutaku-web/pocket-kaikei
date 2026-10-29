@@ -8,6 +8,7 @@ import { samplePanel } from './sample-load.js';
 
 export async function render({ app, outlet }) {
   const counts = await app.db.counts();
+  const settings = await app.db.getSettings();
   const attachmentBytes = (await app.db.listAttachments()).reduce((s, a) => s + a.size, 0);
   // 証憑の中身はバックアップを大きくするため、含めるかを選べる（含めないときは復元してもその端末の証憑を残す）
   const withAttachments = h('input', { type: 'checkbox', id: 'backup-attachments', checked: true });
@@ -31,12 +32,12 @@ export async function render({ app, outlet }) {
       'div',
       { class: 'panel' },
       h('h2', { class: 'section-title', text: '復元' }),
-      h('p', { class: 'small', text: 'バックアップファイルの内容で、この端末のデータをすべて置き換えます。' }),
+      h('p', { class: 'small', text: 'バックアップファイルの内容で、今開いている事業所のデータをすべて置き換えます。別の事業所として取り込むときは「事業所の切替」の「バックアップから作る」を使います。' }),
       h('p', { class: 'muted small', text: 'ファイルの内容（貸借の一致・科目の参照など）をすべて確認してから置き換えます。問題があれば何も変更しません。' }),
       h('button', { type: 'button', class: 'btn btn-block', text: 'ファイルを選んで復元', onclick: () => file.click() }),
       file,
     ),
-    samplePanel({ app, journals: counts.journals }),
+    samplePanel({ app, journals: counts.journals, replaceNote: true }),
   );
 
   async function exportBackup() {
@@ -45,7 +46,7 @@ export async function render({ app, outlet }) {
       const data = await app.db.dumpAll({ attachments: includeAttachments });
       const now = new Date();
       const blob = new Blob([JSON.stringify(createBackup(data, { appVersion: APP_VERSION, exportedAt: now, includeAttachments }))], { type: 'application/json' });
-      const result = await saveFile(blob, backupFileName(now));
+      const result = await saveFile(blob, backupFileName(now, settings?.businessName));
       if (result === 'cancelled') return;
       await app.db.setMeta('lastBackupAt', now.toISOString());
       showToast('バックアップを書き出しました');

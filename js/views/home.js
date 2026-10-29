@@ -100,7 +100,14 @@ export async function render({ app, outlet }) {
     h(
       'section',
       { class: 'hero' },
-      h('div', { class: 'hero-top' }, h('h2', { class: 'hero-name', text: settings.businessName }), h('a', { href: '#/settings', class: 'hero-edit', 'aria-label': '事業者の設定' }, icon('settings'))),
+      h(
+        'div',
+        { class: 'hero-top' },
+        h('h2', { class: 'hero-name', text: settings.businessName }),
+        // 弥生会計の事業所データのように、ほかの事業所（会社）へ切り替える
+        h('a', { href: '#/books', class: 'hero-switch', 'aria-label': '事業所の切替' }, icon('books'), h('span', { text: '切替' })),
+        h('a', { href: '#/settings', class: 'hero-edit', 'aria-label': '事業者の設定' }, icon('settings')),
+      ),
       h('div', { class: 'hero-tags' }, h('span', { class: 'tag', text: individual ? '個人事業主' : '法人' }), h('span', { class: 'tag', text: TAX_STATUS_LABELS[settings.taxStatus] }), period.closed ? h('span', { class: 'tag', text: '締め済み' }) : null),
       h(
         'div',
