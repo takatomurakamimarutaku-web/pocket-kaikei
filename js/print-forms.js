@@ -9,9 +9,18 @@ import { fmt, periodText } from './print-layout.js';
 import { GROUP_BY_ID, groupLabel } from './accounts.js';
 import { TAX_BY_CODE } from './tax.js';
 import { linesToRows, voucherOf } from './journal.js';
+import { toUnit, unitCaption, YEN_UNIT } from './money.js';
 
 const md = (date) => `${date.slice(5, 7)}/${date.slice(8, 10)}`;
 const blank = (n) => (n ? fmt(n) : '');
+/**
+ * 金額の単位つきの整形（試算表・決算書）。単位が円なら fmt と同じ。f：金額、b：0 は空欄
+ * 合計・小計も円で計算した値をそれぞれ換算する。単位未満のマイナスは △0（money.js の formatAmount と同じ）
+ */
+const unitFormat = (unit = YEN_UNIT) => {
+  const f = unit.unit === 'yen' ? fmt : (n) => (Number.isFinite(n) && n < 0 && toUnit(n, unit) === 0 ? '△0' : fmt(toUnit(n, unit)));
+  return { f, b: (n) => (n ? f(n) : '') };
+};
 const taxLabel = (code) => (code && code !== 'none' ? (TAX_BY_CODE[code]?.label ?? '') : '');
 
 /** 帳票の共通の見出し（事業者名・期間・作成日） */
@@ -190,7 +199,8 @@ export function totalsOf(r) {
  * @param {object} tb ledger.js の trialBalance の結果
  * @param {{ head, entityType, carriedLabel: string, showZero?: boolean, subs?: boolean, format?: 'total'|'balance', ratio?: boolean, title?: string }} opts
  */
-export function trialBalanceDoc(tb, { head, entityType, carriedLabel, showZero = false, subs = false, format = 'total', ratio = true, title }) {
+export function trialBalanceDoc(tb, { head, entityType, carriedLabel, showZero = false, subs = false, format = 'total', ratio = true, title, unit = YEN_UNIT }) {
+  const { f: fmt, b: blank } = unitFormat(unit);
   const isTotal = format === 'total';
   const sectionOf = (r) => GROUP_BY_ID[r.account.group]?.section ?? 'pl';
   const signed = (r) => (r.account.normalSide === GROUP_BY_ID[r.account.group].side ? 1 : -1);
@@ -282,6 +292,7 @@ export function trialBalanceDoc(tb, { head, entityType, carriedLabel, showZero =
   return {
     title: title ?? (isTotal ? '合計残高試算表' : '残高試算表'),
     ...head,
+    unit: unitCaption(unit),
     orientation: 'portrait',
     blocks: [
       { type: 'heading', text: '貸借対照表' },
@@ -297,7 +308,7 @@ export function trialBalanceDoc(tb, { head, entityType, carriedLabel, showZero =
  * 決算書の1区分を行にする（科目・区分の計・段階利益）。金額は2列：科目は左、区分の計と段階利益は右
  * @returns {Array} 行（cells は [科目, 内訳の金額, 計の金額]）
  */
-function statementRows(items, showZero) {
+function statementRows(items, showZero, fmt) {
   const rows = [];
   for (const it of items) {
     if (it.type === 'subtotal') {
@@ -324,7 +335,8 @@ function statementRows(items, showZero) {
  * @param {Array<{ caption: string, items: Array }>} parts statements.js の items
  * @param {{ head, title: string, showZero?: boolean, footer?: string }} opts
  */
-export function statementDoc(parts, { head, title, showZero = false, footer = '' }) {
+export function statementDoc(parts, { head, title, showZero = false, footer = '', unit = YEN_UNIT }) {
+  const { f } = unitFormat(unit);
   const columns = [
     { label: '科　　目', grow: 1, min: 70 },
     { label: '金　　額', align: 'right', w: 34 },
@@ -333,14 +345,14 @@ export function statementDoc(parts, { head, title, showZero = false, footer = ''
   const blocks = [];
   for (const part of parts) {
     if (part.caption) blocks.push({ type: 'heading', text: part.caption });
-    blocks.push({ type: 'table', style: 'open', columns: columns.map((c, i) => (i === 2 ? { ...c, label: '金　　額' } : c)), rows: statementRows(part.items, showZero) });
+    blocks.push({ type: 'table', style: 'open', columns: columns.map((c, i) => (i === 2 ? { ...c, label: '金　　額' } : c)), rows: statementRows(part.items, showZero, f) });
   }
   if (footer) blocks.push({ type: 'text', text: footer });
-  return { title: spaced(title), ...head, orientation: 'portrait', blocks };
+  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation: 'portrait', blocks };
 }
 
 /** 勘定式の片側：区分の見出し（区分の計を右に）・科目。最後の合計（strong）は別に返す */
-function accountSide(items, showZero) {
+function accountSide(items, showZero, fmt) {
   const rows = [];
   let total = null;
   for (const it of items) {
@@ -370,9 +382,10 @@ function accountSide(items, showZero) {
  * @param {{ assets: Array, liabilities: Array }} bs statements.js の balanceSheet の結果
  * @param {{ head, title?: string, showZero?: boolean, rightLabel: string }} opts
  */
-export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', showZero = false, rightLabel = '負債・純資産の部' }) {
-  const L = accountSide(bs.assets, showZero);
-  const R = accountSide(bs.liabilities, showZero);
+export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', showZero = false, rightLabel = '負債・純資産の部', unit = YEN_UNIT }) {
+  const { f: fmt } = unitFormat(unit);
+  const L = accountSide(bs.assets, showZero, fmt);
+  const R = accountSide(bs.liabilities, showZero, fmt);
   const n = Math.max(L.rows.length, R.rows.length);
   const rows = [{ cells: [{ text: spaced('資産の部'), span: 2, align: 'center', bold: true }, { text: [...rightLabel.replace('の部', '')].join(' ') + ' の 部', span: 2, align: 'center', bold: true }] }];
   for (let i = 0; i < n; i++) rows.push({ cells: [...(L.rows[i] || ['', '']), ...(R.rows[i] || ['', ''])] });
@@ -387,6 +400,7 @@ export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', sh
   return {
     title: spaced(title),
     ...head,
+    unit: unitCaption(unit),
     orientation: 'portrait',
     blocks: [
       {

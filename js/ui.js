@@ -1,6 +1,6 @@
 // 共通UI部品（ホップ手帖と共通の部品を流用）
 import { suggest } from './search.js';
-import { formatYen } from './money.js';
+import { formatYen, formatAmount, YEN_UNIT } from './money.js';
 import { TAX_CATEGORIES, TAX_GROUPS } from './tax.js';
 import { isDesktopApp } from './install.js';
 
@@ -275,9 +275,23 @@ export function errorBox(errors) {
   return h('div', { class: 'error-box', role: 'alert' }, h('ul', {}, errors.map((e) => h('li', { text: e }))));
 }
 
+// 金額の表示単位（円・千円・百万円）。集計の帳票で利用者が切り替える（views/report-common.js の unitPicker）。
+// 画面を開くたびに円へ戻す（app.js）ので、切り替えた画面の中だけで効く
+let amountUnit = YEN_UNIT;
+
+/** 金額の表示単位を設定する（{ unit, rounding }） */
+export function setAmountUnit(u) {
+  amountUnit = u ?? YEN_UNIT;
+}
+
+/** 今の金額の表示単位 */
+export function getAmountUnit() {
+  return amountUnit;
+}
+
 /** 金額のセル（右寄せ・等幅数字、マイナスは△と色） */
 export function amountCell(tag, n, { blankZero = false, cls = '' } = {}) {
-  const text = blankZero && !n ? '' : formatYen(n);
+  const text = blankZero && !n ? '' : formatAmount(n, amountUnit);
   return h(tag, { class: `num ${n < 0 ? 'neg' : ''} ${cls}`.trim(), text });
 }
 

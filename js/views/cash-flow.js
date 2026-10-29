@@ -5,7 +5,7 @@ import { barLineChart } from '../chart.js';
 import { openingDiff } from '../ledger.js';
 import { formatPeriod, todayString } from '../period.js';
 import { formatYen } from '../money.js';
-import { zeroToggle, openingWarning } from './report-common.js';
+import { zeroToggle, openingWarning, unitPicker } from './report-common.js';
 import { isWhite } from '../white-return.js';
 
 export async function render({ app, outlet, route, query }) {
@@ -22,6 +22,7 @@ export async function render({ app, outlet, route, query }) {
   let showZero = false;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: '/reports/cash-flow', onChange: () => paint() });
   const line = (l) => (showZero || l.amount || l.key === 'profit' ? h('tr', { class: 'st-line' }, h('th', { text: l.label }), amountCell('td', l.amount)) : null);
   function paint() {
     put(
@@ -65,6 +66,7 @@ export async function render({ app, outlet, route, query }) {
       h('div', { class: 'kv' }, h('span', { text: '営業活動' }), h('span', { class: `num ${cf.sections[0].total < 0 ? 'neg' : ''}`, text: `${formatYen(cf.sections[0].total)}円` })),
       h('div', { class: 'kv' }, h('span', { text: 'フリーキャッシュフロー（営業＋投資）' }), h('strong', { class: `num ${cf.freeCashFlow < 0 ? 'neg' : ''}`, text: `${formatYen(cf.freeCashFlow)}円` })),
     ),
+    unit.el,
     zero.el,
     body,
     h(
@@ -83,6 +85,7 @@ async function renderPlan({ outlet, period, accounts, journals, head, app, query
   const today = todayString();
   let useBudget = budgets.length > 0 && query.budget !== '0';
   const body = h('div');
+  const unit = unitPicker({ key: '/reports/cash-plan', onChange: () => paint() });
   const budgetToggle = budgets.length
     ? h(
         'label',
@@ -147,6 +150,7 @@ async function renderPlan({ outlet, period, accounts, journals, head, app, query
   put(
     outlet,
     head,
+    unit.el,
     budgetToggle,
     body,
     h(

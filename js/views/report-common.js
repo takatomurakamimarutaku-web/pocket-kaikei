@@ -1,7 +1,7 @@
-// 帳票の共通部品（月範囲の選択・0の科目を隠す切替・期首残高の警告）
-import { h, put, amountCell, emptyState } from '../ui.js';
+// 帳票の共通部品（月範囲の選択・0の科目を隠す切替・金額の単位・期首残高の警告）
+import { h, put, amountCell, emptyState, segmented, setAmountUnit } from '../ui.js';
 import { monthsInPeriod, monthRange, addDays } from '../period.js';
-import { formatYen } from '../money.js';
+import { formatYen, AMOUNT_UNITS, ROUNDINGS, YEN_UNIT, normalizeUnit, unitCaption } from '../money.js';
 import { carriedLabel } from '../ledger.js';
 
 const monthText = (m) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
@@ -37,6 +37,54 @@ export function monthRangePicker({ period, query, path, onChange, extra = () => 
   }
   const el = h('div', { class: 'range-bar' }, fromSel, h('span', { class: 'muted', text: '〜' }), toSel);
   return { el, refreshUrl, range: () => ({ ...monthRange(period, fromMonth, toMonth), fromMonth, toMonth }) };
+}
+
+// 画面ごとに選んだ金額の単位（アプリを開いている間だけ覚える。帳簿のデータではないので保存しない）
+const chosenUnits = new Map();
+
+/**
+ * 金額の単位（円・千円・百万円）と端数の処理（切り捨て・四捨五入）の切替。
+ * 選ぶと ui.js の表示単位を設定して onChange を呼ぶ。金額は円のまま集計し、表のセルを出すときだけ換算する
+ * @param {{ key: string, onChange: () => void }} opts key：画面ごとに覚えるための名前（ルートのパスなど）
+ * @returns {{ el, value: () => { unit, rounding } }}
+ */
+export function unitPicker({ key, onChange }) {
+  let u = normalizeUnit(chosenUnits.get(key) ?? YEN_UNIT);
+  setAmountUnit(u);
+  const roundSel = h(
+    'select',
+    { class: 'unit-round', 'aria-label': '単位未満の端数', onchange: (e) => apply({ rounding: e.target.value }) },
+    Object.entries(ROUNDINGS).map(([v, label]) => h('option', { value: v, text: label, selected: v === u.rounding })),
+  );
+  const note = h('span', { class: 'unit-note muted small' });
+  function refresh() {
+    roundSel.hidden = u.unit === 'yen';
+    note.textContent = u.unit === 'yen' ? '' : `${unitCaption(u)} 合計は円で計算してから換算するため、内訳の和と合わないことがあります`;
+  }
+  function apply(change) {
+    u = normalizeUnit({ ...u, ...change });
+    chosenUnits.set(key, u);
+    setAmountUnit(u);
+    refresh();
+    onChange();
+  }
+  const seg = segmented({
+    name: '金額の単位',
+    options: Object.entries(AMOUNT_UNITS).map(([value, { label }]) => ({ value, label })),
+    value: u.unit,
+    onChange: (v) => apply({ unit: v }),
+  });
+  refresh();
+  const el = h('div', { class: 'unit-bar no-print' }, h('div', { class: 'unit-row' }, h('span', { class: 'unit-label small', text: '金額' }), seg, roundSel), note);
+  return { el, value: () => u };
+}
+
+/** 印刷条件：金額の単位（画面で選んだ単位を最初に選んでおく） */
+export function unitPrintOptions(u = YEN_UNIT) {
+  return [
+    { key: 'unit', label: '金額の単位', type: 'select', choices: Object.entries(AMOUNT_UNITS).map(([v, { label }]) => [v, label]), value: u.unit },
+    { key: 'rounding', label: '単位未満の端数', type: 'select', choices: Object.entries(ROUNDINGS), value: u.rounding },
+  ];
 }
 
 /** 0円の科目を表示するかの切替 */

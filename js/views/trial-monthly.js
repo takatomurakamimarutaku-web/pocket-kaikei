@@ -4,7 +4,7 @@ import { h, put, amountCell, saveFile } from '../ui.js';
 import { monthlyTrialBalance } from '../monthly.js';
 import { groupLabel } from '../accounts.js';
 import { monthlyTrialCsv, csvFileName } from '../csv.js';
-import { monthRangePicker, openingWarning } from './report-common.js';
+import { monthRangePicker, openingWarning, unitPicker } from './report-common.js';
 import { openingDiff } from '../ledger.js';
 
 const OPTIONS = [
@@ -21,6 +21,7 @@ export async function render({ app, outlet, query }) {
   const body = h('div');
   const picker = monthRangePicker({ period, query, path: '/reports/trial-monthly', onChange: paint, extra: () => Object.fromEntries(Object.entries(opts).filter(([, v]) => v).map(([k]) => [k, '1'])) });
   let mtb;
+  const unit = unitPicker({ key: '/reports/trial-monthly', onChange: () => paint() });
   const toggles = h(
     'div',
     { class: 'option-bar' },
@@ -71,6 +72,7 @@ export async function render({ app, outlet, query }) {
   put(
     outlet,
     picker.el,
+    unit.el,
     toggles,
     body,
     h(

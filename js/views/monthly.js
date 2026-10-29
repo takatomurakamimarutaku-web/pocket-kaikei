@@ -3,7 +3,7 @@ import { h, put, amountCell, saveFile, segmented, showToast } from '../ui.js';
 import { monthlyIncome, monthlyBalance, isAllZero } from '../monthly.js';
 import { monthlyCsv, csvFileName } from '../csv.js';
 import { barLineChart } from '../chart.js';
-import { zeroToggle, openingWarning } from './report-common.js';
+import { zeroToggle, openingWarning, unitPicker } from './report-common.js';
 import { openingDiff } from '../ledger.js';
 
 export async function render({ app, outlet, query }) {
@@ -14,6 +14,7 @@ export async function render({ app, outlet, query }) {
   let showZero = false;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: '/reports/monthly', onChange: () => paint() });
   const ctx = { entityType, accounts, period, journals };
   const income = monthlyIncome(ctx);
   let balance = null;
@@ -96,6 +97,7 @@ export async function render({ app, outlet, query }) {
         value: mode,
         onChange: (v) => ((mode = v), paint()),
       }),
+      unit.el,
       zero.el,
     ),
     body,

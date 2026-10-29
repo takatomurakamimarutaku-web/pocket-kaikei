@@ -57,3 +57,60 @@ export function sumYen(values) {
   for (const v of values) total += v;
   return total;
 }
+
+// ---- 金額の表示単位（円・千円・百万円）。帳簿の金額は円のまま、表示するときだけ換算する ----
+// 端数は既定で切り捨て（有価証券報告書などで一般的な「千円未満切捨て」）。四捨五入も選べる。
+// 合計・小計は円で計算した値をそれぞれ換算する（内訳を換算してから足さない）。
+// そのため内訳の和と合計が単位未満のずれで合わないことがあるが、帳簿の金額は変えない（docs/spec-phase3-amount-unit.md）
+
+/** 単位：div は割る数。label は見出しの表記 */
+export const AMOUNT_UNITS = Object.freeze({
+  yen: { div: 1, label: '円' },
+  thousand: { div: 1_000, label: '千円' },
+  million: { div: 1_000_000, label: '百万円' },
+});
+
+/** 端数の処理：truncate＝切り捨て（0 の側へ）、round＝四捨五入（0.5 は 0 から遠い側へ） */
+export const ROUNDINGS = Object.freeze({ truncate: '切り捨て', round: '四捨五入' });
+
+/** 円単位の表示（既定） */
+export const YEN_UNIT = Object.freeze({ unit: 'yen', rounding: 'truncate' });
+
+/** 文字列（URL の値など）から表示単位にする。分からない値は円・切り捨て */
+export function normalizeUnit({ unit, rounding } = {}) {
+  return {
+    unit: Object.hasOwn(AMOUNT_UNITS, unit ?? '') ? unit : 'yen',
+    rounding: Object.hasOwn(ROUNDINGS, rounding ?? '') ? rounding : 'truncate',
+  };
+}
+
+/**
+ * 円の整数を表示単位の整数にする（整数の剰余だけで計算し、浮動小数点の割り算はしない）
+ * 例：1,234,567円 → 千円・切り捨て 1,234／四捨五入 1,235。△1,234,567円 → △1,234／△1,235
+ */
+export function toUnit(n, { unit = 'yen', rounding = 'truncate' } = {}) {
+  const div = AMOUNT_UNITS[unit]?.div ?? 1;
+  if (div === 1 || !Number.isSafeInteger(n)) return n;
+  const abs = Math.abs(n);
+  const rest = abs % div;
+  let q = (abs - rest) / div;
+  if (rounding === 'round' && rest * 2 >= div) q += 1;
+  return n < 0 ? -q : q;
+}
+
+/**
+ * 表示単位で整形する。マイナスは「△」。単位未満のマイナス（△400円を千円・切り捨て）は「△0」と出し、
+ * マイナスであることを残す（有価証券報告書の表記にならう）
+ */
+export function formatAmount(n, u = YEN_UNIT) {
+  if (!Number.isFinite(n)) return '';
+  const v = toUnit(n, u);
+  return v === 0 && n < 0 ? '△0' : formatYen(v);
+}
+
+/** 帳票の右上に出す単位の表記：（単位：円）／（単位：千円・千円未満切り捨て） */
+export function unitCaption(u = YEN_UNIT) {
+  const { unit, rounding } = normalizeUnit(u);
+  const label = AMOUNT_UNITS[unit].label;
+  return unit === 'yen' ? '（単位：円）' : `（単位：${label}・${label}未満${ROUNDINGS[rounding]}）`;
+}

@@ -4,7 +4,8 @@ import { trialBalance, carriedLabel } from '../ledger.js';
 import { trialBalanceDoc, docHead } from '../print-forms.js';
 import { groupLabel, GROUP_BY_ID } from '../accounts.js';
 import { trialBalanceCsv, csvFileName } from '../csv.js';
-import { monthRangePicker, zeroToggle, openingWarning, monthRangeOptions, printRange } from './report-common.js';
+import { monthRangePicker, zeroToggle, openingWarning, monthRangeOptions, printRange, unitPicker, unitPrintOptions } from './report-common.js';
+import { normalizeUnit } from '../money.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -13,6 +14,7 @@ export async function render({ app, outlet, query }) {
   const expanded = new Set();
   const picker = monthRangePicker({ period, query, path: '/reports/trial', onChange: paint });
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: '/reports/trial', onChange: () => paint() });
   let tb;
 
   function paint() {
@@ -28,11 +30,12 @@ export async function render({ app, outlet, query }) {
         { key: 'subs', label: '補助科目の内訳を出す', type: 'check', value: false },
         { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
         { key: 'ratio', label: '構成比（残高試算表）', type: 'check', value: true },
+        ...unitPrintOptions(unit.value()),
       ],
       build: (v) => {
         const r = printRange(period, v);
         const t = trialBalance({ accounts, subAccounts, period, journals, from: r.from, to: r.to });
-        return trialBalanceDoc(t, { head: docHead({ settings, period, ...r, printedAt }), entityType: settings.entityType, carriedLabel: carriedLabel(period, r.from), showZero: v.zero, subs: v.subs, format: v.format, ratio: v.ratio });
+        return trialBalanceDoc(t, { head: docHead({ settings, period, ...r, printedAt }), entityType: settings.entityType, carriedLabel: carriedLabel(period, r.from), showZero: v.zero, subs: v.subs, format: v.format, ratio: v.ratio, unit: normalizeUnit(v) });
       },
     });
     const rows = [];
@@ -112,6 +115,7 @@ export async function render({ app, outlet, query }) {
 
   put(outlet, 
     picker.el,
+    unit.el,
     zero.el,
     body,
     h(
