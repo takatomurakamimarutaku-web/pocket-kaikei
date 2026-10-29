@@ -18,6 +18,7 @@ import { validateBreakdownTargets } from './breakdown.js';
 import { validateAsset } from './depreciation.js';
 import { validateCapex } from './asset-tools.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
+import { cleanCorporateTax, validateCorporateTax } from './corporate-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js';
 import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
@@ -716,6 +717,21 @@ export class Repository {
       if (errors.length) throw new ValidationError(errors);
       const picked = Object.fromEntries(Object.keys(DEFAULT_ENTERPRISE_TAX).map((k) => [k, value[k]]));
       const next = { ...period, enterpriseTax: picked, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 法人税の別表の入力を期間に保存する（締めた期間も保存できる） */
+  saveCorporateTax(periodId, input) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const value = cleanCorporateTax(input);
+      const errors = validateCorporateTax(value);
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...period, corporateTax: value, updatedAt: now() };
       store.put(next);
       return next;
     });

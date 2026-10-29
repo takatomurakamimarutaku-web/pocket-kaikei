@@ -37,6 +37,7 @@ const GROUPS = [
     ['#/reports/blue-return', '青色申告決算書', '個人の決算書4ページの各欄（転記用）', 'form', 'business'],
     ['#/reports/blue-return-re', '青色申告決算書（不動産所得用）', '賃貸料・不動産経費から不動産所得まで。控除は不動産所得から先に', 'form', 'realEstate'],
     ['#/reports/white-return', '収支内訳書', '白色申告の一般用・不動産所得用の各欄。事業専従者控除の計算も', 'form', 'white'],
+    ['#/reports/corporate-tax', '法人税の申告（別表）', '別表一・四・五(一)・五(二)・七(一)・十五、地方法人税・防衛特別法人税・住民税・事業税の納める税額', 'calc', 'corporation'],
     ['#/reports/schedule16', '別表十六（減価償却の明細書）', '固定資産台帳から（一）定額法・（二）定率法・（七）少額・（八）一括償却の各欄', 'asset', 'corporation'],
     ['#/reports/breakdown', '勘定科目内訳明細書', '預貯金・売掛金・買掛金・借入金・役員給与・地代家賃など。補助科目ごと', 'list', 'corporation'],
     ['#/reports/enterprise-tax', '事業税', '法人：第六号様式の所得割・特別法人事業税／個人：個人事業税の見込み', 'calc'],

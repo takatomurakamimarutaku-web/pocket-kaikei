@@ -43,6 +43,8 @@ import * as financialView from './views/financial.js';
 import * as propertyTaxView from './views/property-tax.js';
 import * as schedule16View from './views/schedule16.js';
 import * as enterpriseTaxView from './views/enterprise-tax.js';
+import * as corporateTaxView from './views/corporate-tax.js';
+import * as corporateTaxInputView from './views/corporate-tax-input.js';
 import * as incomeTaxView from './views/income-tax.js';
 import * as moreView from './views/more.js';
 import * as settingsView from './views/settings.js';
@@ -139,6 +141,8 @@ const routes = [
   { path: '/reports/white-return', view: whiteReturnView, title: '収支内訳書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/financial', view: financialView, title: '決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/income-tax', view: incomeTaxView, title: '所得税の確定申告書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/corporate-tax', view: corporateTaxView, title: '法人税の申告', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/corporate-tax/input', view: corporateTaxInputView, title: '法人税の計算の条件', tab: 'reports', back: '#/reports/corporate-tax' },
   { path: '/reports/enterprise-tax', view: enterpriseTaxView, title: '事業税', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/property-tax', view: propertyTaxView, title: '償却資産申告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/schedule16', view: schedule16View, title: '別表十六（減価償却の明細書）', tab: 'reports', back: '#/reports', print: true },
