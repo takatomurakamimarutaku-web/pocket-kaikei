@@ -23,6 +23,7 @@ const ROUTES = {
     ['tax', '#/reports/tax'],
     ['tax-account', '#/reports/tax?view=account'],
     ['tax-return', '#/reports/tax-return'],
+    ['tax-return-form', '#/reports/tax-return?view=form'],
     ['financial', '#/reports/financial'],
     ['assets', '#/assets'],
     ['breakdown', '#/reports/breakdown'],
@@ -32,6 +33,7 @@ const ROUTES = {
     ['trial', '#/reports/trial'],
     ['pl', '#/reports/pl'],
     ['blue-return', '#/reports/blue-return'],
+    ['income-tax', '#/reports/income-tax'],
   ],
 };
 

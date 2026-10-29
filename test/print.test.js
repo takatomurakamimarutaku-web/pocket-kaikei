@@ -330,3 +330,15 @@ test('推移表：A4横・区分の行は区分の計、科目は0を空欄に�
   const { pl } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals: [] });
   assert.equal(layoutDocument(statementDoc([{ caption: '', items: pl.items }], { head: {}, title: '損益計算書', orientation: 'landscape' }))[0].orientation, 'landscape');
 });
+
+test('組版：見出しの2段（headGroups）と、見出しだけ右の列とまとめる列（headSpan）', () => {
+  const doc = (extra) => ({ title: '表', blocks: [{ type: 'table', columns: [{ label: '区分' }, { label: '留保', align: 'right' }, { label: '社外流出', align: 'center', headSpan: 2 }, { label: '', align: 'right', joinLeft: true }], rows: [{ cells: ['当期利益', '100', '配当', '50'] }], ...extra }] });
+  const plain = layoutDocument(doc({}))[0].items.filter((it) => it.t === 'text');
+  const grouped = layoutDocument(doc({ headGroups: [{ label: '処分', from: 1, span: 3 }] }))[0].items.filter((it) => it.t === 'text');
+  const yOf = (items, s) => items.find((it) => it.text === s).y;
+  assert.ok(grouped.some((it) => it.text === '処分'));
+  // 2段にした分だけ本文の行が下がる
+  assert.ok(yOf(grouped, '当期利益') > yOf(plain, '当期利益') + 5);
+  // 社外流出の見出しは2つの列の中央に1つだけ
+  assert.equal(grouped.filter((it) => it.text === '社外流出').length, 1);
+});
