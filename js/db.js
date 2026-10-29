@@ -1,6 +1,6 @@
 // IndexedDB 操作。データの読み書きは必ずこの Repository を通す（将来の同期処理を差し込む場所を1か所にするため）
 import { validateJournal } from './journal.js';
-import { validateAccount, isBsGroup, findByRole, REQUIRED_ROLES } from './accounts.js';
+import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES } from './accounts.js';
 import { validatePeriod } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
@@ -279,12 +279,24 @@ export class Repository {
       const all = await req(store.getAll());
       const before = all.find((a) => a.id === account.id) || null;
       const { accounts: used } = usedAccountIds(await req(tx.objectStore('journals').getAll()), await req(tx.objectStore('periods').getAll()));
-      const record = { ...account, code: String(account.code).trim(), name: String(account.name).trim(), role: before ? before.role : null };
+      const record = { ...account, code: String(account.code).trim(), name: String(account.name).trim(), role: before ? before.role : null, hint: before ? (before.hint ?? null) : null };
       const errors = validateAccount(record, all, { used: used.has(account.id), entityType: settings?.entityType }, before);
       if (Object.keys(errors).length) throw new ValidationError(errors);
       const next = { ...record, updatedAt: now() };
       store.put(next);
       return next;
+    });
+  }
+
+  /** 目印（hint）の導入前に作った科目に目印を補う。起動時に呼ぶ（変更が無ければ何もしない） */
+  fillAccountHints() {
+    return this.run(['meta', 'accounts'], 'readwrite', async (tx) => {
+      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+      if (!settings) return 0;
+      const changed = fillHints(settings.entityType, await req(tx.objectStore('accounts').getAll()));
+      const ts = now();
+      for (const a of changed) tx.objectStore('accounts').put({ ...a, updatedAt: ts });
+      return changed.length;
     });
   }
 
@@ -423,6 +435,9 @@ export class Repository {
       meta.put({ key: 'settings', value: data.settings });
       meta.put({ key: 'currentPeriodId', value: data.currentPeriodId });
       for (const n of DATA_STORES) for (const r of data[n] || []) tx.objectStore(n).put(r);
+      // 目印の導入前のバックアップなら、テンプレートの科目に目印を補う
+      const ts = now();
+      for (const a of fillHints(data.settings.entityType, data.accounts || [])) tx.objectStore('accounts').put({ ...a, updatedAt: ts });
     });
   }
 

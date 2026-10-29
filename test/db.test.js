@@ -161,3 +161,35 @@ test('期首残高：法人は借方と貸方が一致しないと保存しな�
   assert.equal(saved.openingBalances.length, 4, '評価勘定は貸方側として一致を判定する');
   repo.close();
 });
+
+test('目印：初期設定で付き、科目の保存で消えず、目印の導入前のデータには起動時に補う', async () => {
+  const { repo, byName } = await setupRepo('corporation');
+  assert.equal((await repo.getAccount(byName['売掛金'].id)).hint, 'receivable');
+  // 画面から hint を渡さなくても、保存前の目印を残す
+  const { hint, ...rest } = await repo.getAccount(byName['売掛金'].id);
+  assert.equal(hint, 'receivable');
+  await repo.saveAccount({ ...rest, name: '売掛金（得意先）' });
+  assert.equal((await repo.getAccount(byName['売掛金'].id)).hint, 'receivable');
+  assert.equal(await repo.fillAccountHints(), 0);
+
+  // 目印の導入前（hint プロパティ無し）の状態を作る
+  const tx = repo.db.transaction('accounts', 'readwrite');
+  for (const a of await new Promise((r) => (tx.objectStore('accounts').getAll().onsuccess = (e) => r(e.target.result)))) {
+    delete a.hint;
+    tx.objectStore('accounts').put(a);
+  }
+  await new Promise((r) => (tx.oncomplete = r));
+  assert.ok((await repo.fillAccountHints()) > 0);
+  assert.equal((await repo.getAccount(byName['役員借入金'].id)).hint, 'officer_loan');
+  assert.equal(await repo.fillAccountHints(), 0);
+  repo.close();
+});
+
+test('目印：目印の導入前のバックアップを復元すると、テンプレートの科目に目印を補う', async () => {
+  const { repo, byName } = await setupRepo('individual');
+  const data = await repo.dumpAll();
+  data.accounts = data.accounts.map(({ hint, ...a }) => a);
+  await repo.replaceAll(data);
+  assert.equal((await repo.getAccount(byName['仕入高'].id)).hint, 'purchases');
+  repo.close();
+});

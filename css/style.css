@@ -412,3 +412,31 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .field.has-error input, .field.has-error select { border-color: var(--danger); }
 .ledger thead th:nth-child(2) { text-align: left; }
 .setup .segmented .seg { flex: 1 1 auto; }
+
+/* ---- かんたん入力 ---- */
+.chip[aria-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 700; }
+.chip-more { border-style: dashed; color: var(--muted); }
+.amount-large { font-size: 1.25rem; }
+.qslots { display: grid; gap: var(--sp-4); }
+.qslot { display: grid; gap: 8px; }
+.qslot-head { display: flex; justify-content: space-between; align-items: baseline; }
+.qslot-label { font-weight: 800; }
+.qslot .link { justify-self: start; }
+.qfixed { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-weight: 700; }
+.qtax { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
+.qtax select, .qslot .sub-select { min-height: 40px; padding: 8px 10px; font-size: 16px; }
+.qpreview { display: grid; gap: 6px; margin: var(--sp-3) 0; }
+.qpreview p { margin: 0; }
+.qp-line { display: grid; grid-template-columns: auto 1fr auto auto; align-items: baseline; gap: 8px; }
+.qp-side { font-size: var(--fs-caption); font-weight: 700; color: var(--debit); }
+.qp-line + .qp-line .qp-side { color: var(--credit); }
+.qp-acc { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-tax { font-size: var(--fs-caption); color: var(--muted); }
+.qp-amt { font-weight: 700; }
+.quick-form .btn-block { margin-top: var(--sp-2); }
+
+/* ---- 出納帳 ---- */
+.cb-stats { grid-template-columns: 1fr 1fr; }
+.cb-actions .btn-primary { flex: 1 1 0; }
+.tap-row { cursor: pointer; }
+.tap-row:active { background: var(--surface-2); }

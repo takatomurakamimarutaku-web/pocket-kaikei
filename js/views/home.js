@@ -62,7 +62,8 @@ export async function render({ app, outlet }) {
     h(
       'div',
       { class: 'actions' },
-      h('a', { href: '#/journal/new', class: 'btn btn-primary', text: '仕訳を入力する' }),
+      h('a', { href: '#/entry', class: 'btn btn-primary', text: '取引を入力する' }),
+      h('a', { href: '#/cashbook', class: 'btn', text: '出納帳' }),
       h('a', { href: '#/journals', class: 'btn', text: '仕訳帳' }),
       h('a', { href: '#/reports/trial', class: 'btn', text: '試算表' }),
     ),
@@ -74,7 +75,7 @@ export async function render({ app, outlet }) {
           h('ol', { class: 'plain-list' }, [
             h('li', {}, h('a', { href: '#/opening', text: '期首残高' }), 'を入力する（開業したばかりなら不要）'),
             h('li', {}, h('a', { href: '#/accounts', text: '勘定科目' }), 'に銀行口座などの補助科目を追加する'),
-            h('li', {}, h('a', { href: '#/journal/new', text: '仕訳を入力' }), 'する'),
+            h('li', {}, h('a', { href: '#/entry', text: '取引を入力' }), 'する（かんたん入力・振替伝票）'),
             h('li', {}, '定期的に', h('a', { href: '#/backup', text: 'バックアップ' }), 'する'),
           ]),
         )

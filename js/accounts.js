@@ -60,6 +60,18 @@ export const ROLES = {
   closing_inventory: '期末商品棚卸高',
 };
 
+/**
+ * 目印。かんたん入力で初期値の科目を探すためだけに使う。role と違い、区分の変更・無効化を妨げない
+ */
+export const HINTS = {
+  receivable: '売掛金',
+  payable: '買掛金',
+  accrued: '未払金',
+  sales: '売上高',
+  purchases: '仕入高',
+  officer_loan: '役員借入金',
+};
+
 /** 事業者ごとに必ず存在する役割 */
 export const REQUIRED_ROLES = {
   individual: ['cash', 'owner_capital', 'owner_drawings', 'owner_borrowings'],
@@ -67,7 +79,7 @@ export const REQUIRED_ROLES = {
 };
 
 // ---- テンプレート ----
-// [コード, 科目名, 区分, 税区分の初期値, オプション]  オプション：role、contra（評価勘定＝残高側が区分と逆）
+// [コード, 科目名, 区分, 税区分の初期値, オプション]  オプション：role、hint、contra（評価勘定＝残高側が区分と逆）
 
 const T = 'purchase_10';
 const N = 'none';
@@ -79,7 +91,7 @@ const CORPORATION = [
   ['111', '普通預金', 'current_assets', N, { role: 'deposit' }],
   ['112', '定期預金', 'current_assets', N, { role: 'deposit' }],
   ['120', '受取手形', 'current_assets', N],
-  ['121', '売掛金', 'current_assets', N],
+  ['121', '売掛金', 'current_assets', N, { hint: 'receivable' }],
   ['130', '有価証券', 'current_assets', N],
   ['140', '商品', 'current_assets', N],
   ['141', '貯蔵品', 'current_assets', N],
@@ -109,9 +121,9 @@ const CORPORATION = [
   ['260', '創立費', 'deferred_assets', N],
   ['261', '開業費', 'deferred_assets', N],
   ['300', '支払手形', 'current_liabilities', N],
-  ['301', '買掛金', 'current_liabilities', N],
+  ['301', '買掛金', 'current_liabilities', N, { hint: 'payable' }],
   ['302', '短期借入金', 'current_liabilities', N],
-  ['303', '未払金', 'current_liabilities', N],
+  ['303', '未払金', 'current_liabilities', N, { hint: 'accrued' }],
   ['304', '未払費用', 'current_liabilities', N],
   ['305', '前受金', 'current_liabilities', N],
   ['306', '預り金', 'current_liabilities', N],
@@ -119,14 +131,14 @@ const CORPORATION = [
   ['308', '未払法人税等', 'current_liabilities', N],
   ['309', '未払消費税等', 'current_liabilities', N],
   ['350', '長期借入金', 'fixed_liabilities', N],
-  ['351', '役員借入金', 'fixed_liabilities', N],
+  ['351', '役員借入金', 'fixed_liabilities', N, { hint: 'officer_loan' }],
   ['400', '資本金', 'equity', N, { role: 'capital_stock' }],
   ['401', '資本準備金', 'equity', N],
   ['410', '利益準備金', 'equity', N],
   ['411', '繰越利益剰余金', 'equity', N, { role: 'retained_earnings' }],
-  ['500', '売上高', 'sales', 'sales_10'],
+  ['500', '売上高', 'sales', 'sales_10', { hint: 'sales' }],
   ['510', '期首商品棚卸高', 'cost_of_sales', N, { role: 'opening_inventory' }],
-  ['511', '仕入高', 'cost_of_sales', T],
+  ['511', '仕入高', 'cost_of_sales', T, { hint: 'purchases' }],
   ['519', '期末商品棚卸高', 'cost_of_sales', N, { role: 'closing_inventory', contra: true }],
   ['600', '役員報酬', 'sga', N],
   ['601', '給料手当', 'sga', N],
@@ -174,7 +186,7 @@ const INDIVIDUAL = [
   ['111', '定期預金', 'current_assets', N, { role: 'deposit' }],
   ['112', '普通預金', 'current_assets', N, { role: 'deposit' }],
   ['120', '受取手形', 'current_assets', N],
-  ['121', '売掛金', 'current_assets', N],
+  ['121', '売掛金', 'current_assets', N, { hint: 'receivable' }],
   ['130', '有価証券', 'current_assets', N],
   ['140', '商品', 'current_assets', N],
   ['150', '前払金', 'current_assets', N],
@@ -190,18 +202,18 @@ const INDIVIDUAL = [
   ['240', '敷金', 'investments', N],
   ['290', '事業主貸', 'owner_drawings', N, { role: 'owner_drawings' }],
   ['300', '支払手形', 'current_liabilities', N],
-  ['301', '買掛金', 'current_liabilities', N],
+  ['301', '買掛金', 'current_liabilities', N, { hint: 'payable' }],
   ['302', '借入金', 'current_liabilities', N],
-  ['303', '未払金', 'current_liabilities', N],
+  ['303', '未払金', 'current_liabilities', N, { hint: 'accrued' }],
   ['304', '前受金', 'current_liabilities', N],
   ['305', '預り金', 'current_liabilities', N],
   ['309', '貸倒引当金', 'current_liabilities', N],
   ['400', '事業主借', 'equity', N, { role: 'owner_borrowings' }],
   ['410', '元入金', 'equity', N, { role: 'owner_capital' }],
-  ['500', '売上高', 'sales', 'sales_10'],
+  ['500', '売上高', 'sales', 'sales_10', { hint: 'sales' }],
   ['501', '雑収入', 'sales', 'sales_10'],
   ['510', '期首商品棚卸高', 'cost_of_sales', N, { role: 'opening_inventory' }],
-  ['511', '仕入高', 'cost_of_sales', T],
+  ['511', '仕入高', 'cost_of_sales', T, { hint: 'purchases' }],
   ['519', '期末商品棚卸高', 'cost_of_sales', N, { role: 'closing_inventory', contra: true }],
   ['600', '租税公課', 'sga', N],
   ['601', '荷造運賃', 'sga', T],
@@ -240,7 +252,7 @@ export function normalSideFor(groupId, contra = false) {
 
 /**
  * テンプレートから科目レコードの元を作る（id・日時は呼び出し側で付ける）
- * @returns {Array<{code,name,group,role,normalSide,defaultTaxCategory,active,sortOrder,template}>}
+ * @returns {Array<{code,name,group,role,hint,normalSide,defaultTaxCategory,active,sortOrder,template}>}
  */
 export function templateAccounts(entityType) {
   const rows = TEMPLATES[entityType];
@@ -250,6 +262,7 @@ export function templateAccounts(entityType) {
     name,
     group,
     role: opt.role ?? null,
+    hint: opt.hint ?? null,
     normalSide: normalSideFor(group, opt.contra),
     defaultTaxCategory: tax,
     active: true,
@@ -267,6 +280,29 @@ export function compareAccounts(a, b) {
 /** 役割を持つ最初の科目 */
 export function findByRole(accounts, role) {
   return accounts.find((a) => a.role === role) || null;
+}
+
+/** 目印を持つ有効な最初の科目 */
+export function findByHint(accounts, hint) {
+  return accounts.find((a) => a.hint === hint && a.active) || null;
+}
+
+/**
+ * 目印を持たないテンプレートの科目に、コードで目印を補う（目印の導入前に作ったデータ・復元データ用）
+ * @returns {Array} 目印を補った科目（変更が無ければ空）
+ */
+export function fillHints(entityType, accounts) {
+  const byCode = new Map((TEMPLATES[entityType] || []).filter((r) => r[4]?.hint).map((r) => [r[0], r[4].hint]));
+  const taken = new Set(accounts.map((a) => a.hint).filter(Boolean));
+  const out = [];
+  for (const a of accounts) {
+    if (!a.template || a.hint !== undefined) continue;
+    const hint = byCode.get(a.code) ?? null;
+    const next = { ...a, hint: hint && !taken.has(hint) ? hint : null };
+    if (next.hint) taken.add(next.hint);
+    out.push(next);
+  }
+  return out;
 }
 
 /** 評価勘定か（残高側が区分の既定と逆） */

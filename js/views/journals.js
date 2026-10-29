@@ -71,7 +71,7 @@ export async function render({ app, outlet, query }) {
     put(list, 
       ...(items.length
         ? items.map((j) => journalCard(j, accountById, subById))
-        : [emptyState(journals.length ? '条件に合う仕訳はありません' : 'まだ仕訳がありません', journals.length ? null : h('a', { href: '#/journal/new', class: 'btn btn-primary', text: '仕訳を入力する' }))]),
+        : [emptyState(journals.length ? '条件に合う仕訳はありません' : 'まだ仕訳がありません', journals.length ? null : h('a', { href: '#/entry', class: 'btn btn-primary', text: '取引を入力する' }))]),
     );
   }
 

@@ -8,6 +8,9 @@ import * as setupView from './views/setup.js';
 import * as homeView from './views/home.js';
 import * as journalsView from './views/journals.js';
 import * as journalFormView from './views/journal-form.js';
+import * as entryView from './views/entry.js';
+import * as quickEntryView from './views/quick-entry.js';
+import * as cashbookView from './views/cashbook.js';
 import * as reportsView from './views/reports.js';
 import * as ledgerView from './views/ledger.js';
 import * as trialView from './views/trial.js';
@@ -25,7 +28,10 @@ const routes = [
   { path: '/setup', view: setupView, title: '初期設定', tab: null, setup: true },
   { path: '/home', view: homeView, title: 'ホーム', tab: 'home' },
   { path: '/journals', view: journalsView, title: '仕訳帳', tab: 'journals' },
-  { path: '/journal/new', view: journalFormView, title: '仕訳の入力', tab: 'entry' },
+  { path: '/entry', view: entryView, title: '入力', tab: 'entry' },
+  { path: '/quick/:kind', view: quickEntryView, title: 'かんたん入力', tab: 'entry', back: '#/entry' },
+  { path: '/cashbook', view: cashbookView, title: '出納帳', tab: 'entry', back: '#/entry' },
+  { path: '/journal/new', view: journalFormView, title: '振替伝票の入力', tab: 'entry', back: '#/entry' },
   { path: '/journal/:id/edit', view: journalFormView, title: '仕訳の編集', tab: 'journals', back: '#/journals' },
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
   { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports' },
@@ -150,6 +156,7 @@ async function start() {
     go();
   }
 
+  await fillAccountHints(db);
   router.start();
   requestPersistence();
   notifyUpdated(db);
@@ -176,6 +183,15 @@ async function notifyUpdated(db) {
     if (seen) showToast(`バージョン${APP_VERSION}に更新しました`, { duration: 5000 });
   } catch (e) {
     console.warn('seenVersion', e);
+  }
+}
+
+/** 目印（hint）の導入前に作った科目に目印を補う（失敗しても使えるので止めない） */
+async function fillAccountHints(db) {
+  try {
+    await db.fillAccountHints();
+  } catch (e) {
+    console.warn('fillAccountHints', e);
   }
 }
 
