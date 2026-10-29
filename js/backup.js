@@ -16,15 +16,16 @@ import { FILING_TYPES } from './white-return.js';
 import { validateDepartment } from './departments.js';
 import { validateInvoice, validateInvoiceSettings } from './invoices.js';
 import { validateEmployee, validatePayroll, validatePayrollSettings } from './payroll.js';
+import { validateYearEnd } from './year-end.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 10;
+export const BACKUP_VERSION = 11;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices', 'employees', 'payrolls'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices', 'employees', 'payrolls', 'yearEnds'];
 
 /**
  * バックアップの内容（JSON にする前のオブジェクト）
@@ -86,12 +87,14 @@ const UPGRADES = {
   8: (obj) => ({ ...obj, version: 9, invoices: [] }),
   // 9 → 10：給与計算（employees・payrolls）を追加
   9: (obj) => ({ ...obj, version: 10, employees: [], payrolls: [] }),
+  // 10 → 11：年末調整（yearEnds）を追加
+  10: (obj) => ({ ...obj, version: 11, yearEnds: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
  * 証憑の中身は base64 から ArrayBuffer に戻す（ハッシュ値の照合は非同期のため verifyAttachments で行う）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, invoices, employees, payrolls, attachmentsOmitted, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, invoices, employees, payrolls, yearEnds, attachmentsOmitted, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -208,7 +211,17 @@ export function parseBackup(text) {
   for (const p of obj.payrolls) {
     if (!hasBase(p) || validatePayroll(p, { employees: obj.employees }).length) bad('給与');
     if ((p.journalId != null && !isStr(p.journalId)) || (p.postedAt != null && !isStr(p.postedAt))) bad('給与');
+    if (p.yearEndId != null && !obj.yearEnds.some((ye) => ye.id === p.yearEndId)) bad('給与');
     unique(p, '給与');
+  }
+  const yearEndKeys = new Set();
+  for (const ye of obj.yearEnds) {
+    if (!hasBase(ye) || validateYearEnd(ye).length || !obj.employees.some((e) => e.id === ye.employeeId)) bad('年末調整');
+    if (ye.settledPayrollId != null && !obj.payrolls.some((p) => p.id === ye.settledPayrollId && p.yearEndId === ye.id)) bad('年末調整');
+    const key = `${ye.employeeId}:${ye.year}`;
+    if (yearEndKeys.has(key)) bad('年末調整');
+    yearEndKeys.add(key);
+    unique(ye, '年末調整');
   }
   if (obj.attachmentsOmitted !== undefined && typeof obj.attachmentsOmitted !== 'boolean') bad('証憑');
   const omitted = obj.attachmentsOmitted === true;

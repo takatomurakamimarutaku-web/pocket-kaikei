@@ -84,6 +84,8 @@ export async function render({ app, outlet, query }) {
     return list.map((s) => {
       const done = paidOf('incomeTax', s.key);
       const rows = s.rows.filter((r) => r.persons || r.tax);
+      const foot = (label, amount) => h('tr', {}, h('th', { scope: 'row', colspan: 3, text: label }), h('td', { class: 'num', text: formatYen(amount) }));
+      const adjusted = s.shortage || s.excess || s.carryIn;
       return h(
         'section',
         { class: 'pp-card' },
@@ -99,14 +101,23 @@ export async function render({ app, outlet, query }) {
                 {},
                 rows.map((r) => h('tr', {}, h('th', { scope: 'row', text: r.label }), h('td', { class: 'num', text: `${r.persons}人` }), h('td', { class: 'num', text: formatYen(r.amount) }), h('td', { class: 'num', text: formatYen(r.tax) }))),
               ),
-              h('tfoot', {}, h('tr', {}, h('th', { scope: 'row', colspan: 3, text: '納付税額' }), h('td', { class: 'num', text: formatYen(s.tax) }))),
+              h(
+                'tfoot',
+                {},
+                adjusted ? foot('計', s.tax) : null,
+                s.shortage ? foot('年末調整による不足税額', s.shortage) : null,
+                s.excess ? foot('年末調整による超過税額', s.excess) : null,
+                s.carryIn ? foot('前の納付で引ききれなかった超過税額', s.carryIn) : null,
+                foot(adjusted ? '本税（納付税額）' : '納付税額', s.payable),
+              ),
             )
           : null,
         s.first ? h('p', { class: 'small', text: `支払年月日：${cfg.special && s.first !== s.last ? `${slash(s.first)}〜${slash(s.last)}` : slash(s.last)}` }) : null,
-        s.posted && !s.tax ? h('p', { class: 'small notice', text: '税額が0円でも、給与を支払ったときは納付書（所得税徴収高計算書）を税務署に出します（e-Taxでも出せます）。' }) : null,
+        s.posted && !s.payable ? h('p', { class: 'small notice', text: '納付税額が0円でも、給与を支払ったときは納付書（所得税徴収高計算書）を税務署に出します（e-Taxでも出せます）。' }) : null,
+        s.carry ? h('p', { class: 'small notice', text: `年末調整の超過税額のうち ${formatYen(s.carry)}円は引ききれていません。この後に納付する源泉所得税から順に差し引きます（翌年の納付にも繰り越します）。還付しきれないと見込まれるとき（翌月から2か月を経過しても還付しきれないときなど）は、税務署に「年末調整過納額還付請求書 兼 残存過納額明細書」を出します。` }) : null,
         s.drafts ? h('p', { class: 'small notice', text: `仕訳を登録していない給与（${s.drafts}件）は含めていません。` }) : null,
         ...paidLine(done),
-        !done.length && s.tax > 0 ? h('button', { type: 'button', class: 'btn btn-block', text: '納付の仕訳を登録', onclick: () => pay({ kind: 'incomeTax', key: s.key, label: `${s.label}（納付税額 ${formatYen(s.tax)}円）`, amount: s.tax, due: s.due }) }) : null,
+        !done.length && s.payable > 0 ? h('button', { type: 'button', class: 'btn btn-block', text: '納付の仕訳を登録', onclick: () => pay({ kind: 'incomeTax', key: s.key, label: `${s.label}（納付税額 ${formatYen(s.payable)}円）`, amount: s.payable, due: s.due }) }) : null,
       );
     });
   }

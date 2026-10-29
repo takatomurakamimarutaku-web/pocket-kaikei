@@ -219,6 +219,7 @@ test('スキーマ移行：バージョン5のデータを残したまま証憑�
       open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.result.deleteObjectStore('employees'); // バージョン10で追加
       open.result.deleteObjectStore('payrolls');
+      open.result.deleteObjectStore('yearEnds');
       open.result.deleteObjectStore('attachments'); // バージョン5の構成にする
       open.result.deleteObjectStore('attachmentData');
       open.transaction.objectStore('budgets').put({ id: 'b1', periodId: 'p1', accountId: 'a1', months: { '2026-01': 1 }, createdAt: 'x', updatedAt: 'x' });

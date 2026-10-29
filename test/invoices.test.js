@@ -375,6 +375,7 @@ test('スキーマ移行：バージョン8のデータを残したまま請求�
       open.result.deleteObjectStore('invoices'); // バージョン8の構成にする
       open.result.deleteObjectStore('employees');
       open.result.deleteObjectStore('payrolls');
+      open.result.deleteObjectStore('yearEnds');
       open.transaction.objectStore('departments').put({ id: 'd1', name: '本店', active: true, sortOrder: 0, createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {

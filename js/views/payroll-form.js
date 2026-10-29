@@ -151,7 +151,7 @@ export async function render({ app, outlet, params, query }) {
       }
       const t = payrollTotals(cur);
       const row = (label, v, cls = '') => h('div', { class: cls }, h('dt', { text: label }), h('dd', { class: `num ${v < 0 ? 'neg' : ''}`, text: yen(v) }));
-      put(totalsEl, row('総支給額', t.gross), row('社会保険料等', t.social), row('社会保険料等を引いた後', t.afterSocial, 'muted'), row('控除合計', t.deductions), row('差引支給額', t.net, 'pay-net-row'));
+      put(totalsEl, row('総支給額', t.gross), row('社会保険料等', t.social), row('社会保険料等を引いた後', t.afterSocial, 'muted'), t.yearEnd ? row(t.yearEnd > 0 ? '年末調整（不足額の徴収）' : '年末調整（還付）', t.yearEnd) : null, row('控除合計', t.deductions), row('差引支給額', t.net, 'pay-net-row'));
     }
 
     payDate.addEventListener('change', () => {
@@ -219,6 +219,7 @@ export async function render({ app, outlet, params, query }) {
         field('住民税', residentTax),
         h('div', { class: 'field' }, h('p', { class: 'field-label', text: 'その他の控除' }), deductions.el),
         h('h2', { class: 'section-title', text: '合計' }),
+        p.yearEndId ? h('p', { class: 'notice small' }, 'この給与で年末調整の過不足を精算しています。支給や控除の金額を変えたときは、', h('a', { href: `#/payroll/year-end/${p.yearEndId}`, text: '年末調整' }), 'で精算を外し、確定を取り消して計算し直してください。') : null,
         totalsEl,
         field('メモ', note),
         h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: '保存する' }),

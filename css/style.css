@@ -1107,3 +1107,28 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
   .payslip { font-size: 10pt; min-width: 0; }
   .ps-head h1 { font-size: 18pt; }
 }
+
+/* 年末調整 */
+.ye-head p { margin: 0 0 6px; }
+.ye-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.ye-fieldset:disabled { opacity: 0.85; }
+.ye-families { display: grid; gap: 10px; margin-bottom: 8px; }
+.ye-family { padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); }
+.ye-family .field { margin-bottom: 8px; }
+.ye-family-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ye-class { margin: 4px 0 0; color: var(--muted); }
+.ye-prev { margin: var(--sp-3) 0; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--card-border); background: var(--surface); }
+.ye-prev summary { font-weight: 700; cursor: pointer; }
+.ye-prev[open] summary { margin-bottom: 8px; }
+.ye-result { margin-bottom: var(--sp-3); }
+.ye-warnings { margin: 0 0 8px; padding-left: 1.2em; color: var(--warn-text); }
+.ye-table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: var(--fs-footnote); font-variant-numeric: tabular-nums; background: var(--surface); border: 1px solid var(--card-border); border-radius: var(--radius); }
+.ye-table th, .ye-table td { padding: 5px 8px; border-bottom: 1px solid var(--card-border); text-align: left; font-weight: 400; }
+.ye-table .num { text-align: right; white-space: nowrap; }
+.ye-sub { display: block; font-size: 0.72rem; color: var(--muted); }
+.ye-table .ye-sum th, .ye-table .ye-sum td { font-weight: 800; }
+.ye-table .ye-diff th, .ye-table .ye-diff td { font-weight: 800; font-size: 1rem; border-bottom: 0; }
+.ye-diff-line { margin: 4px 0 0; font-weight: 800; text-align: right; }
+.ye-status { margin-bottom: var(--sp-3); padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); }
+.ye-status > p { margin: 4px 0; }
+.ye-status .btn { margin-top: 6px; }

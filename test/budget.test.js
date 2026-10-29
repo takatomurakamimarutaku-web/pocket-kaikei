@@ -172,6 +172,7 @@ test('スキーマ移行：バージョン4のデータを残したまま予算�
       open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.result.deleteObjectStore('employees'); // バージョン10で追加
       open.result.deleteObjectStore('payrolls');
+      open.result.deleteObjectStore('yearEnds');
       open.result.deleteObjectStore('budgets'); // バージョン4の構成にする
       open.result.deleteObjectStore('attachments');
       open.result.deleteObjectStore('attachmentData');

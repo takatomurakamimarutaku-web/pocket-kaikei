@@ -19,6 +19,7 @@ export function payslipDoc(p, { settings }) {
     row('源泉所得税', p.incomeTax || 0),
     p.residentTax ? row('住民税', p.residentTax) : null,
     ...p.deductions.map((x) => row(x.name, x.amount)),
+    t.yearEnd ? row(t.yearEnd > 0 ? '年末調整（不足額の徴収）' : '年末調整（還付）', t.yearEnd) : null,
   ];
   return h(
     'article',
@@ -53,9 +54,10 @@ export async function render({ app, outlet, params }) {
   async function post() {
     const cfg = resolvePayrollSettings(settings.payroll, accounts);
     const name = (id) => accounts.find((a) => a.id === id)?.name ?? '（未設定）';
+    const refund = Math.max(0, -t.yearEnd);
     const ok = await confirmDialog({
       title: '仕訳を登録しますか？',
-      message: `${p.payDate.replaceAll('-', '/')}（支給日）の仕訳として、借方 ${name(cfg.accounts[expenseKey(p)])} ${formatYen(t.taxable)}円${t.commute ? `・${name(cfg.accounts.commute)} ${formatYen(t.commute)}円` : ''}／貸方 ${name(cfg.accounts.deposit)} ${formatYen(t.deductions)}円・${name(cfg.accounts.payment)} ${formatYen(t.net)}円 を登録します。登録した給与は、計上を取り消すまで変更できません。`,
+      message: `${p.payDate.replaceAll('-', '/')}（支給日）の仕訳として、借方 ${name(cfg.accounts[expenseKey(p)])} ${formatYen(t.taxable)}円${t.commute ? `・${name(cfg.accounts.commute)} ${formatYen(t.commute)}円` : ''}${refund ? `・${name(cfg.accounts.deposit)}（年末調整の還付） ${formatYen(refund)}円` : ''}／貸方 ${name(cfg.accounts.deposit)} ${formatYen(t.deductions + refund)}円・${name(cfg.accounts.payment)} ${formatYen(t.net)}円 を登録します。登録した給与は、計上を取り消すまで変更できません。`,
       buttons: [
         { label: 'キャンセル', value: false },
         { label: '登録する', value: true, variant: 'primary' },
@@ -127,6 +129,7 @@ export async function render({ app, outlet, params }) {
     h('p', {}, h('span', { class: p.journalId ? 'badge badge-ok' : 'badge', text: p.journalId ? '仕訳済み' : '下書き' }), ` ${EMPLOYEE_KIND_LABEL[p.employeeKind]}・${PAY_KINDS[p.kind]}`),
     journal ? h('p', { class: 'small' }, '給与の仕訳：', h('a', { href: `#/journal/${journal.id}/edit`, text: `${journalLabel(journal)}（${journal.date.replaceAll('-', '/')}）` })) : null,
     p.journalId && !journal ? h('p', { class: 'notice small', text: '登録したときの仕訳が削除されています。必要なら「仕訳をもう一度登録する」で登録し直してください。' }) : null,
+    p.yearEndId ? h('p', { class: 'small' }, `年末調整の${t.yearEnd > 0 ? '不足額' : '還付'} ${formatYen(Math.abs(t.yearEnd))}円を精算しています（`, h('a', { href: `#/payroll/year-end/${p.yearEndId}`, text: '年末調整を開く' }), '）') : null,
   );
 
   put(
