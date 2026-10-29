@@ -669,6 +669,13 @@ details.panel > summary { cursor: pointer; list-style: revert; }
   .notice { border-color: #999; }
 }
 /* 月次推移試算表 */
+.chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+.chip-row .chip { white-space: nowrap; flex: none; }
+.bd-section { scroll-margin-top: 64px; }
+.bd-no { color: var(--primary); margin-right: 6px; }
+.breakdown td:not(.num) { min-width: 6em; }
+.breakdown thead th:not(.num) { text-align: left; }
+.breakdown .bd-other td { color: var(--muted); }
 .option-bar { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--sp-3); }
 .mtb .mt-col-quarter, .mtb .mt-col-half, .mtb .mt-col-adjust, .mtb .mt-col-total { background: var(--surface-2); font-weight: 600; }
 .mtb .mt-col-opening { color: var(--muted); }

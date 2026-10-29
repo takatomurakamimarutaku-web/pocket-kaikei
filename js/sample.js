@@ -85,7 +85,7 @@ function individualSample(year) {
 }
 
 function corporationSample(year) {
-  const { accounts, byName, subAccounts, subId, journals, j } = book('corporation', { manufacturing: true, subs: [['普通預金', 'さくら銀行'], ['売掛金', '東和機工'], ['売掛金', '北斗精密'], ['買掛金', '中央金属']] });
+  const { accounts, byName, subAccounts, subId, journals, j } = book('corporation', { manufacturing: true, subs: [['普通預金', 'さくら銀行'], ['売掛金', '東和機工'], ['売掛金', '北斗精密'], ['買掛金', '中央金属'], ['役員報酬', '佐藤一郎'], ['地代家賃', '城南不動産'], ['地代家賃（製造）', '城南不動産']] });
   const period = createPeriod({ startDate: `${year}-04-01`, endDate: `${year + 1}-03-31` });
   const ob = (name, amount, sub) => ({ accountId: byName[name].id, subAccountId: sub ? subId(name, sub) : null, amount });
   const debit = 4000000 + 3080000 + 300000 + 200000 + 400000 + 50000;
@@ -114,11 +114,11 @@ function corporationSample(year) {
     j(period, day(m, 31), [b(880000)], [['売掛金', 880000, null, '北斗精密']], '北斗精密 入金（前月分）');
     j(period, day(m, 10), [['材料仕入高', 550000]], [['買掛金', 550000, null, '中央金属']], `${label} 材料仕入 中央金属`);
     j(period, day(m, 31), [['買掛金', i === 0 ? 660000 : 550000, null, '中央金属']], [b(i === 0 ? 660000 : 550000)], '中央金属 支払（前月分）');
-    j(period, day(m, 25), [['賃金', 600000], ['役員報酬', 400000], ['給料手当', 250000]], [b(1100000), ['預り金', 150000]], `${label} 給与（源泉・社会保険料控除後）`);
+    j(period, day(m, 25), [['賃金', 600000], ['役員報酬', 400000, null, '佐藤一郎'], ['給料手当', 250000]], [b(1100000), ['預り金', 150000]], `${label} 給与（源泉・社会保険料控除後）`);
     j(period, day(m, 31), [['法定福利費（製造）', 90000], ['法定福利費', 95000], ['預り金', 150000]], [b(335000)], '社会保険料・源泉所得税の納付');
     j(period, day(m, 27), [['外注加工費', 220000]], [b(220000)], 'めっき加工（外注）');
     j(period, day(m, 26), [['電力費', 77000], ['水道光熱費（製造）', 11000], ['水道光熱費', 5500]], [b(93500)], '電気・水道');
-    j(period, day(m, 27), [['地代家賃（製造）', 198000], ['地代家賃', 66000]], [b(264000)], '工場・事務所の家賃');
+    j(period, day(m, 27), [['地代家賃（製造）', 198000, null, '城南不動産'], ['地代家賃', 66000, null, '城南不動産']], [b(264000)], '工場・事務所の家賃');
     j(period, day(m, 15), [['消耗品費（製造）', 33000], ['通信費', 13200]], [b(46200)], '工具・刃物、電話・ネット');
     if (i % 2 === 1) j(period, day(m, 12), [['福利厚生費', 5400, 'purchase_8r'], ['会議費', 3300]], [['現金', 8700]], 'お茶・菓子（軽減8%）、打合せ');
     if (i % 3 === 0) {
