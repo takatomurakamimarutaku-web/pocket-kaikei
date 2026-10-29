@@ -24,6 +24,7 @@ export async function render({ app, outlet }) {
       { class: 'menu-group' },
       row('#/journal/new', '振替伝票で入力', '借方・貸方を自由に。複合仕訳もこちら', '伝'),
       row('#/cashbook', '現金出納帳・預金出納帳', '口座ごとの入金・出金と残高', '出'),
+      row('#/import/bank', '銀行明細の取り込み', 'ネットバンキングのCSVから仕訳をまとめて作る', '銀'),
     ),
   );
 }
