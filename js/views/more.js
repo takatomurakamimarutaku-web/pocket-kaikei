@@ -25,6 +25,9 @@ const GROUPS = [
     ['#/books', '帳簿の切替', '個人と法人、家族の事業などの帳簿を分けて持つ', 'books', 'data'],
     ['#/lock', '画面ロック', 'アプリを開くときにパスコード・Face ID などで解除する', 'lock', 'setting'],
   ]],
+  ['Pocket会計について', [
+    ['#/changelog', '更新履歴', 'バージョンごとの更新内容', 'history', 'setting'],
+  ]],
 ];
 
 export async function render({ app, outlet }) {

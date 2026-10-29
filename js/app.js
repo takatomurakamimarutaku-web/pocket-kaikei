@@ -50,6 +50,7 @@ import * as accountEditView from './views/account-edit.js';
 import * as openingView from './views/opening.js';
 import * as backupView from './views/backup.js';
 import * as ebookView from './views/e-book.js';
+import * as changelogView from './views/changelog.js';
 import * as attachmentsView from './views/attachments.js';
 import * as transferView from './views/transfer.js';
 import * as receivablesView from './views/receivables.js';
@@ -122,6 +123,7 @@ const routes = [
   { path: '/asset/:id', view: assetFormView, title: '固定資産の編集', tab: 'more', back: '#/assets' },
   { path: '/asset/:id/dispose', view: assetDisposeView, title: '固定資産の売却・除却', tab: 'more', back: '#/assets' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
+  { path: '/changelog', view: changelogView, title: '更新履歴', tab: 'more', back: '#/more' },
   { path: '/e-book', view: ebookView, title: '電子帳簿保存', tab: 'more', back: '#/more', print: true },
   { path: '/attachments', view: attachmentsView, title: '証憑の一覧', tab: 'more', back: '#/more' },
   { path: '/transfer', view: transferView, title: '会計ソフトとの受け渡し', tab: 'more', back: '#/more' },
@@ -329,7 +331,14 @@ async function notifyUpdated(db) {
     const seen = await db.getMeta('seenVersion');
     if (seen === APP_VERSION) return;
     await db.setMeta('seenVersion', APP_VERSION);
-    if (seen) showToast(`バージョン${APP_VERSION}に更新しました`, { duration: 5000 });
+    if (!seen) return;
+    // 更新履歴の画面で、前の版から新しくなった分に印を付けるために覚えておく
+    await db.setMeta('updatedFrom', seen);
+    showToast(`バージョン${APP_VERSION}に更新しました`, {
+      duration: 8000,
+      actionLabel: '内容を見る',
+      onAction: () => (location.hash = `#/changelog?from=${encodeURIComponent(seen)}`),
+    });
   } catch (e) {
     console.warn('seenVersion', e);
   }
