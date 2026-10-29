@@ -1,6 +1,6 @@
 // 固定資産台帳：この会計期間の期首帳簿価額・償却費・期末帳簿価額
 import { h, put, emptyState, amountCell, saveFile } from '../ui.js';
-import { assetRegister, smeUsage, depreciationSchedule, METHOD_BY_ID, CATEGORY_BY_ID } from '../depreciation.js';
+import { assetRegister, smeUsage, depreciationSchedule, methodLabel, CATEGORY_BY_ID } from '../depreciation.js';
 import { formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 import { registerByAccount } from '../asset-tools.js';
@@ -60,7 +60,8 @@ export async function render({ app, outlet }) {
           h(
             'span',
             { class: 'acc-tags' },
-            h('span', { class: 'badge', text: METHOD_BY_ID[asset.method]?.short ?? asset.method }),
+            h('span', { class: 'badge', text: methodLabel(asset) || asset.method }),
+            asset.specialRate ? h('span', { class: 'badge', text: asset.specialRate === 100 ? '即時償却' : `特別償却${asset.specialRate}%` }) : null,
             asset.usefulLife && (asset.method === 'straight' || asset.method === 'declining') ? h('span', { class: 'muted small', text: `${asset.usefulLife}年` }) : null,
             individual && asset.businessRatio < 100 ? h('span', { class: 'badge', text: `事業${asset.businessRatio}%` }) : null,
             asset.disposedOn ? h('span', { class: 'badge badge-warn', text: `${DISPOSAL[asset.disposalType] ?? '除却'} ${slash(asset.disposedOn)}` }) : null,

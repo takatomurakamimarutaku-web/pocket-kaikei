@@ -9,7 +9,17 @@
 // - 国税庁 No.5408 中小企業者等の少額減価償却資産の取得価額の損金算入の特例
 //   https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5408.htm
 // - 償却率表：国税庁「令和7年分 青色申告決算書（一般用）の書き方」の減価償却資産の償却率等表
-//   https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/037.pdf （耐用年数省令 別表第八・第十）
+//   https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/037.pdf （耐用年数省令 別表第七〜第十）
+//   旧定額法・旧定率法・250%定率法の率は、国税庁「個人の減価償却制度の改正について」資料編でも照合した
+//   https://www.nta.go.jp/law/joho-zeikaishaku/shotoku/shinkoku/070412/pdf/3.pdf
+// - 旧定額法・旧定率法（平成19年3月31日以前の取得）：国税庁 No.2105
+//   https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2105.htm
+//   残存価額は取得価額の10%（無形は0）。償却費の累積額が取得価額の95%に達したら、翌年から5年間で1円まで均等に償却する
+//   （青色申告決算書の書き方：{(取得価額−取得価額×95%−1円)÷5}×本年中の償却期間/12）
+// - 平成19年3月31日以前に取得し、4月1日以後に事業の用に供した資産は、供用日に取得したものとみなす（No.5410）
+// - 特別償却：特別償却限度額は事業供用年度に 取得価額×率（例：中小企業投資促進税制 30%。月数按分しない）、
+//   中小企業経営強化税制の即時償却は 取得価額−普通償却限度額。国税庁 No.5433・No.5434
+//   https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5433.htm ・ https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5434.htm
 // 金額はすべて整数の円。率は整数（定額法・定率法・改定償却率は1/1000、保証率は1/100000）で持ち、浮動小数点を使わない
 import { isValidDate, addMonths, addDays } from './period.js';
 import { isYen } from './money.js';
@@ -73,6 +83,31 @@ export const RATE_TABLE = {
 export const MIN_LIFE = 2;
 export const MAX_LIFE = 50;
 
+/**
+ * 平成19年3月31日以前に取得した資産の償却率（耐用年数省令 別表第七）[旧定額法, 旧定率法]（1/1000）
+ */
+export const OLD_RATE_TABLE = {
+  2: [500, 684], 3: [333, 536], 4: [250, 438], 5: [200, 369], 6: [166, 319], 7: [142, 280], 8: [125, 250], 9: [111, 226], 10: [100, 206],
+  11: [90, 189], 12: [83, 175], 13: [76, 162], 14: [71, 152], 15: [66, 142], 16: [62, 134], 17: [58, 127], 18: [55, 120], 19: [52, 114], 20: [50, 109],
+  21: [48, 104], 22: [46, 99], 23: [44, 95], 24: [42, 92], 25: [40, 88], 26: [39, 85], 27: [37, 82], 28: [36, 79], 29: [35, 76], 30: [34, 74],
+  31: [33, 72], 32: [32, 69], 33: [31, 67], 34: [30, 66], 35: [29, 64], 36: [28, 62], 37: [27, 60], 38: [27, 59], 39: [26, 57], 40: [25, 56],
+  41: [25, 55], 42: [24, 53], 43: [24, 52], 44: [23, 51], 45: [23, 50], 46: [22, 49], 47: [22, 48], 48: [21, 47], 49: [21, 46], 50: [20, 45],
+};
+
+/**
+ * 250%定率法（平成19年4月1日〜平成24年3月31日の取得。耐用年数省令 別表第九）[償却率, 改定償却率, 保証率]
+ * 償却率・改定償却率は1/1000、保証率は1/100000。2年は1年で償却し終わるため改定償却率・保証率なし（0）
+ */
+export const DECLINING_250_TABLE = {
+  2: [1000, 0, 0], 3: [833, 1000, 2789], 4: [625, 1000, 5274], 5: [500, 1000, 6249], 6: [417, 500, 5776], 7: [357, 500, 5496], 8: [313, 334, 5111],
+  9: [278, 334, 4731], 10: [250, 334, 4448], 11: [227, 250, 4123], 12: [208, 250, 3870], 13: [192, 200, 3633], 14: [179, 200, 3389], 15: [167, 200, 3217],
+  16: [156, 167, 3063], 17: [147, 167, 2905], 18: [139, 143, 2757], 19: [132, 143, 2616], 20: [125, 143, 2517], 21: [119, 125, 2408], 22: [114, 125, 2296],
+  23: [109, 112, 2226], 24: [104, 112, 2157], 25: [100, 112, 2058], 26: [96, 100, 1989], 27: [93, 100, 1902], 28: [89, 91, 1866], 29: [86, 91, 1803],
+  30: [83, 84, 1766], 31: [81, 84, 1688], 32: [78, 84, 1655], 33: [76, 77, 1585], 34: [74, 77, 1532], 35: [71, 72, 1532], 36: [69, 72, 1494],
+  37: [68, 72, 1425], 38: [66, 67, 1393], 39: [64, 67, 1370], 40: [63, 67, 1317], 41: [61, 63, 1306], 42: [60, 63, 1261], 43: [58, 59, 1248],
+  44: [57, 59, 1210], 45: [56, 59, 1175], 46: [54, 56, 1175], 47: [53, 56, 1153], 48: [52, 53, 1126], 49: [51, 53, 1102], 50: [50, 53, 1072],
+};
+
 /** 率の表示（例：250 → "0.250"、7909 → "0.07909"） */
 export function formatRate(value, digits = 3) {
   return (value / 10 ** digits).toFixed(digits);
@@ -120,10 +155,59 @@ export function usesLife(method) {
   return method === 'straight' || method === 'declining';
 }
 
-/** 定額法・定率法の対象日（平成19年3月31日以前取得・4月1日以後に事業供用したものは供用日に取得したとみなす。出典 No.5410） */
+/** 定額法・定率法の対象日（平成19年3月31日以前取得・4月1日以後に事業供用したものは供用日に取得したとみなす。出典 No.5410）。前は旧定額法・旧定率法 */
 export const NEW_METHOD_FROM = '2007-04-01';
-/** 200%定率法の対象（平成24年4月1日以後取得）。それより前の250%定率法には対応しない */
+/** 200%定率法の対象（平成24年4月1日以後取得）。平成19年4月1日〜平成24年3月31日の取得は250%定率法 */
 export const DECLINING_200_FROM = '2012-04-01';
+
+/**
+ * 償却の方法の細かい区分（取得日で決まる）
+ * old_straight：旧定額法、old_declining：旧定率法、straight：定額法、declining250・declining200：定率法
+ * それ以外の方法（一括償却・少額）は method をそのまま返す
+ */
+export function methodVariant(asset) {
+  if (asset.method === 'straight') return asset.startedOn < NEW_METHOD_FROM ? 'old_straight' : 'straight';
+  if (asset.method === 'declining') {
+    if (asset.startedOn < NEW_METHOD_FROM) return 'old_declining';
+    // 平成19年3月31日以前に取得し、4月1日以後に使い始めたものは、使い始めた日に取得したとみなす
+    const acquired = asset.acquiredOn < NEW_METHOD_FROM ? asset.startedOn : asset.acquiredOn;
+    return acquired < DECLINING_200_FROM ? 'declining250' : 'declining200';
+  }
+  return asset.method;
+}
+
+const VARIANT_LABELS = { old_straight: '旧定額法', old_declining: '旧定率法', straight: '定額法', declining250: '定率法', declining200: '定率法' };
+
+/** 償却方法の表示（旧定額法・旧定率法・定額法・定率法、一括償却など） */
+export function methodLabel(asset) {
+  return VARIANT_LABELS[methodVariant(asset)] ?? METHOD_BY_ID[asset.method]?.short ?? '';
+}
+
+/**
+ * 償却率（表示・計算用）
+ * @returns {{ rate: number, revised: number, guarantee: number }|null} rate・revised は1/1000、guarantee は1/100000
+ */
+export function ratesFor(asset) {
+  const v = methodVariant(asset);
+  const life = asset.usefulLife;
+  if (v === 'old_straight' || v === 'old_declining') {
+    const r = OLD_RATE_TABLE[life];
+    return r ? { rate: v === 'old_straight' ? r[0] : r[1], revised: 0, guarantee: 0 } : null;
+  }
+  if (v === 'straight') return RATE_TABLE[life] ? { rate: RATE_TABLE[life][0], revised: 0, guarantee: 0 } : null;
+  if (v === 'declining250') {
+    const r = DECLINING_250_TABLE[life];
+    return r ? { rate: r[0], revised: r[1], guarantee: r[2] } : null;
+  }
+  if (v === 'declining200') {
+    const r = RATE_TABLE[life];
+    return r ? { rate: r[1], revised: r[2], guarantee: r[3] } : null;
+  }
+  return null;
+}
+
+/** 特別償却の率の範囲（%）。100 は即時償却（取得価額−普通償却費） */
+export const SPECIAL_RATE_MAX = 100;
 /** 少額減価償却資産の特例の期間と上限（出典 No.5408・No.2100：令和8年4月1日以後の取得は40万円未満） */
 export const SME_FROM = '2006-04-01';
 export const SME_UNTIL = '2029-03-31';
@@ -181,13 +265,11 @@ export function validateAsset(asset, { entityType, accounts }) {
   const cost = isYen(asset.cost) ? asset.cost : 0;
   if (m && !e.startedOn && !e.acquiredOn) {
     if (usesLife(asset.method)) {
-      if (asset.startedOn < NEW_METHOD_FROM) e.method = '平成19年3月31日以前に使い始めた資産（旧定額法・旧定率法）には対応していません';
       if (!Number.isInteger(asset.usefulLife) || asset.usefulLife < MIN_LIFE || asset.usefulLife > MAX_LIFE) e.usefulLife = `耐用年数は${MIN_LIFE}〜${MAX_LIFE}年で入力してください`;
     }
     if (asset.method === 'declining' && cat) {
       if (cat.intangible) e.method = '無形固定資産は定額法で償却します';
       else if (cat.decliningUntil && asset.acquiredOn >= cat.decliningUntil) e.method = `${cat.label}は定額法で償却します（${cat.decliningUntil.slice(0, 4)}年${Number(cat.decliningUntil.slice(5, 7))}月以後の取得）`;
-      else if (asset.acquiredOn < DECLINING_200_FROM) e.method = '平成24年3月31日以前に取得した資産の定率法（250%定率法）には対応していません';
     }
     if (asset.method === 'lump3' && cost >= 200000) e.method = '一括償却資産は取得価額20万円未満のものだけです';
     if (asset.method === 'small' && cost >= 100000) e.method = '少額減価償却資産（全額を経費）は取得価額10万円未満のものだけです';
@@ -221,6 +303,16 @@ export function validateAsset(asset, { entityType, accounts }) {
       else if (!isYen(asset.carryRevisedBase) || asset.carryRevisedBase < 1 || asset.carryRevisedBase > cost) e.carryRevisedBase = '改定取得価額は1円以上・取得価額以下の整数で入力してください';
     }
   }
+  // 特別償却（v0.36.0 で追加。任意）：事業供用年度に 取得価額×率
+  if (asset.specialRate != null) {
+    if (!Number.isInteger(asset.specialRate) || asset.specialRate < 1 || asset.specialRate > SPECIAL_RATE_MAX) e.specialRate = `特別償却の率は1〜${SPECIAL_RATE_MAX}%の整数で入力してください（即時償却は100）`;
+    else if (!usesLife(asset.method)) e.specialRate = '特別償却は定額法・定率法の資産だけです';
+    else if (isValidDate(asset.startedOn) && asset.startedOn < NEW_METHOD_FROM) e.specialRate = '平成19年3月31日以前に使い始めた資産には特別償却を入れられません';
+    else if (asset.carryOn != null && asset.carryBook != null) e.specialRate = '前の帳簿から引き継ぐ資産の特別償却は、前の帳簿で済んでいます（空欄にしてください）';
+    else if (!String(asset.specialName ?? '').trim()) e.specialName = '特別償却の制度の名前を入力してください（例：中小企業投資促進税制）';
+  }
+  if (String(asset.specialName ?? '').length > 40) e.specialName = '制度の名前は40文字以内にしてください';
+  if (asset.specialName && asset.specialRate == null) e.specialRate = '特別償却の率を入力してください';
   if (String(asset.memo ?? '').length > 100) e.memo = 'メモは100文字以内にしてください';
   // v0.14.0 で追加した項目（古いデータには無い）
   if (String(asset.assetNo ?? '').length > 20) e.assetNo = '資産番号は20文字以内にしてください';
@@ -273,9 +365,11 @@ function* ranges(periods, startedOn) {
  * 減価償却の年ごとの明細
  * @param {object} asset
  * @param {Array} periods 会計期間（startDate・endDate・id）。1件以上
- * @returns {Array<{ startDate, endDate, periodId, months, base, rate, opening, amount, business, private, closing, switched? }>}
- *   base：償却の基礎になる金額、rate：使った率（1/1000。一括償却・少額は null）
- *   amount：その期間の償却費（全体）、business：経費になる額（事業で使う割合）、private：私用分
+ * @returns {Array<{ startDate, endDate, periodId, months, base, rate, opening, ordinary, special, amount, business, private, closing, switched?, equal? }>}
+ *   base：償却の基礎になる金額、rate：使った率（1/1000。一括償却・少額・均等償却は null）
+ *   ordinary：普通償却費、special：特別償却費（事業供用年度だけ）、amount：その期間の償却費（合計）
+ *   business：経費になる額（事業で使う割合）、private：私用分
+ *   switched：定率法で改定償却率に切り替えた、equal：旧定額法・旧定率法の95%到達後の均等償却
  *   償却が終わる（残り1円・無形は0円）か、除却・売却した期間までを返す
  */
 export function depreciationSchedule(asset, periods) {
@@ -283,11 +377,16 @@ export function depreciationSchedule(asset, periods) {
   const cat = CATEGORY_BY_ID[asset.category];
   const floor = cat?.intangible || !usesLife(asset.method) ? 0 : 1; // 有形の定額法・定率法は1円（備忘価額）を残す
   const ratio = Number.isInteger(asset.businessRatio) ? asset.businessRatio : 100;
-  const [straight, declining, revised, guarantee] = RATE_TABLE[asset.usefulLife] || [0, 0, 0, 0];
+  const variant = methodVariant(asset);
+  const { rate: baseRate, revised, guarantee } = ratesFor(asset) || { rate: 0, revised: 0, guarantee: 0 };
+  const old = variant === 'old_straight' || variant === 'old_declining';
+  // 旧定額法・旧定率法の有形：償却費の累積額が取得価額の95%に達したときの帳簿価額（＝取得価額×5%）と、その後の5年間の均等償却
+  const tail = old && !cat?.intangible ? asset.cost - Math.floor((asset.cost * 95) / 100) : 0;
   let book = asset.cost;
   let usedMonths = 0; // 一括償却の経過月数
   let revisedBase = null; // 定率法の改定取得価額
   const carry = hasCarryOver(asset);
+  const special = !carry && Number.isInteger(asset.specialRate) && usesLife(asset.method) && !old ? asset.specialRate : 0;
   for (const r of ranges(periods, asset.startedOn)) {
     if (r.endDate < asset.startedOn) continue;
     // 前の会計ソフトの帳簿価額を引き継ぐ：引き継いだ日より前の期間は出さず、その日の帳簿価額から計算を続ける。
@@ -304,8 +403,10 @@ export function depreciationSchedule(asset, periods) {
     const months = Math.min(periodMonths(r), monthsBetween(from, to));
     let amount = 0;
     let switched = false;
+    let equal = false;
     let base = asset.cost; // 償却の基礎になる金額（青色申告決算書の「償却の基礎になる金額」）
-    let rate = null; // 使った率（1/1000。一括償却・少額は null）
+    let rate = null; // 使った率（1/1000。一括償却・少額・均等償却は null）
+    let limit = book - floor; // この期間に償却できる上限
     if (asset.method === 'small' || asset.method === 'sme') {
       amount = book;
     } else if (asset.method === 'lump3') {
@@ -313,20 +414,42 @@ export function depreciationSchedule(asset, periods) {
       const pm = periodMonths(r);
       usedMonths += pm;
       amount = usedMonths >= 36 ? book : Math.floor((asset.cost * pm) / 36);
-    } else if (asset.method === 'straight') {
-      const annual = Math.floor((asset.cost * straight) / 1000);
+    } else if (old && tail && book <= tail) {
+      // 95%に達した翌年から5年間の均等償却：{(取得価額×5%−1円)÷5}×月数/12。5年で1円になるよう1円未満は切り上げる（No.2105 の計算例）
+      equal = true;
+      base = tail;
+      amount = Math.ceil(((tail - 1) * months) / 60);
+    } else if (variant === 'old_straight') {
+      // 旧定額法：(取得価額−残存価額（有形は10%）)×償却率。累積額は取得価額の95%まで
+      base = cat?.intangible ? asset.cost : Math.floor((asset.cost * 9) / 10);
+      const annual = cat?.intangible ? Math.floor((asset.cost * baseRate) / 1000) : Math.floor((asset.cost * 9 * baseRate) / 10000);
       amount = Math.floor((annual * months) / 12);
-      rate = straight;
-    } else if (asset.method === 'declining') {
+      rate = baseRate;
+      if (tail) limit = book - tail;
+    } else if (variant === 'old_declining') {
+      // 旧定率法：期首帳簿価額×償却率。累積額は取得価額の95%まで
+      base = book;
+      amount = Math.floor((Math.floor((book * baseRate) / 1000) * months) / 12);
+      rate = baseRate;
+      limit = book - tail;
+    } else if (variant === 'straight') {
+      const annual = Math.floor((asset.cost * baseRate) / 1000);
+      amount = Math.floor((annual * months) / 12);
+      rate = baseRate;
+    } else if (variant === 'declining250' || variant === 'declining200') {
       // 調整前償却額が償却保証額（取得価額×保証率）に満たない年から、改定取得価額×改定償却率に切り替える
-      if (revisedBase === null && guarantee && book * declining * 100 < asset.cost * guarantee) revisedBase = book;
+      if (revisedBase === null && guarantee && book * baseRate * 100 < asset.cost * guarantee) revisedBase = book;
       switched = revisedBase !== null;
-      const annual = switched ? Math.floor((revisedBase * revised) / 1000) : Math.floor((book * declining) / 1000);
+      const annual = switched ? Math.floor((revisedBase * revised) / 1000) : Math.floor((book * baseRate) / 1000);
       amount = Math.floor((annual * months) / 12);
       base = switched ? revisedBase : book;
-      rate = switched ? revised : declining;
+      rate = switched ? revised : baseRate;
     }
-    amount = Math.max(0, Math.min(amount, book - floor));
+    const ordinary = Math.max(0, Math.min(amount, limit));
+    // 特別償却：使い始めた日を含む期間に 取得価額×率（月数按分しない）。即時償却（100%）は 取得価額−普通償却費
+    const first = r.startDate <= asset.startedOn && asset.startedOn <= r.endDate;
+    const extra = special && first ? Math.max(0, Math.min(Math.floor((asset.cost * special) / 100), book - floor - ordinary)) : 0;
+    amount = ordinary + extra;
     const business = Math.floor((amount * ratio) / 100);
     out.push({
       startDate: r.startDate,
@@ -336,11 +459,14 @@ export function depreciationSchedule(asset, periods) {
       base,
       rate,
       opening: book,
+      ordinary,
+      special: extra,
       amount,
       business,
       private: amount - business,
       closing: book - amount,
       ...(switched ? { switched: true } : {}),
+      ...(equal ? { equal: true } : {}),
     });
     book -= amount;
     if (asset.method !== 'lump3' && asset.disposedOn && asset.disposedOn <= r.endDate) break;

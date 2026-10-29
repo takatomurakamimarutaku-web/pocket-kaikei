@@ -2,7 +2,7 @@
 import { linesToRows } from './journal.js';
 import { TAX_BY_CODE } from './tax.js';
 import { groupLabel } from './accounts.js';
-import { METHOD_BY_ID, CATEGORY_BY_ID, usesLife } from './depreciation.js';
+import { CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
 import { eraOf } from './property-tax.js';
 
 export const BOM = '﻿';
@@ -113,14 +113,14 @@ export function assetsCsv(register, { accountById, individual }) {
   const slash = (d) => (d ? d.replaceAll('-', '/') : '');
   const head = ['資産番号', '資産名', '種類', '勘定科目', '数量', '設置場所', '取得日', '使い始めた日', '取得価額', '償却方法', '耐用年数', '償却率'];
   if (individual) head.push('事業で使う割合');
-  head.push('期首帳簿価額', '償却費');
+  head.push('期首帳簿価額', '償却費', 'うち特別償却');
   if (individual) head.push('うち経費');
   head.push('期末帳簿価額', '売却・除却日', '売却・除却', '売却額', 'メモ');
   const rows = [head];
   for (const { asset: a, opening, row, closing } of register) {
-    const r = [a.assetNo || '', a.name, CATEGORY_BY_ID[a.category]?.label ?? '', accountById.get(a.accountId)?.name ?? '', a.quantity ?? 1, a.location || '', slash(a.acquiredOn), slash(a.startedOn), a.cost, METHOD_BY_ID[a.method]?.short ?? a.method, usesLife(a.method) ? a.usefulLife : '', row?.rate ? (row.rate / 1000).toFixed(3) : ''];
+    const r = [a.assetNo || '', a.name, CATEGORY_BY_ID[a.category]?.label ?? '', accountById.get(a.accountId)?.name ?? '', a.quantity ?? 1, a.location || '', slash(a.acquiredOn), slash(a.startedOn), a.cost, methodLabel(a) || a.method, usesLife(a.method) ? a.usefulLife : '', row?.rate ? (row.rate / 1000).toFixed(3) : ''];
     if (individual) r.push(`${a.businessRatio ?? 100}%`);
-    r.push(opening ?? '', row?.amount ?? 0);
+    r.push(opening ?? '', row?.amount ?? 0, row?.special ?? 0);
     if (individual) r.push(row?.business ?? 0);
     r.push(closing ?? '', slash(a.disposedOn), { sell: '売却', retire: '除却' }[a.disposalType] ?? '', a.disposalType === 'sell' ? a.salePrice : '', a.memo || '');
     rows.push(r);
