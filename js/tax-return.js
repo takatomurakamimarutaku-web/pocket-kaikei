@@ -183,18 +183,18 @@ export function computeTaxReturn({ journals, period, entityType, method = 'gener
   const badDebtTax = tax10(b.badDebt10) + tax8(b.badDebt8);
 
   // 課税仕入れ等の税額（用途区分ごと）＝課税仕入れ＋インボイスなしの経過措置分＋輸入の消費税−仕入の返品・値引き（No.6363）
+  // 申告書の付表2-3と同じく税率ごと（A：6.24%、B：7.8%）に計算して合計する。輸入の消費税は税率が分からないため7.8%の欄に入れる
   const transitional = b.transitional.map((t) => {
     const cat = TAX_BY_CODE[t.code];
     const full = trunc(t.gross * cat.national, (1000 + cat.rate) * 10);
-    return { ...t, label: cat.label, tax: trunc(full * t.pct, 100) };
+    return { ...t, rate: cat.rate, label: cat.label, tax: trunc(full * t.pct, 100) };
   });
-  const useTax = Object.fromEntries(
-    PURCHASE_USES.map((use) => {
-      const u = b.uses[use];
-      const trans = transitional.filter((t) => t.use === use).reduce((s, t) => s + t.tax, 0);
-      return [use, tax10(u.p10) + tax8(u.p8) + trans + u.import - tax10(u.ret10) - tax8(u.ret8)];
-    }),
-  );
+  const transTax = (use, rate) => transitional.filter((t) => t.use === use && t.rate === rate).reduce((s, t) => s + t.tax, 0);
+  const useTaxByRate = {
+    r8: Object.fromEntries(PURCHASE_USES.map((use) => { const u = b.uses[use]; return [use, tax8(u.p8) + transTax(use, 80) - tax8(u.ret8)]; })),
+    r10: Object.fromEntries(PURCHASE_USES.map((use) => { const u = b.uses[use]; return [use, tax10(u.p10) + transTax(use, 100) + u.import - tax10(u.ret10)]; })),
+  };
+  const useTax = Object.fromEntries(PURCHASE_USES.map((use) => [use, useTaxByRate.r8[use] + useTaxByRate.r10[use]]));
   const sumUses = (f) => PURCHASE_USES.reduce((s, use) => s + f(b.uses[use]), 0);
   const purchaseTax10 = sumUses((u) => tax10(u.p10));
   const purchaseTax8 = sumUses((u) => tax8(u.p8));
@@ -206,15 +206,21 @@ export function computeTaxReturn({ journals, period, entityType, method = 'gener
   const ratio = taxableRatioParts(b);
   const byRatio = (x) => (ratio.all > 0 ? Number((BigInt(x) * BigInt(Math.max(0, ratio.taxable))) / BigInt(ratio.all)) : x); // 1円未満切り捨て（0方向）
   const fullDeduction = ratio.all <= 0 || (ratio.taxable * 100 >= ratio.all * 95 && ratio.taxable <= 500000000);
-  const allocated = {
-    individual: useTax.taxable + byRatio(useTax.common),
-    proportional: byRatio(totalPurchaseTax),
-  };
   const alloc = ALLOCATIONS.some((a) => a.id === allocation) ? allocation : 'proportional';
-  let generalDeduction = fullDeduction ? totalPurchaseTax : allocated[alloc];
-  // 仕入の返品などが多く控除しきれないときは、その分を売上の税額に加算する（No.6363）
-  const overReturn = generalDeduction < 0 ? -generalDeduction : 0;
-  if (overReturn) generalDeduction = 0;
+  // 税率ごとの控除額（付表2-3 ⑱・㉑・㉒）。マイナス（仕入の返品などが多く控除しきれない）は控除過大調整税額（㉗）へ（No.6363）
+  const colDeduction = (ut) => {
+    const total = PURCHASE_USES.reduce((s, use) => s + ut[use], 0);
+    const allocatedCol = { individual: ut.taxable + byRatio(ut.common), proportional: byRatio(total) };
+    const value = fullDeduction ? total : allocatedCol[alloc];
+    return { total, allocated: allocatedCol, value, deduction: Math.max(0, value), over: value < 0 ? -value : 0 };
+  };
+  const cols = { r8: colDeduction(useTaxByRate.r8), r10: colDeduction(useTaxByRate.r10) };
+  const allocated = {
+    individual: cols.r8.allocated.individual + cols.r10.allocated.individual,
+    proportional: cols.r8.allocated.proportional + cols.r10.allocated.proportional,
+  };
+  const generalDeduction = cols.r8.deduction + cols.r10.deduction;
+  const overReturn = cols.r8.over + cols.r10.over;
 
   const type = BUSINESS_TYPES.find((x) => x.id === Number(businessType)) || BUSINESS_TYPES[4];
   // 簡易課税・2割特例・3割特例：税率ごとに（課税標準額に対する消費税額＋貸倒回収に係る消費税額−返還等対価に係る税額）×割合
@@ -268,6 +274,12 @@ export function computeTaxReturn({ journals, period, entityType, method = 'gener
     purchaseReturnTax,
     transitional,
     useTax,
+    useTaxByRate,
+    generalByRate: { r8: cols.r8, r10: cols.r10 },
+    basisByRate: { r8: basis8, r10: basis10 },
+    recoveredByRate: recovered,
+    returnsByRate: returns,
+    badDebtByRate: { r10: tax10(b.badDebt10), r8: tax8(b.badDebt8) },
     totalPurchaseTax,
     fullDeduction,
     allocated,

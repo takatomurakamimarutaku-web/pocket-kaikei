@@ -1,6 +1,9 @@
 // 消費税の申告計算：計算の方法を選び、申告書の主な欄（課税標準額〜納付税額）と方法ごとの比較を表示する
-import { h, put, field, segmented, showToast, errorBox, amountCell } from '../ui.js';
+// 「申告書」の表示では、第一表・第二表・付表を様式の欄番号どおりに並べる（弥生会計の消費税申告書の画面を参考にした）
+import { h, put, field, segmented, showToast, errorBox, amountCell, saveFile } from '../ui.js';
 import { computeTaxReturn, TAX_METHODS, BUSINESS_TYPES, ALLOCATIONS, consumptionTaxLines } from '../tax-return.js';
+import { taxReturnForms } from '../tax-forms.js';
+import { taxFormsCsv, csvFileName } from '../csv.js';
 import { validateJournal } from '../journal.js';
 import { parseYen, formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
@@ -9,7 +12,7 @@ import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { closedNotice } from './period-common.js';
 
-export async function render({ app, outlet }) {
+export async function render({ app, outlet, query = {} }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
   const entityType = settings.entityType;
   const saved = period.taxReturn || {};
@@ -19,7 +22,9 @@ export async function render({ app, outlet }) {
     allocation: saved.allocation || 'proportional',
     interimNational: saved.interimNational || 0,
     interimLocal: saved.interimLocal || 0,
+    baseSales: saved.baseSales ?? null,
   };
+  let view = query.view === 'form' ? 'form' : 'calc';
   const body = h('div');
   const typeWrap = h('div');
   const allocWrap = h('div');
@@ -46,6 +51,20 @@ export async function render({ app, outlet }) {
     });
   const interimN = yenInput('tr-interim-n', 'interimNational');
   const interimL = yenInput('tr-interim-l', 'interimLocal');
+  const baseSalesInput = h('input', {
+    id: 'tr-base-sales',
+    type: 'text',
+    inputmode: 'numeric',
+    class: 'amount-input',
+    value: state.baseSales === null ? '' : String(state.baseSales),
+    placeholder: '未入力',
+    oninput: (e) => {
+      const v = e.target.value.trim();
+      const p = parseYen(v || '0', { allowZero: true });
+      state.baseSales = v === '' ? null : p.ok ? p.value : NaN;
+      paint();
+    },
+  });
 
   const row = (label, value, { strong = false, note = '' } = {}) =>
     h('tr', { class: strong ? 'mt-strong' : '' }, h('th', { scope: 'row' }, label, note ? h('span', { class: 'muted small block', text: note }) : null), amountCell('td', value));
@@ -58,7 +77,15 @@ export async function render({ app, outlet }) {
       put(body, errorBox(['中間納付税額は0以上の整数で入力してください']));
       return;
     }
+    if (Number.isNaN(state.baseSales)) {
+      put(body, errorBox(['基準期間の課税売上高は0以上の整数で入力してください']));
+      return;
+    }
     const r = computeTaxReturn({ journals, period, entityType, ...state });
+    if (view === 'form') {
+      put(body, r.warnings.length ? h('div', { class: 'notice' }, h('ul', { class: 'plain-list' }, r.warnings.map((w) => h('li', { text: w })))) : null, formsView(taxReturnForms(r, { baseSales: state.baseSales })));
+      return;
+    }
     const pct = (x) => `${(Math.floor(x * 10000) / 100).toFixed(2)}%`; // 課税売上割合は小数点以下2桁まで表示（切り捨て）
     const purchaseNote = [
       `仕入10% ${formatYen(r.purchaseTax10)}・8% ${formatYen(r.purchaseTax8)}`,
@@ -159,6 +186,62 @@ export async function render({ app, outlet }) {
     );
   }
 
+  /** 申告書の様式（第一表・第二表・付表）の欄 */
+  function formsView(f) {
+    const v = (n) => (n === null || n === undefined ? h('td', { class: 'num muted', text: '' }) : amountCell('td', n));
+    const single = (t, extraHead) => [
+      h('h3', { class: 'tf-title', text: t.title }),
+      h(
+        'div',
+        { class: 'table-wrap' },
+        h(
+          'table',
+          { class: 'report taxform', 'aria-label': t.title },
+          h('thead', {}, h('tr', {}, h('th', { scope: 'col', class: 'tf-no', text: '欄' }), h('th', { scope: 'col', text: '項目' }), h('th', { scope: 'col', text: '金額' }))),
+          h(
+            'tbody',
+            {},
+            extraHead,
+            t.rows.map((x) => h('tr', { class: x.strong ? 'mt-strong' : '' }, h('td', { class: 'tf-no', text: x.no }), h('th', { scope: 'row' }, x.label, x.note ? h('span', { class: 'muted small block', text: x.note }) : null), v(x.value))),
+          ),
+        ),
+      ),
+    ];
+    const triple = (t) => [
+      h('h3', { class: 'tf-title', text: t.title }),
+      h(
+        'div',
+        { class: 'table-wrap' },
+        h(
+          'table',
+          { class: 'report taxform abc', 'aria-label': t.title },
+          h('thead', {}, h('tr', {}, ['欄', '項目', '6.24%（A）', '7.8%（B）', '合計（C）'].map((x, i) => h('th', { scope: 'col', class: i === 0 ? 'tf-no' : '', text: x })))),
+          h(
+            'tbody',
+            {},
+            t.rows.map((x) =>
+              h(
+                'tr',
+                { class: [x.strong ? 'mt-strong' : '', x.sub ? 'tf-sub' : ''].filter(Boolean).join(' ') },
+                h('td', { class: 'tf-no', text: x.no }),
+                h('th', { scope: 'row' }, x.label, x.note ? h('span', { class: 'muted small block', text: x.note }) : null),
+                x.text !== undefined ? [h('td', {}), h('td', {}), h('td', { class: 'num', text: x.text })] : [v(x.a), v(x.b), v(x.c)],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+    return [
+      single(f.first, f.first.flags.map((t) => h('tr', {}, h('td', { class: 'tf-no' }), h('th', { scope: 'row', colspan: 2, text: t })))),
+      single(f.second),
+      f.sheets.map(triple),
+      h('ul', { class: 'plain-list muted small' }, f.notes.map((t) => h('li', { text: t }))),
+      h('p', { class: 'muted small', text: '空欄は0円または対応していない欄です。e-Tax・確定申告書等作成コーナーへの入力や、税理士への確認資料として使ってください。' }),
+      h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', text: '申告書の欄をCSVで書き出す', onclick: () => saveFile(new Blob([taxFormsCsv(f)], { type: 'text/csv' }), csvFileName('tax-return-forms')) })),
+    ];
+  }
+
   function journalSection(r) {
     if (period.closed) return null;
     const done = journals.filter((j) => j.source === 'consumption_tax');
@@ -200,7 +283,7 @@ export async function render({ app, outlet }) {
   }
 
   async function saveSettings() {
-    if (period.closed || !Number.isFinite(state.interimNational) || !Number.isFinite(state.interimLocal)) return;
+    if (period.closed || !Number.isFinite(state.interimNational) || !Number.isFinite(state.interimLocal) || Number.isNaN(state.baseSales)) return;
     await app.db.saveTaxReturnSettings(period.id, state);
   }
 
@@ -230,6 +313,23 @@ export async function render({ app, outlet }) {
       h('div', { class: 'field-row' }, field('中間納付（国税）', interimN), field('中間納付（地方）', interimL)),
       h('p', { class: 'muted small', text: '選んだ方法と中間納付税額はこの期間に保存します。' }),
     ),
+    h(
+      'div',
+      { class: 'no-print' },
+      segmented({
+        name: '表示',
+        options: [
+          { value: 'calc', label: '計算の内容' },
+          { value: 'form', label: '申告書の欄' },
+        ],
+        value: view,
+        onChange: (v) => {
+          view = v;
+          history.replaceState(history.state, '', v === 'form' ? '#/reports/tax-return?view=form' : '#/reports/tax-return');
+          paint();
+        },
+      }),
+    ),
     body,
     h(
       'div',
@@ -240,7 +340,7 @@ export async function render({ app, outlet }) {
       h('p', { text: '出典：国税庁 タックスアンサー No.6383・6391（割戻し計算）、No.6371（端数計算）、No.6359・6363（対価の返還等）、No.6367・6631（貸倒れ・貸倒回収）、No.6401・6405（按分・課税売上割合）、No.6505（簡易課税）、2割特例・3割特例とインボイス制度の見直しの案内（令和8年度改正）' }),
     ),
   );
-  put(typeWrap, field('事業区分', typeSelect));
+  put(typeWrap, field('事業区分', typeSelect), field('基準期間の課税売上高（申告書第一表⑯）', baseSalesInput, { hint: '前々年（法人は前々事業年度）の課税売上高（税抜）。空欄でも計算できます' }));
   put(
     allocWrap,
     field(
@@ -259,6 +359,6 @@ export async function render({ app, outlet }) {
     ),
   );
   typeSelect.addEventListener('change', () => saveSettings().catch(() => {}));
-  for (const el of [interimN, interimL]) el.addEventListener('change', () => saveSettings().catch(() => {}));
+  for (const el of [interimN, interimL, baseSalesInput]) el.addEventListener('change', () => saveSettings().catch(() => {}));
   paint();
 }

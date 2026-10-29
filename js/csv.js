@@ -164,3 +164,12 @@ export function taxMonthlyCsv({ months, rows, netTax, netTaxTotal }) {
   out.push(['差引', '消費税等（参考）', ...netTax, netTaxTotal]);
   return toCsv(out);
 }
+
+/** 消費税申告書の欄（表・欄・項目・金額。付表は6.24%・7.8%・合計） */
+export function taxFormsCsv(f) {
+  const out = [['表', '欄', '項目', '6.24%（A）', '7.8%（B）', '金額・合計（C）']];
+  const v = (n) => (n === null || n === undefined ? '' : n);
+  for (const t of [f.first, f.second]) for (const r of t.rows) out.push([t.title, r.no, r.label, '', '', v(r.value)]);
+  for (const t of f.sheets) for (const r of t.rows) out.push([t.title, r.no, r.label, v(r.a), v(r.b), r.text ?? v(r.c)]);
+  return toCsv(out);
+}
