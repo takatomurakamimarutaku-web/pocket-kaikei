@@ -139,7 +139,8 @@ export function taxChecks({ journals, accounts, from = '', to = '9999-12-31', in
       // 売上の返品・値引き・貸倒れ（借方がプラス）は費用の科目（売上値引・貸倒損失など）で使うことがある
       if (cat.kind === 'sales' && cat.plus === 'credit' && expense) return push('expense_sales');
       if (cat.kind !== 'none' && !pl && !TAXABLE_BS_GROUPS.includes(account.group)) return push('bs_taxed');
-      if (cat.kind === 'purchase' && cat.plus === 'debit' && !cat.taxOnly && cat.role !== 'exempt' && expense && line.side === 'credit') return push('purchase_credit');
+      // 家事按分の振替（貸方で課税仕入れから除く）は確認不要
+      if (cat.kind === 'purchase' && cat.plus === 'debit' && !cat.taxOnly && cat.role !== 'exempt' && expense && line.side === 'credit' && j.source !== 'household') return push('purchase_credit');
       if (cat.kind === 'sales' && cat.plus === 'credit' && income && line.side === 'debit') return push('sales_debit');
       if (includeDefaultDiff && account.defaultTaxCategory && line.taxCategory !== account.defaultTaxCategory) push('default_diff');
     });

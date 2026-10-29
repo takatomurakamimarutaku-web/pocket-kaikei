@@ -11,6 +11,7 @@ import * as homeView from './views/home.js';
 import * as journalsView from './views/journals.js';
 import * as journalFormView from './views/journal-form.js';
 import * as journalHistoryView from './views/journal-history.js';
+import * as templatesView from './views/templates.js';
 import * as entryView from './views/entry.js';
 import * as quickEntryView from './views/quick-entry.js';
 import * as cashbookView from './views/cashbook.js';
@@ -57,6 +58,9 @@ const routes = [
   { path: '/import/bank/rules', view: bankRulesView, title: '振り分けルール', tab: 'entry', back: '#/import/bank' },
   { path: '/journal/new', view: journalFormView, title: '振替伝票の入力', tab: 'entry', back: '#/entry' },
   { path: '/journal/:id/edit', view: journalFormView, title: '仕訳の編集', tab: 'journals', back: '#/journals' },
+  { path: '/templates', view: templatesView, title: '定型仕訳', tab: 'entry', back: '#/entry' },
+  { path: '/template/new', view: journalFormView, kind: 'template', title: '定型仕訳の登録', tab: 'entry', back: '#/templates' },
+  { path: '/template/:id', view: journalFormView, kind: 'template', title: '定型仕訳の編集', tab: 'entry', back: '#/templates' },
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
   { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports', print: true },

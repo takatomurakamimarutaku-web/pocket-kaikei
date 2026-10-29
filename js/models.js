@@ -74,3 +74,11 @@ export function createAsset(fields = {}, now = new Date()) {
     ...fields,
   };
 }
+
+/**
+ * 定型仕訳（よく使う仕訳のひな形）
+ * repeatDay：毎月自動で作る日（1〜31。31は月末）。null は手で呼び出すだけ
+ */
+export function createTemplate(fields = {}, now = new Date()) {
+  return { id: newId(), name: '', lines: [], repeatDay: null, ...stamp(now), ...fields };
+}

@@ -42,6 +42,7 @@ export async function render({ app, outlet, params }) {
         acc.group = e.target.value;
         acc.normalSide = normalSideFor(acc.group);
         paintSide();
+        paintRatio();
       },
     },
     // 製造原価の区分は「製造原価を使う」にしたときか、その区分の科目を編集するときだけ出す
@@ -49,6 +50,11 @@ export async function render({ app, outlet, params }) {
   );
   const tax = taxSelect(acc.defaultTaxCategory, { split: Boolean(settings.taxUseSplit), id: 'a-tax', onchange: (e) => (acc.defaultTaxCategory = e.target.value) });
   const active = h('input', { type: 'checkbox', checked: acc.active, disabled: Boolean(acc.role) });
+  // 家事按分の事業割合（個人の経費だけ。減価償却費は固定資産台帳で按分する）
+  const ratio = h('input', { id: 'a-ratio', type: 'text', inputmode: 'numeric', maxlength: 2, value: acc.businessRatio ?? '', placeholder: '按分しない' });
+  const ratioWrap = h('div', {}, field('事業割合（家事按分・%）', ratio, { name: 'businessRatio', hint: '事業と家事の両方に使う経費だけ入れます。決算・繰越の「家事按分」で、家事の分を事業主貸へ振り替えます' }));
+  const paintRatio = () => (ratioWrap.hidden = settings.entityType !== 'individual' || acc.group !== 'sga' || acc.hint === 'depreciation');
+  paintRatio();
   paintSide();
 
   const form = h(
@@ -60,6 +66,7 @@ export async function render({ app, outlet, params }) {
     field('区分', group, { name: 'group' }),
     h('div', { hidden: locked }, field('残高の側', sideWrap, { name: 'normalSide', hint: '減価償却累計額のような評価勘定は、区分と逆の側を選びます' })),
     field('税区分の初期値', tax, { name: 'defaultTaxCategory', hint: '仕訳で科目を選んだときに入る税区分です' }),
+    ratioWrap,
     h('label', { class: 'check' }, active, '入力時の選択肢に表示する（オフで無効）'),
     h('p', { class: 'field-error', 'data-field': 'active' }),
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '追加する' }),
@@ -132,7 +139,8 @@ export async function render({ app, outlet, params }) {
   if (original) paintSubs();
 
   async function save() {
-    const record = { ...acc, code: code.value.trim(), name: name.value.trim(), active: active.checked, sortOrder: Number(code.value) || acc.sortOrder };
+    const ratioText = ratio.value.trim().replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+    const record = { ...acc, code: code.value.trim(), name: name.value.trim(), active: active.checked, sortOrder: Number(code.value) || acc.sortOrder, businessRatio: ratioWrap.hidden || ratioText === '' ? null : Number(ratioText) };
     if (!GROUP_BY_ID[record.group]) return;
     try {
       await app.db.saveAccount(record);

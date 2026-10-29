@@ -19,6 +19,7 @@ export async function render({ app, outlet }) {
       'ul',
       { class: 'menu-group' },
       row('#/journal/new', '振替伝票で入力', '借方・貸方を自由に。複合仕訳もこちら', 'journal', 'report'),
+      row('#/templates', '定型仕訳・毎月の仕訳', 'よく使う仕訳の呼び出し。家賃・給与などを毎月まとめて登録', 'list', 'report'),
       row('#/cashbook', '現金出納帳・預金出納帳', '口座ごとの入金・出金と残高', 'cashbook', 'report'),
       row('#/import/bank', '銀行明細の取り込み', 'ネットバンキングのCSVから仕訳をまとめて作る', 'bank', 'data'),
     ),

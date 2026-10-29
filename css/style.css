@@ -752,3 +752,14 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .ebook-tag { display: inline-block; margin-right: 6px; padding: 0 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary-strong); }
 .ebook-template { white-space: pre-wrap; word-break: break-word; margin: 0 0 var(--sp-3); padding: 12px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--card-border); font-family: inherit; font-size: 0.82rem; line-height: 1.7; max-height: 420px; overflow: auto; }
 @media print { .ebook-template { max-height: none; overflow: visible; } }
+.report.household td.ratio-cell { white-space: nowrap; text-align: right; }
+.report.household input.ratio-input { width: 3.4em; min-width: 0; padding: 6px 8px; margin-right: 2px; text-align: right; font-variant-numeric: tabular-nums; }
+.report.household th[scope="row"] { white-space: nowrap; }
+.ratio-input.is-invalid { border-color: var(--danger); outline-color: var(--danger); }
+.recurring-list, .template-list { list-style: none; margin: 0 0 var(--sp-3); padding: 0; display: grid; gap: 8px; }
+.recurring-item { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid var(--card-border); }
+.recurring-item .check { flex: 1 1 100%; margin: 0; }
+.recurring-name { font-weight: 700; }
+.template-item { margin: 0; }
+.template-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.template-item p { margin: 4px 0 8px; }
