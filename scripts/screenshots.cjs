@@ -1,0 +1,131 @@
+// スマホ幅（390×844）で主な画面を操作してスクリーンショットを撮る（開発時のみ）
+//   python3 -m http.server 8123 & node scripts/screenshots.cjs [entityType]
+const { chromium } = require('playwright');
+const { mkdirSync } = require('node:fs');
+const { join } = require('node:path');
+
+const BASE = process.env.BASE_URL || 'http://localhost:8123/';
+const entity = process.argv[2] || 'individual';
+const OUT = join(__dirname, '..', 'shots');
+mkdirSync(OUT, { recursive: true });
+
+(async () => {
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block', locale: 'ja-JP' });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`));
+  const shot = async (name, full = false) => {
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: join(OUT, `${entity}-${name}.png`), fullPage: full });
+  };
+  const go = async (hash) => {
+    await page.evaluate((h) => (location.hash = h), hash);
+    await page.waitForTimeout(400);
+  };
+  const pick = async (index, side, name) => {
+    await page.locator('.jrow').nth(index).locator(`.jside-${side} .acc-btn`).click();
+    await page.fill('.sheet input[type=search]', name);
+    await page.locator('.picker-item', { hasText: name }).first().click();
+  };
+  const amount = (index, side, v) => page.locator('.jrow').nth(index).locator(`.jside-${side} .amount-input`).fill(String(v));
+
+  await page.goto(BASE);
+  await page.waitForSelector('form.setup');
+  await shot('01-setup');
+  await page.fill('#f-name', entity === 'individual' ? 'むらかみ商店' : '株式会社ポケット');
+  if (entity === 'corporation') {
+    await page.getByRole('radio', { name: '法人' }).click();
+    await page.fill('#f-start', '2026-04-01');
+    await page.dispatchEvent('#f-start', 'change');
+    await page.getByRole('radio', { name: '課税事業者' }).click();
+  }
+  await page.click('button[type=submit]');
+  await page.waitForSelector('.stat-grid');
+
+  // 期首残高
+  await go('#/opening');
+  const ob = entity === 'individual'
+    ? [['現金', 30000], ['普通預金', 500000], ['売掛金', 110000], ['買掛金', 50000]]
+    : [['現金', 30000], ['普通預金', 2000000], ['資本金', 1500000], ['繰越利益剰余金', 530000]];
+  for (const [n, v] of ob) await page.getByLabel(n, { exact: true }).fill(String(v));
+  await page.getByRole('button', { name: '保存する' }).click();
+  await shot('02-opening', true);
+
+  // 仕訳の入力（単一・複合）
+  const entries = [
+    ['2026-04-05', [[['売掛金', 220000]], [['売上高', 220000]]], '4月分 売上'],
+    ['2026-04-10', [[['消耗品費', 3300], ['通信費', 5500]], [['現金', 8800]]], '文具・携帯代'],
+    ['2026-04-25', [[['地代家賃', 88000]], [['普通預金', 88000]]], '事務所家賃'],
+    ['2026-04-28', [[['普通預金', 110000]], [['売掛金', 110000]]], '入金'],
+  ];
+  for (const [date, [debits, credits], memo] of entries) {
+    await go('#/journal/new');
+    await page.fill('#j-date', date);
+    await page.dispatchEvent('#j-date', 'change');
+    const n = Math.max(debits.length, credits.length);
+    for (let i = 1; i < n; i++) await page.getByRole('button', { name: '＋ 行を追加（複合仕訳）' }).click();
+    for (let i = 0; i < n; i++) {
+      if (debits[i]) {
+        await pick(i, 'debit', debits[i][0]);
+        await amount(i, 'debit', debits[i][1]);
+      }
+      if (credits[i]) {
+        await pick(i, 'credit', credits[i][0]);
+        await amount(i, 'credit', credits[i][1]);
+      }
+    }
+    await page.locator('.jrow').nth(0).getByLabel('1行目の摘要').fill(memo);
+    if (memo === '文具・携帯代') await shot('03-entry-compound', true);
+    await page.getByRole('button', { name: '登録する' }).click();
+    await page.waitForTimeout(300);
+  }
+  // 貸借不一致では登録できない
+  await go('#/journal/new');
+  await pick(0, 'debit', '旅費交通費');
+  await amount(0, 'debit', 1000);
+  await pick(0, 'credit', '現金');
+  await amount(0, 'credit', 900);
+  const disabled = await page.getByRole('button', { name: '登録する' }).isDisabled();
+  if (!disabled) errors.push('貸借不一致なのに登録ボタンが押せる');
+  await shot('04-entry-unbalanced');
+  await page.locator('.jrow').nth(0).locator('.jside-credit .amount-input').fill('1000');
+  // 摘要の候補
+  await page.getByLabel('1行目の摘要').fill('事務');
+  await shot('05-entry-suggest');
+  await page.getByLabel('1行目の摘要').fill('電車代');
+  await page.getByRole('button', { name: '登録する' }).click();
+  await page.waitForTimeout(300);
+
+  await go('#/journals?month=2026-04');
+  await shot('06-journals', true);
+  await go('#/reports');
+  await shot('07-reports');
+  await go('#/reports/trial');
+  await shot('08-trial', true);
+  await go(`#/reports/ledger?account=${await page.evaluate(async () => '')}`);
+  await go('#/reports/ledger');
+  await page.locator('.ledger-pick select').first().selectOption({ label: '100 現金' });
+  await shot('09-ledger', true);
+  await go('#/reports/pl');
+  await shot('10-pl', true);
+  await go('#/reports/bs');
+  await shot('11-bs', true);
+  const bsText = await page.locator('.check-line').innerText();
+  if (!bsText.includes('＝')) errors.push(`BSが一致しない: ${bsText}`);
+  await go('#/reports/tax');
+  await shot('12-tax', true);
+  await go('#/accounts');
+  await shot('13-accounts');
+  await go('#/home');
+  await shot('14-home', true);
+  await go('#/backup');
+  await shot('15-backup');
+  await go('#/more');
+  await shot('16-more');
+
+  console.log(errors.length ? `NG\n${errors.join('\n')}` : 'OK: エラーなし');
+  await browser.close();
+  process.exit(errors.length ? 1 : 0);
+})();
