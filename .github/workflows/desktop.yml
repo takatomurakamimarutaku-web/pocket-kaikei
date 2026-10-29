@@ -1,0 +1,54 @@
+# Windows 版（Tauri の exe）をビルドする
+# - PR：ビルドして、インストーラーを Actions の成果物（Artifacts）に置く（動作確認用）
+# - v で始まるタグを push：GitHub Releases に下書きとして置く。中身を確かめてから公開する
+name: desktop
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop.yml'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - name: アプリのファイルとアイコンを用意
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run prepare-web
+          npm run icon
+      - name: ビルド（タグのときは Releases に下書きを作る）
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Pocket会計 {0}', github.ref_name) || '' }}
+          releaseBody: |
+            Windows 10/11 用のインストーラーです。下の「Assets」から `-setup.exe` をダウンロードして実行してください。
+            署名していないため、初回に「WindowsによってPCが保護されました」と出ます。「詳細情報」→「実行」で進めます。
+            データはこのPCの中だけに保存されます。スマホやブラウザ版とはバックアップファイル（JSON）で受け渡してください。
+          releaseDraft: true
+      - name: インストーラーを成果物に置く
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocket-kaikei-windows
+          path: desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "画面からは Tauri の機能を呼ばない（保存・印刷はブラウザと同じ仕組みで動く）",
+  "windows": ["main"],
+  "permissions": []
+}
