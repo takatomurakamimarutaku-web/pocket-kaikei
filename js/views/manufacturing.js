@@ -6,7 +6,7 @@ import { monthlyManufacturing, isAllZero } from '../monthly.js';
 import { manufacturingCsv, monthlyCsv, csvFileName } from '../csv.js';
 import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
-import { zeroToggle } from './report-common.js';
+import { zeroToggle, unitPicker } from './report-common.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, journals } = await app.load();
@@ -28,6 +28,7 @@ export async function render({ app, outlet, query }) {
   let monthly = null;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: '/reports/manufacturing', onChange: () => paint() });
   const monthLabel = (m) => `${Number(m.slice(5))}月`;
 
   function totalTable() {
@@ -88,6 +89,7 @@ export async function render({ app, outlet, query }) {
         onChange: (v) => ((mode = v), paint()),
       }),
     ),
+    unit.el,
     h('div', { class: 'option-bar no-print' }, zero.el),
     body,
     h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv })),

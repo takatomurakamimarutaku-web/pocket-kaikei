@@ -5,10 +5,10 @@ import { buildStatements, closingRows, manufacturingReport } from '../statements
 import { sgaBreakdown, condensedIncomeItems, equityStatement, companyNotes, DEFAULT_NOTES } from '../financial.js';
 import { openingDiff } from '../ledger.js';
 import { formatPeriod } from '../period.js';
-import { formatYen } from '../money.js';
+import { formatYen, unitCaption } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
-import { statementRows, openingWarning } from './report-common.js';
+import { statementRows, openingWarning, unitPicker } from './report-common.js';
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
@@ -129,20 +129,34 @@ export async function render({ app, outlet }) {
     }
   }
 
+  // 金額の表は単位を切り替えるたびに組み直す（個別注記表は入力中の内容を残すため組み直さない）
+  const unit = unitPicker({ key: '/reports/financial', onChange: () => paintAmounts() });
   const parts = [
-    ['bs', '貸借対照表', `${end} 現在`, bsTable()],
-    ['pl', '損益計算書', formatPeriod(period), table('損益計算書', statementRows(condensedIncomeItems(pl)))],
-    ['sga', '販売費及び一般管理費内訳書', formatPeriod(period), table('販売費及び一般管理費内訳書', [...sga.lines.filter((l) => l.amount).map((l) => line(l.account.name, l.amount)), line('合計', sga.total, 'st-subtotal strong')])],
-    mfg.used ? ['mfg', '製造原価報告書', formatPeriod(period), table('製造原価報告書', statementRows(mfg.items))] : null,
-    ['equity', '株主資本等変動計算書', formatPeriod(period), [equityTable(), h('p', { class: 'muted small no-print', text: '「その他の変動」は、期中の仕訳による純資産の科目の増減です（剰余金の配当・利益準備金の積立・増資など）。' })]],
+    ['bs', '貸借対照表', `${end} 現在`, () => bsTable()],
+    ['pl', '損益計算書', formatPeriod(period), () => table('損益計算書', statementRows(condensedIncomeItems(pl)))],
+    ['sga', '販売費及び一般管理費内訳書', formatPeriod(period), () => table('販売費及び一般管理費内訳書', [...sga.lines.filter((l) => l.amount).map((l) => line(l.account.name, l.amount)), line('合計', sga.total, 'st-subtotal strong')])],
+    mfg.used ? ['mfg', '製造原価報告書', formatPeriod(period), () => table('製造原価報告書', statementRows(mfg.items))] : null,
+    ['equity', '株主資本等変動計算書', formatPeriod(period), () => [equityTable(), h('p', { class: 'muted small no-print', text: '「その他の変動」は、期中の仕訳による純資産の科目の増減です（剰余金の配当・利益準備金の積立・増資など）。' })]],
     ['notes', '個別注記表', formatPeriod(period), [notesBody, editor]],
   ].filter(Boolean);
-  const sections = parts.map(([id, title, sub, content]) => h('section', { class: 'fs-section', id: `fs-${id}` }, h('h3', { class: 'fs-title' }, title, h('span', { class: 'fs-sub', text: `${settings.businessName}　${sub}　（単位：円）` })), content));
+  const subs = parts.map(([id, , sub]) => h('span', { class: 'fs-sub', text: `${settings.businessName}　${sub}${id === 'notes' ? '' : '　（単位：円）'}` }));
+  const bodies = parts.map(([, , , content]) => (typeof content === 'function' ? h('div') : content));
+  const sections = parts.map(([id, title], i) => h('section', { class: 'fs-section', id: `fs-${id}` }, h('h3', { class: 'fs-title' }, title, subs[i]), bodies[i]));
+  function paintAmounts() {
+    const caption = unitCaption(unit.value());
+    parts.forEach(([id, , sub, content], i) => {
+      if (typeof content !== 'function') return;
+      subs[i].textContent = `${settings.businessName}　${sub}　${caption}`;
+      put(bodies[i], content());
+    });
+  }
+  paintAmounts();
 
   put(
     outlet,
     h('p', { class: 'muted small', text: `${settings.businessName}　${formatPeriod(period)}` }),
     openingWarning(openingDiff(period, accounts)),
+    unit.el,
     h('div', { class: 'chip-row no-print' }, parts.map(([, title], i) => h('button', { type: 'button', class: 'chip', text: title.replace('販売費及び一般管理費内訳書', '販管費内訳'), onclick: () => sections[i].scrollIntoView({ behavior: 'smooth', block: 'start' }) }))),
     sections,
     h(

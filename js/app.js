@@ -3,7 +3,8 @@ import { openDB, openDeviceStore } from './db.js';
 import { needsLock } from './lock.js';
 import { lockScreen, isLocked } from './views/lock-screen.js';
 import { createRouter } from './router.js';
-import { h, showToast } from './ui.js';
+import { h, showToast, setAmountUnit, getAmountUnit } from './ui.js';
+import { YEN_UNIT, unitCaption } from './money.js';
 import { friendlyError } from './errors.js';
 import { APP_VERSION } from './version.js';
 import { isDesktopApp } from './install.js';
@@ -280,6 +281,8 @@ async function start() {
       current = route;
       app.leaveGuard = null;
       app.printDoc = null;
+      // 金額の表示単位は画面ごと。集計の帳票は画面を組むときに選んだ単位を設定し直す（report-common.js の unitPicker）
+      setAmountUnit(YEN_UNIT);
       app.setTitle(route.title);
       backBtn.hidden = !route.back;
       printBtn.hidden = !route.print;
@@ -337,7 +340,8 @@ async function start() {
       // 印刷条件を選べる帳票（仕訳帳・元帳・試算表・決算書など）
       if (custom?.build) return openPrintPreview(custom, { fileName });
       // そのほか：画面の表から作る（用紙の向きを選べる）
-      const doc = { title: route.title, ...head, orientation: 'auto', ...(custom?.blocks ? {} : captureBlocks(outlet)), ...custom };
+      // 画面の表から作るときは、画面で選んだ金額の単位を右上に書く（金額は画面の表示のまま）
+      const doc = { title: route.title, ...head, unit: unitCaption(getAmountUnit()), orientation: 'auto', ...(custom?.blocks ? {} : captureBlocks(outlet)), ...custom };
       // 申告書の様式（青色申告決算書・収支内訳書）：欄を3列のマス目に、貸借対照表を勘定式に組み替える
       if (route.form) doc.blocks = formLayoutBlocks(doc.blocks);
       if (!doc.blocks.length) return showToast('印刷する内容がありません');

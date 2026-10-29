@@ -5,9 +5,9 @@ import { hideZeroRows, formatPermille } from '../compare.js';
 import { barLineChart } from '../chart.js';
 import { compareAccounts, groupLabel } from '../accounts.js';
 import { formatPeriod, monthsInPeriod } from '../period.js';
-import { formatYen, parseYen } from '../money.js';
+import { formatYen, formatAmount, parseYen } from '../money.js';
 import { errorText } from '../errors.js';
-import { monthRangePicker, zeroToggle, loadPrevious } from './report-common.js';
+import { monthRangePicker, zeroToggle, loadPrevious, unitPicker } from './report-common.js';
 
 const monthLabel = (m) => `${Number(m.slice(5))}月`;
 const shown = (v) => (v ? formatYen(v) : '');
@@ -27,6 +27,7 @@ async function renderReport({ app, outlet, query }) {
   let showZero = false;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: '/reports/budget', onChange: () => paint() });
   const picker = monthRangePicker({ period, query, path: '/reports/budget', onChange: () => paint() });
   const series = monthlySales({ accounts, period, journals, budgets });
   const chart = barLineChart({
@@ -74,7 +75,7 @@ async function renderReport({ app, outlet, query }) {
                 h('th', { text: r.label }),
                 r.budget == null ? dash() : amountCell('td', r.budget),
                 amountCell('td', r.actual),
-                r.diff == null ? dash() : h('td', { class: `num diff ${r.diff < 0 ? 'neg' : ''}` }, h('span', { text: formatYen(r.diff) }), h('span', { class: 'rate', text: r.achievement == null ? '—' : formatPermille(r.achievement) })),
+                r.diff == null ? dash() : h('td', { class: `num diff ${r.diff < 0 ? 'neg' : ''}` }, h('span', { text: formatAmount(r.diff, unit.value()) }), h('span', { class: 'rate', text: r.achievement == null ? '—' : formatPermille(r.achievement) })),
               );
             }),
           ),
@@ -87,6 +88,7 @@ async function renderReport({ app, outlet, query }) {
     head,
     chart,
     picker.el,
+    unit.el,
     zero.el,
     body,
     h('p', { class: 'muted small', text: '差異＝実績−予算、達成率＝実績÷予算。費用は達成率が100%を超えると予算オーバーです。' }),

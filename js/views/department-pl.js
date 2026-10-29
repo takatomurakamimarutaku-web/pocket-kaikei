@@ -7,7 +7,7 @@ import { formatPermille } from '../compare.js';
 import { monthlyCsv, csvFileName } from '../csv.js';
 import { formatPeriod } from '../period.js';
 import { isWhite } from '../white-return.js';
-import { monthRangePicker, zeroToggle } from './report-common.js';
+import { monthRangePicker, zeroToggle, unitPicker } from './report-common.js';
 
 const ALLOCATION_OPTIONS = [
   { value: 'none', label: '配賦しない' },
@@ -36,6 +36,7 @@ export async function render({ app, outlet, query }) {
   let result = null;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: '/reports/departments', onChange: () => paint() });
   const picker = monthRangePicker({ period, query, path: '/reports/departments', extra: () => ({ alloc: allocation }), onChange: () => paint() });
 
   // 利益率の行：法人は売上総利益率・営業利益率、個人は売上総利益率（差引金額の率）・所得率
@@ -126,6 +127,7 @@ export async function render({ app, outlet, query }) {
       picker.el,
       h('div', { class: 'field-label small', text: '共通の売上・経費の配賦' }),
       segmented({ name: '共通の配賦', options: ALLOCATION_OPTIONS, value: allocation, onChange: (v) => ((allocation = v), paint()) }),
+      unit.el,
       zero.el,
     ),
     body,

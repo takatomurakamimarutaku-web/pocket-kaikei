@@ -1265,3 +1265,13 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 }
 @page pp-portrait { size: A4 portrait; margin: 0; }
 @page pp-landscape { size: A4 landscape; margin: 0; }
+
+/* 金額の単位（円・千円・百万円）の切替 */
+.unit-bar { margin: 0 0 var(--sp-3); }
+.unit-row { display: flex; gap: 8px; align-items: center; }
+.unit-row .segmented { flex: 0 1 auto; }
+.unit-row .segmented .seg { min-height: 30px; padding: 0 10px; }
+.unit-label { color: var(--muted); white-space: nowrap; }
+.unit-round { flex: 0 0 auto; width: auto; min-height: 36px; }
+.unit-note { display: block; margin-top: 4px; }
+.unit-note:empty { display: none; }

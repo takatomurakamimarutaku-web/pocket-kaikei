@@ -4,9 +4,9 @@ import { buildStatements, balanceSheet } from '../statements.js';
 import { openingDiff } from '../ledger.js';
 import { compareStatement, hideZeroRows, openingRows, formatPermille } from '../compare.js';
 import { formatPeriod } from '../period.js';
-import { formatYen } from '../money.js';
+import { formatYen, formatAmount, normalizeUnit } from '../money.js';
 import { isWhite } from '../white-return.js';
-import { zeroToggle, openingWarning, statementRows, loadPrevious } from './report-common.js';
+import { zeroToggle, openingWarning, statementRows, loadPrevious, unitPicker, unitPrintOptions } from './report-common.js';
 import { statementDoc, balanceSheetAccountDoc, docHead } from '../print-forms.js';
 import { warekiText } from '../print-layout.js';
 
@@ -28,6 +28,7 @@ export async function render({ app, outlet, route, query }) {
   let compare = query.compare === '1';
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
+  const unit = unitPicker({ key: route.path, onChange: () => paint() });
   const compareInput = h('input', {
     type: 'checkbox',
     checked: compare,
@@ -64,7 +65,7 @@ export async function render({ app, outlet, route, query }) {
               h('th', { text: r.label }),
               amountCell('td', r.current),
               r.previous == null ? dash() : amountCell('td', r.previous),
-              r.diff == null ? dash() : h('td', { class: `num diff ${r.diff < 0 ? 'neg' : ''}` }, h('span', { text: formatYen(r.diff) }), h('span', { class: 'rate', text: formatPermille(r.rate) })),
+              r.diff == null ? dash() : h('td', { class: `num diff ${r.diff < 0 ? 'neg' : ''}` }, h('span', { text: formatAmount(r.diff, unit.value()) }), h('span', { class: 'rate', text: formatPermille(r.rate) })),
             );
           }),
         ),
@@ -83,11 +84,12 @@ export async function render({ app, outlet, route, query }) {
       options: [
         isPl ? null : { key: 'format', label: '様式', type: 'select', choices: [['account', '勘定式（左右に並べる）'], ['report', '報告式（上下に並べる）']], value: 'account' },
         { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
+        ...unitPrintOptions(unit.value()),
       ].filter(Boolean),
       build: (v) => {
-        if (isPl) return statementDoc([{ caption: '', items: pl.items }], { head, title: route.title, showZero: v.zero });
-        if (v.format === 'account') return balanceSheetAccountDoc(bs, { head, title: route.title, showZero: v.zero, rightLabel: right });
-        return statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero: v.zero });
+        if (isPl) return statementDoc([{ caption: '', items: pl.items }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v) });
+        if (v.format === 'account') return balanceSheetAccountDoc(bs, { head, title: route.title, showZero: v.zero, rightLabel: right, unit: normalizeUnit(v) });
+        return statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v) });
       },
     };
   };
@@ -126,6 +128,7 @@ export async function render({ app, outlet, route, query }) {
     outlet,
     h('p', { class: 'muted small', text: `${settings.businessName}　${isPl ? formatPeriod(period) : `${slash(period.endDate)} 現在`}` }),
     openingWarning(individual ? 0 : openingDiff(period, accounts)),
+    unit.el,
     h('div', { class: 'toggles' }, zero.el, compareToggle),
     body,
     h(
