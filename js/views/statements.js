@@ -1,10 +1,10 @@
 // 損益計算書・貸借対照表（個人/法人で様式を切り替える）
-import { h, put, amountCell } from '../ui.js';
+import { h, put } from '../ui.js';
 import { buildStatements } from '../statements.js';
 import { openingDiff } from '../ledger.js';
 import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
-import { zeroToggle, openingWarning } from './report-common.js';
+import { zeroToggle, openingWarning, statementRows } from './report-common.js';
 
 export async function render({ app, outlet, route }) {
   const { settings, period, accounts, journals } = await app.load();
@@ -14,26 +14,7 @@ export async function render({ app, outlet, route }) {
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
 
-  function itemRows(items) {
-    const out = [];
-    for (const it of items) {
-      if (it.type === 'subtotal') {
-        if (it.heading && !showZero && !it.amount) continue;
-        out.push(h('tr', { class: `st-subtotal ${it.strong ? 'strong' : ''} ${it.heading ? 'heading' : ''}` }, h('th', { text: it.label }), amountCell('td', it.amount)));
-        continue;
-      }
-      const lines = it.lines.filter((l) => showZero || l.amount);
-      // 0円の科目を隠すときは、科目も合計も無い区分ごと隠す
-      if (!showZero && !lines.length && !it.total) continue;
-      out.push(h('tr', { class: `st-group ${it.level === 2 ? 'level2' : ''}` }, h('th', { colspan: 2, text: it.label })));
-      for (const l of lines) {
-        out.push(h('tr', { class: 'st-line' }, h('th', { text: l.account.name }), amountCell('td', l.amount)));
-        if (l.note) out.push(h('tr', { class: 'st-note' }, h('th', { text: `（${l.note.label}）` }), amountCell('td', l.note.amount)));
-      }
-      out.push(h('tr', { class: 'st-total' }, h('th', { text: `${it.label} 計` }), amountCell('td', it.total)));
-    }
-    return out;
-  }
+  const itemRows = (items) => statementRows(items, showZero);
   const table = (caption, items) => h('div', { class: 'table-wrap' }, h('table', { class: 'report statement' }, h('caption', { text: caption }), h('tbody', {}, itemRows(items))));
 
   function paint() {

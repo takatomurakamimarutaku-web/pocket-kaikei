@@ -11,6 +11,7 @@ const GROUPS = [
     ['#/cashbook', '現金出納帳・預金出納帳', '口座ごとの入金・出金と残高', 'cashbook'],
   ]],
   ['決算書・分析', 'close', [
+    ['#/reports/financial', '決算書（計算書類）', '貸借対照表・損益計算書・販管費内訳・株主資本等変動計算書・個別注記表を1冊に', 'form', 'corporation'],
     ['#/reports/pl', '損益計算書', '売上から利益（所得）まで', 'pl'],
     ['#/reports/bs', '貸借対照表', '期末の資産・負債・純資産', 'bs'],
     ['#/reports/manufacturing', '製造原価報告書', '材料費・労務費・製造経費から当期製品製造原価まで。月次推移も', 'factory', 'manufacturing'],

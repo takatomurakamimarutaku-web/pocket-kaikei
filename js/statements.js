@@ -20,7 +20,7 @@ function collect(rows, groupIds) {
   return { lines, total: lines.reduce((s, l) => s + l.amount, 0) };
 }
 
-const section = (label, groupIds, rows, opts = {}) => ({ type: 'group', label, ...collect(rows, groupIds), ...opts });
+const section = (label, groupIds, rows, opts = {}) => ({ type: 'group', label, groups: groupIds, ...collect(rows, groupIds), ...opts });
 const subtotal = (label, amount, opts = {}) => ({ type: 'subtotal', label, amount, ...opts });
 
 /**

@@ -25,6 +25,7 @@ import * as taxView from './views/tax.js';
 import * as taxReturnView from './views/tax-return.js';
 import * as blueReturnView from './views/blue-return.js';
 import * as breakdownView from './views/breakdown.js';
+import * as financialView from './views/financial.js';
 import * as moreView from './views/more.js';
 import * as settingsView from './views/settings.js';
 import * as accountsView from './views/accounts.js';
@@ -60,6 +61,7 @@ const routes = [
   { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/financial', view: financialView, title: '決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/breakdown', view: breakdownView, title: '勘定科目内訳明細書', tab: 'reports', back: '#/reports', print: true },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },

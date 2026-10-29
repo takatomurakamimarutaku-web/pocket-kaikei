@@ -2,6 +2,7 @@
 import { validateRule } from './bank-import.js';
 import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
+import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
@@ -387,6 +388,22 @@ export class Repository {
       if (errors.length) throw new ValidationError([...new Set(errors)]);
       const { method, businessType, interimNational, interimLocal, allocation = 'proportional', baseSales = null } = taxReturn;
       const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal, baseSales }, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 決算書（法人）の個別注記表の入力を期間に保存する（締めた期間も、注記だけは直せる） */
+  saveStatementNotes(periodId, notes) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const value = { ...DEFAULT_NOTES, ...notes };
+      const errors = validateNotes(value);
+      if (errors.length) throw new ValidationError(errors);
+      const picked = Object.fromEntries(Object.keys(DEFAULT_NOTES).map((k) => [k, value[k]]));
+      const next = { ...period, statementNotes: picked, updatedAt: now() };
       store.put(next);
       return next;
     });

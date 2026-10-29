@@ -1,5 +1,5 @@
 // 帳票の共通部品（月範囲の選択・0の科目を隠す切替・期首残高の警告）
-import { h, put } from '../ui.js';
+import { h, put, amountCell } from '../ui.js';
 import { monthsInPeriod, monthRange } from '../period.js';
 import { formatYen } from '../money.js';
 
@@ -53,4 +53,30 @@ export function openingWarning(diff) {
     h('span', { text: `期首残高が一致していません（差額 ${formatYen(Math.abs(diff))}円）。帳票の合計が合いません。` }),
     h('a', { href: '#/opening', class: 'link', text: '期首残高を確認' }),
   );
+}
+
+/**
+ * 損益計算書・貸借対照表の行（区分の見出し・科目・区分の計・段階利益）
+ * @param {Array} items statements.js の items
+ * @param {boolean} showZero 0円の科目も出す
+ */
+export function statementRows(items, showZero = false) {
+  const out = [];
+  for (const it of items) {
+    if (it.type === 'subtotal') {
+      if (it.heading && !showZero && !it.amount) continue;
+      out.push(h('tr', { class: it.plain ? 'st-line' : `st-subtotal ${it.strong ? 'strong' : ''} ${it.heading ? 'heading' : ''}` }, h('th', { text: it.label }), amountCell('td', it.amount)));
+      continue;
+    }
+    const lines = it.lines.filter((l) => showZero || l.amount);
+    // 0円の科目を隠すときは、科目も合計も無い区分ごと隠す
+    if (!showZero && !lines.length && !it.total) continue;
+    out.push(h('tr', { class: `st-group ${it.level === 2 ? 'level2' : ''}` }, h('th', { colspan: 2, text: it.label })));
+    for (const l of lines) {
+      out.push(h('tr', { class: 'st-line' }, h('th', { text: l.account.name }), amountCell('td', l.amount)));
+      if (l.note) out.push(h('tr', { class: 'st-note' }, h('th', { text: `（${l.note.label}）` }), amountCell('td', l.note.amount)));
+    }
+    out.push(h('tr', { class: 'st-total' }, h('th', { text: `${it.label} 計` }), amountCell('td', it.total)));
+  }
+  return out;
 }

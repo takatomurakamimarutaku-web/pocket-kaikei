@@ -119,6 +119,10 @@ export const HINTS = {
   interest_expense: '支払利息',
   misc_income: '雑収入',
   misc_loss: '雑損失',
+  // 決算書（法人）で使う
+  allowance_doubtful: '貸倒引当金',
+  capital_reserve: '資本準備金',
+  legal_reserve: '利益準備金',
   // 製造原価（法人）
   raw_materials: '原材料',
   work_in_process: '仕掛品',
@@ -134,8 +138,8 @@ export const HINTS = {
   closing_finished: '期末製品棚卸高',
 };
 
-/** 勘定科目内訳明細書（法人）のための目印。個人のテンプレートには付けない */
-export const BREAKDOWN_HINTS = ['notes_receivable', 'other_receivable', 'securities', 'investment_securities', 'supplies', 'advance_paid', 'suspense_paid', 'short_loan', 'long_loan', 'building', 'land', 'notes_payable', 'short_borrowings', 'long_borrowings', 'accrued_expenses', 'advance_received', 'deposits_received', 'suspense_received', 'officer_compensation', 'salaries', 'bonuses', 'rent', 'mfg_rent', 'interest_income', 'interest_expense', 'misc_income', 'misc_loss'];
+/** 法人だけの目印（勘定科目内訳明細書・決算書の注記と株主資本等変動計算書で使う）。個人のテンプレートには付けない */
+export const BREAKDOWN_HINTS = ['notes_receivable', 'other_receivable', 'securities', 'investment_securities', 'supplies', 'advance_paid', 'suspense_paid', 'short_loan', 'long_loan', 'building', 'land', 'notes_payable', 'short_borrowings', 'long_borrowings', 'accrued_expenses', 'advance_received', 'deposits_received', 'suspense_received', 'officer_compensation', 'salaries', 'bonuses', 'rent', 'mfg_rent', 'interest_income', 'interest_expense', 'misc_income', 'misc_loss', 'allowance_doubtful', 'capital_reserve', 'legal_reserve'];
 
 /** 事業者ごとに必ず存在する役割 */
 export const REQUIRED_ROLES = {
@@ -166,7 +170,7 @@ const CORPORATION = [
   ['153', '仮払金', 'current_assets', N, { hint: 'suspense_paid' }],
   ['154', '未収入金', 'current_assets', N, { hint: 'other_receivable' }],
   ['155', '短期貸付金', 'current_assets', N, { hint: 'short_loan' }],
-  ['199', '貸倒引当金', 'current_assets', N, { contra: true }],
+  ['199', '貸倒引当金', 'current_assets', N, { contra: true, hint: 'allowance_doubtful' }],
   ['200', '建物', 'tangible_fixed_assets', T, { hint: 'building' }],
   ['201', '建物附属設備', 'tangible_fixed_assets', T],
   ['202', '構築物', 'tangible_fixed_assets', T],
@@ -198,8 +202,8 @@ const CORPORATION = [
   ['350', '長期借入金', 'fixed_liabilities', N, { hint: 'long_borrowings' }],
   ['351', '役員借入金', 'fixed_liabilities', N, { hint: 'officer_loan' }],
   ['400', '資本金', 'equity', N, { role: 'capital_stock' }],
-  ['401', '資本準備金', 'equity', N],
-  ['410', '利益準備金', 'equity', N],
+  ['401', '資本準備金', 'equity', N, { hint: 'capital_reserve' }],
+  ['410', '利益準備金', 'equity', N, { hint: 'legal_reserve' }],
   ['411', '繰越利益剰余金', 'equity', N, { role: 'retained_earnings' }],
   ['500', '売上高', 'sales', 'sales_10', { hint: 'sales' }],
   ['510', '期首商品棚卸高', 'cost_of_sales', N, { role: 'opening_inventory' }],
