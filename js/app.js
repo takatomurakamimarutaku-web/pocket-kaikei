@@ -44,6 +44,7 @@ import * as openingView from './views/opening.js';
 import * as backupView from './views/backup.js';
 import * as ebookView from './views/e-book.js';
 import * as attachmentsView from './views/attachments.js';
+import * as transferView from './views/transfer.js';
 import * as periodsView from './views/periods.js';
 import * as closingView from './views/closing.js';
 import * as assetsView from './views/assets.js';
@@ -104,6 +105,7 @@ const routes = [
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
   { path: '/e-book', view: ebookView, title: '電子帳簿保存', tab: 'more', back: '#/more', print: true },
   { path: '/attachments', view: attachmentsView, title: '証憑の一覧', tab: 'more', back: '#/more' },
+  { path: '/transfer', view: transferView, title: '会計ソフトとの受け渡し', tab: 'more', back: '#/more' },
 ];
 
 const outlet = document.getElementById('view');

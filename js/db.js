@@ -11,7 +11,7 @@ import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manu
 import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
-import { newId, createAccount, createBudget } from './models.js';
+import { newId, createAccount, createBudget, createSubAccount } from './models.js';
 import { validateAsset } from './depreciation.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
@@ -787,6 +787,44 @@ export class Repository {
         }
       }
       return out;
+    });
+  }
+
+  /**
+   * ほかの会計ソフトの仕訳の取り込み：足りない補助科目を作り、仕訳をまとめて登録する。1件でも不正なら何もしない
+   * @param {Array<{ key, accountId, name }>} newSubs 作る補助科目。明細の subAccountId に key を書いておくと、作った補助科目の id に置き換える
+   * @param {Array} list createJournal で作った仕訳
+   * @returns {{ journals: Array, subs: number }}
+   */
+  importJournals(newSubs, list) {
+    return this.run(['accounts', 'subAccounts', 'periods', 'journals'], 'readwrite', async (tx) => {
+      const ids = new Map();
+      let created = 0;
+      for (const s of newSubs) {
+        const name = String(s.name || '').trim();
+        if (!name || name.length > 30 || !(await req(tx.objectStore('accounts').get(s.accountId)))) throw new ValidationError([`補助科目「${s.name}」を作れません`]);
+        const siblings = await req(tx.objectStore('subAccounts').index('accountId').getAll(s.accountId));
+        const same = siblings.find((x) => x.name === name);
+        if (same) {
+          ids.set(s.key, same.id);
+          continue;
+        }
+        const sub = createSubAccount({ accountId: s.accountId, name, sortOrder: siblings.length });
+        tx.objectStore('subAccounts').put(sub);
+        ids.set(s.key, sub.id);
+        created++;
+      }
+      const out = [];
+      for (const [i, j] of list.entries()) {
+        const lines = j.lines.map((l) => (l.subAccountId && ids.has(l.subAccountId) ? { ...l, subAccountId: ids.get(l.subAccountId) } : l));
+        try {
+          out.push(await putJournal(tx, { ...j, lines }));
+        } catch (e) {
+          if (e instanceof ValidationError) throw new ValidationError(e.errors.map((m) => `${i + 1}件目（${j.date}）：${m}`));
+          throw e;
+        }
+      }
+      return { journals: out, subs: created };
     });
   }
 
