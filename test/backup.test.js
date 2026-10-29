@@ -24,6 +24,7 @@ async function filled() {
       ],
     }),
   );
+  await repo.saveBankRules([{ keyword: 'NTT', direction: 'out', accountId: byName['通信費'].id, taxCategory: 'purchase_10' }]);
   await repo.saveAsset(createAsset({ name: '複合機', accountId: byName['工具器具備品'].id, acquiredOn: '2026-05-01', startedOn: '2026-05-01', cost: 600000, usefulLife: 5 }));
   return { repo, byName };
 }
@@ -39,6 +40,7 @@ test('書き出し→検証→置き換えの往復でデータが一致する�
   await other.replaceAll(parsed);
   const after = await other.dumpAll();
   assert.deepEqual(after.settings, dump.settings);
+  assert.equal(after.settings.bankRules[0].keyword, 'NTT'); // 振り分けルールも往復する
   assert.deepEqual(after.journals, dump.journals);
   assert.deepEqual(after.periods, dump.periods);
   assert.equal(after.accounts.length, dump.accounts.length);
@@ -68,6 +70,7 @@ test('不正なファイルは BackupError（貸借不一致・参照切れ・�
   bad((o) => (o.accounts = o.accounts.filter((a) => a.role !== 'retained_earnings')), /必要な勘定科目/);
   bad((o) => o.accounts.push({ ...o.accounts[0], id: 'dup' }), /コードが重複/);
   bad((o) => (o.settings.entityType = 'x'), /設定/);
+  bad((o) => (o.settings.bankRules = 'x'), /振り分けルール/);
   bad((o) => (o.periods[0].openingBalances[0].amount = 900), /期首残高の借方と貸方/);
   repo.close();
 });

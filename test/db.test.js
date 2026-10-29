@@ -234,3 +234,15 @@ test('固定資産：検証して保存、法人は事業割合100%、削除は 
   assert.ok(dump.tombstones.some((t) => t.store === 'assets' && t.id === a.id));
   repo.close();
 });
+
+test('振り分けルール：設定に保存し、不正なルールは保存しない', async () => {
+  const { repo, byName } = await setupRepo();
+  const rule = { keyword: ' NTT ', direction: 'out', accountId: byName['通信費'].id, subAccountId: null, taxCategory: 'purchase_10' };
+  const saved = await repo.saveBankRules([rule]);
+  assert.equal(saved.bankRules.length, 1);
+  assert.equal(saved.bankRules[0].keyword, 'NTT');
+  assert.ok(saved.bankRules[0].id);
+  assert.deepEqual((await repo.getSettings()).bankRules, saved.bankRules);
+  await assert.rejects(repo.saveBankRules([rule, { ...rule, accountId: byName['現金'].id }]), (e) => e instanceof ValidationError && /2件目/.test(e.errors[0]));
+  assert.equal((await repo.getSettings()).bankRules.length, 1);
+});

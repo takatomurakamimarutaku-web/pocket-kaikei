@@ -1,6 +1,7 @@
 // 銀行明細CSVの取り込み（純粋関数）
 // 銀行ごとに形式が違うため、見出しの言葉から列を推定し、利用者が直せるようにする。
 // 1行の明細を「口座 ⇔ 相手科目」の2行の仕訳にする。金額は整数の円
+import { TAX_BY_CODE } from './tax.js';
 import { parseYen } from './money.js';
 import { normalize } from './search.js';
 import { isValidDate } from './period.js';
@@ -241,6 +242,51 @@ export function suggestCounter(memo, index) {
     if (k.length >= 3 && key.includes(k) && (!best || k.length > best.k.length)) best = { k, v };
   }
   return best ? best.v : null;
+}
+
+/** 振り分けルールの入出金の向き */
+export const RULE_DIRECTIONS = [
+  { id: 'any', label: '入金・出金' },
+  { id: 'in', label: '入金' },
+  { id: 'out', label: '出金' },
+];
+
+/**
+ * 振り分けルール（摘要にこの言葉を含む明細は、この相手科目にする）の検証
+ * @param {{ keyword, direction, accountId, subAccountId?, taxCategory }} rule
+ * @returns {Object<string,string>} 欄ごとのエラー（空なら正しい）
+ */
+export function validateRule(rule, { accounts, subAccounts = [], isBankAccount = () => false }) {
+  const e = {};
+  const kw = normalize(rule.keyword);
+  if (!kw) e.keyword = '摘要に含まれる言葉を入力してください';
+  else if (kw.length > 30) e.keyword = '言葉は30文字以内にしてください';
+  if (!RULE_DIRECTIONS.some((d) => d.id === rule.direction)) e.direction = '入金・出金の向きを選んでください';
+  const acc = accounts.find((a) => a.id === rule.accountId);
+  if (!acc) e.accountId = '相手科目を選んでください';
+  else if (isBankAccount(acc.id)) e.accountId = '現金・預金の科目は相手科目にできません';
+  if (rule.subAccountId && !subAccounts.some((x) => x.id === rule.subAccountId && x.accountId === rule.accountId)) e.subAccountId = '補助科目が正しくありません';
+  if (!TAX_BY_CODE[rule.taxCategory]) e.taxCategory = '税区分を選んでください';
+  return e;
+}
+
+/**
+ * 明細に当てはまる振り分けルールを探す。摘要が言葉を含み、向きが合うもののうち、言葉が長いもの（同じ長さなら先に登録したもの）
+ * 科目が無効・削除済みのルールは使わない
+ * @returns {{ rule, counter: { accountId, subAccountId, taxCategory } } | null}
+ */
+export function matchRule(tx, rules, { accounts }) {
+  const memo = normalize(tx.memo);
+  if (!memo || !Array.isArray(rules)) return null;
+  let best = null;
+  for (const rule of rules) {
+    const kw = normalize(rule.keyword);
+    if (!kw || !memo.includes(kw)) continue;
+    if ((rule.direction === 'in' && tx.amount < 0) || (rule.direction === 'out' && tx.amount > 0)) continue;
+    if (!accounts.some((a) => a.id === rule.accountId && a.active)) continue;
+    if (!best || kw.length > normalize(best.keyword).length) best = rule;
+  }
+  return best ? { rule: best, counter: { accountId: best.accountId, subAccountId: best.subAccountId || null, taxCategory: best.taxCategory } } : null;
 }
 
 /**

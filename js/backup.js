@@ -72,6 +72,10 @@ export function parseBackup(text) {
   if (!isObj(s) || !isStr(s.businessName) || !['individual', 'corporation'].includes(s.entityType) || !['taxable', 'exempt'].includes(s.taxStatus)) {
     throw new BackupError('事業者の設定が不正です');
   }
+  // 銀行明細の振り分けルール（v0.12.0 で追加。無いファイルはルールなし）。科目が無いルールは使うときに無視する
+  if (s.bankRules !== undefined && (!Array.isArray(s.bankRules) || s.bankRules.some((r) => !isObj(r) || !isStr(r.id) || !isStr(r.keyword) || !isStr(r.accountId)))) {
+    throw new BackupError('振り分けルールのデータが不正です');
+  }
   const bad = (what) => {
     throw new BackupError(`${what}のデータが不正です`);
   };

@@ -1,4 +1,6 @@
 // IndexedDB 操作。データの読み書きは必ずこの Repository を通す（将来の同期処理を差し込む場所を1か所にするため）
+import { validateRule } from './bank-import.js';
+import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
@@ -250,6 +252,27 @@ export class Repository {
       if (patch.entityType && patch.entityType !== cur.entityType) throw new ValidationError(['個人/法人は変更できません']);
       const next = { ...cur, ...patch, entityType: cur.entityType, updatedAt: now() };
       if (!String(next.businessName || '').trim()) throw new ValidationError({ businessName: '事業者名を入力してください' });
+      meta.put({ key: 'settings', value: next });
+      return next;
+    });
+  }
+
+  /**
+   * 銀行明細の振り分けルールを保存する（設定の bankRules。バックアップにも入る）
+   * @param {Array<{ id, keyword, direction, accountId, subAccountId?, taxCategory }>} rules
+   */
+  saveBankRules(rules) {
+    return this.run(['meta', 'accounts', 'subAccounts'], 'readwrite', async (tx) => {
+      const meta = tx.objectStore('meta');
+      const cur = (await req(meta.get('settings')))?.value;
+      if (!cur) throw new Error('初期設定がされていません');
+      const [accounts, subAccounts] = await Promise.all([req(tx.objectStore('accounts').getAll()), req(tx.objectStore('subAccounts').getAll())]);
+      const isBank = (id) => isCashAccount(accounts.find((a) => a.id === id));
+      const errors = rules.flatMap((r, i) => Object.values(validateRule(r, { accounts, subAccounts, isBankAccount: isBank })).map((m) => `${i + 1}件目：${m}`));
+      if (errors.length) throw new ValidationError(errors);
+      const at = now();
+      const bankRules = rules.map((r) => ({ id: r.id || newId(), keyword: String(r.keyword).trim(), direction: r.direction, accountId: r.accountId, subAccountId: r.subAccountId || null, taxCategory: r.taxCategory }));
+      const next = { ...cur, bankRules, updatedAt: at };
       meta.put({ key: 'settings', value: next });
       return next;
     });
