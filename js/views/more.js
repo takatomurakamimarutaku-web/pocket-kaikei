@@ -20,16 +20,23 @@ const GROUPS = [
     ['#/attachments', '証憑の一覧', '添付した領収書・請求書を日付・金額・取引先で探す。索引簿のCSV', 'attach', 'data'],
     ['#/e-book', '電子帳簿保存', '優良な電子帳簿・電子取引のデータの保存の要件、事務手続・事務処理規程のひな形', 'check', 'data'],
   ]],
+  ['この端末', [
+    ['#/books', '帳簿の切替', '個人と法人、家族の事業などの帳簿を分けて持つ', 'books', 'data'],
+    ['#/lock', '画面ロック', 'アプリを開くときにパスコード・Face ID などで解除する', 'lock', 'setting'],
+  ]],
 ];
 
-export async function render({ outlet }) {
+export async function render({ app, outlet }) {
+  const [books, lock] = await Promise.all([app.device.listBooks(), app.device.getLock()]);
+  // 帳簿の切替・画面ロックは今の状態を説明に出す
+  const sub = (href, text) => (href === '#/books' && books.length > 1 ? `${books.length}冊。今の帳簿：${app.book.label || '（初期設定前）'}` : href === '#/lock' ? (lock ? '使っています' : text) : text);
   put(outlet, 
     ...GROUPS.flatMap(([title, items]) => [
       h('h2', { class: 'menu-group-title', text: title }),
       h(
         'ul',
         { class: 'menu-group' },
-        items.map(([href, label, sub, icon, tone]) => menuRow({ href, label, sub, icon, tone })),
+        items.map(([href, label, text, icon, tone]) => menuRow({ href, label, sub: sub(href, text), icon, tone })),
       ),
     ]),
     h('p', { class: 'muted small center', text: `Pocket会計 バージョン ${APP_VERSION}` }),

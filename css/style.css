@@ -226,7 +226,7 @@ p { margin: 0.25em 0; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .field-row > * { min-width: 0; }
-input[type="text"], input[type="search"], input[type="date"], input:not([type]), select, textarea {
+input[type="text"], input[type="password"], input[type="search"], input[type="date"], input:not([type]), select, textarea {
   width: 100%; min-height: 44px; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--text);
@@ -908,3 +908,25 @@ div.menu-row.ar-row::after { visibility: hidden; }
 .bd-pick-group { margin: 8px 0 0; font-weight: 700; }
 .bd-pick .check { margin-bottom: 0; min-height: 40px; }
 .bd-pick-sub { padding-left: 1.6em; }
+
+/* 画面ロック：解除するまでアプリの画面を見せない（確認ダイアログ .overlay はこの上に出す） */
+body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility: hidden; }
+.lock-screen { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px); background: var(--bg); overflow-y: auto; }
+.lock-box { width: min(100%, 360px); display: grid; gap: var(--sp-3); justify-items: center; text-align: center; }
+.lock-icon { width: 72px; height: 72px; border-radius: 18px; }
+.lock-box h2 { margin: 0; font-size: var(--fs-title3); }
+.lock-form { width: 100%; display: grid; gap: var(--sp-3); }
+.lock-form input { text-align: center; font-size: 1.5rem; letter-spacing: 0.3em; }
+.lock-box > .btn { width: 100%; }
+.lock-message { min-height: 1.4em; margin: 0; color: var(--negative); font-size: var(--fs-footnote); }
+.lock-forgot { background: none; border: 0; color: var(--primary); text-decoration: underline; box-shadow: none; }
+
+/* 帳簿の切替 */
+.book-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
+.book-item { display: grid; gap: var(--sp-2); padding: var(--sp-4); border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); }
+.book-item.is-current { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+.book-name { margin: 0; font-weight: 700; display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.book-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.book-badge { padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); font-size: 0.72rem; font-weight: 700; }
+.book-list + .btn-block { margin-bottom: var(--sp-4); }
+.lock-form input::placeholder { letter-spacing: 0.05em; font-size: 1rem; }
