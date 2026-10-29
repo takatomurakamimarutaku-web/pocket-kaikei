@@ -44,7 +44,8 @@ export async function render({ app, outlet, params }) {
         paintSide();
       },
     },
-    groupsFor(settings.entityType).map((g) => h('option', { value: g.id, text: groupLabel(g.id, settings.entityType), selected: g.id === acc.group })),
+    // 製造原価の区分は「製造原価を使う」にしたときか、その区分の科目を編集するときだけ出す
+    groupsFor(settings.entityType).filter((g) => !g.mfg || settings.manufacturing || g.id === acc.group).map((g) => h('option', { value: g.id, text: groupLabel(g.id, settings.entityType), selected: g.id === acc.group })),
   );
   const tax = taxSelect(acc.defaultTaxCategory, { split: Boolean(settings.taxUseSplit), id: 'a-tax', onchange: (e) => (acc.defaultTaxCategory = e.target.value) });
   const active = h('input', { type: 'checkbox', checked: acc.active, disabled: Boolean(acc.role) });

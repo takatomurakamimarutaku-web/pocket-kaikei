@@ -151,6 +151,9 @@ export function periodMonths(range) {
   return Math.min(12, monthsBetween(range.startDate, range.endDate));
 }
 
+/** 償却費の科目にできる区分 */
+export const EXPENSE_GROUPS = ['sga', 'mfg_overhead'];
+
 /**
  * 資産の検証
  * @param {object} asset
@@ -193,6 +196,11 @@ export function validateAsset(asset, { entityType, accounts }) {
       if (asset.acquiredOn < SME_FROM || asset.acquiredOn > SME_UNTIL) e.method = '特例の対象期間（平成18年4月1日〜令和11年3月31日の取得）外です';
       else if (cost >= limit) e.method = `特例は取得価額${limit / 10000}万円未満のものだけです`;
     }
+  }
+  // 償却費の科目（任意。空なら「減価償却費」。製造業の工場の機械などは製造経費の科目にする）
+  if (asset.expenseAccountId) {
+    const ex = accounts.find((a) => a.id === asset.expenseAccountId);
+    if (!ex || !EXPENSE_GROUPS.includes(ex.group) || ex.normalSide !== 'debit') e.expenseAccountId = '償却費の科目は販売費及び一般管理費か製造経費の科目を選んでください';
   }
   if (entityType === 'individual') {
     if (!Number.isInteger(asset.businessRatio) || asset.businessRatio < 1 || asset.businessRatio > 100) e.businessRatio = '事業で使う割合は1〜100%で入力してください';
@@ -387,14 +395,18 @@ export function depreciationLines({ assets, periods, period, accounts, entityTyp
   const expense = accounts.find((a) => a.hint === 'depreciation' && a.active);
   const drawings = accounts.find((a) => a.role === 'owner_drawings');
   const accumulated = entityType === 'corporation' ? accounts.find((a) => a.hint === 'accumulated_depreciation' && a.active) : null;
-  if (!expense) errors.push('減価償却費の科目が見つかりません（勘定科目の画面で確認してください）');
+  const needDefault = assetRegister(assets, periods, period).some(({ asset, row }) => row?.business && !asset.expenseAccountId);
+  if (!expense && needDefault) errors.push('減価償却費の科目が見つかりません（勘定科目の画面で確認してください）');
   const lines = [];
   let total = 0;
   const line = (side, accountId, amount, memo) => ({ side, accountId, subAccountId: null, amount, taxCategory: 'none', memo });
   for (const { asset, row } of assetRegister(assets, periods, period)) {
     if (!row || !row.amount) continue;
     const memo = `減価償却 ${asset.name}`.slice(0, 100);
-    if (expense && row.business) lines.push(line('debit', expense.id, row.business, memo));
+    const own = asset.expenseAccountId ? accounts.find((a) => a.id === asset.expenseAccountId && a.active) : null;
+    if (asset.expenseAccountId && !own) errors.push(`「${asset.name}」の償却費の科目が見つかりません（無効にした場合は固定資産の画面で選び直してください）`);
+    const debit = own || expense;
+    if (debit && row.business) lines.push(line('debit', debit.id, row.business, memo));
     if (row.private) {
       if (drawings) lines.push(line('debit', drawings.id, row.private, `${memo}（私用分）`.slice(0, 100)));
       else errors.push('事業主貸の科目が見つかりません');

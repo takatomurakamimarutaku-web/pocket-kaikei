@@ -2,11 +2,11 @@
 import { validateRule } from './bank-import.js';
 import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
-import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES } from './accounts.js';
+import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
-import { newId } from './models.js';
+import { newId, createAccount } from './models.js';
 import { validateAsset } from './depreciation.js';
 
 export const DB_NAME = 'pocket-kaikei';
@@ -278,6 +278,26 @@ export class Repository {
       if (!String(next.businessName || '').trim()) throw new ValidationError({ businessName: '事業者名を入力してください' });
       meta.put({ key: 'settings', value: next });
       return next;
+    });
+  }
+
+  /**
+   * 製造原価を使う・使わない（法人だけ）。使うときは製造原価の科目（材料費・労務費・製造経費・仕掛品、原材料・仕掛品・製品）を追加する
+   * 使わないにしても科目は残す（仕訳で使っているかもしれないため。不要なら勘定科目の画面で無効・削除する）
+   * @returns {Promise<{ settings, added: Array }>}
+   */
+  setManufacturing(on) {
+    return this.run(['meta', 'accounts'], 'readwrite', async (tx) => {
+      const meta = tx.objectStore('meta');
+      const cur = (await req(meta.get('settings')))?.value;
+      if (!cur) throw new Error('初期設定がされていません');
+      if (on && cur.entityType !== 'corporation') throw new ValidationError(['製造原価報告書は法人だけで使えます']);
+      const at = now();
+      const added = on ? manufacturingAccounts(await req(tx.objectStore('accounts').getAll())).map((a) => createAccount(a)) : [];
+      for (const a of added) tx.objectStore('accounts').put(a);
+      const next = { ...cur, manufacturing: Boolean(on), updatedAt: at };
+      meta.put({ key: 'settings', value: next });
+      return { settings: next, added };
     });
   }
 

@@ -20,6 +20,7 @@ import * as trialView from './views/trial.js';
 import * as monthlyView from './views/monthly.js';
 import * as trialMonthlyView from './views/trial-monthly.js';
 import * as statementsView from './views/statements.js';
+import * as manufacturingView from './views/manufacturing.js';
 import * as taxView from './views/tax.js';
 import * as taxReturnView from './views/tax-return.js';
 import * as blueReturnView from './views/blue-return.js';
@@ -53,6 +54,7 @@ const routes = [
   { path: '/reports/trial-monthly', view: trialMonthlyView, title: '月次推移試算表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/monthly', view: monthlyView, title: '月次推移表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/manufacturing', view: manufacturingView, title: '製造原価報告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports', print: true },

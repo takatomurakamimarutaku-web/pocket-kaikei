@@ -1,10 +1,11 @@
 // テスト用のデータ作成
-import { templateAccounts } from '../js/accounts.js';
+import { templateAccounts, manufacturingAccounts } from '../js/accounts.js';
 import { createAccount, createPeriod, createJournal } from '../js/models.js';
 
 /** テンプレートから科目を作り、名前で引ける索引を付ける */
-export function makeBook(entityType, { startDate = '2026-01-01', endDate = '2026-12-31', subs = [] } = {}) {
-  const accounts = templateAccounts(entityType).map((a) => createAccount(a));
+export function makeBook(entityType, { startDate = '2026-01-01', endDate = '2026-12-31', subs = [], manufacturing = false } = {}) {
+  const base = templateAccounts(entityType);
+  const accounts = [...base, ...(manufacturing ? manufacturingAccounts(base) : [])].map((a) => createAccount(a));
   const byName = Object.fromEntries(accounts.map((a) => [a.name, a]));
   const subAccounts = subs.map(([accountName, name], i) => ({
     id: `sub-${i}`,

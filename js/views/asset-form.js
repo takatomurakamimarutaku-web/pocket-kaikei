@@ -11,6 +11,7 @@ import {
   depreciationSchedule,
   formatRate,
   defaultAssetAccount,
+  EXPENSE_GROUPS,
 } from '../depreciation.js';
 import { LIFE_PRESETS, usedAssetLife, canDispose, findDisposalJournals } from '../asset-tools.js';
 import { compareAccounts } from '../accounts.js';
@@ -65,6 +66,19 @@ export async function render({ app, outlet, params }) {
   const assetNo = h('input', { id: 'f-no', type: 'text', maxlength: 20, value: state.assetNo || '', placeholder: '例：A-001' });
   const quantity = h('input', { id: 'f-qty', type: 'text', inputmode: 'numeric', maxlength: 5, value: state.quantity ?? 1 });
   const location = h('input', { id: 'f-location', type: 'text', maxlength: 40, value: state.location || '', placeholder: '例：本店、倉庫' });
+  // 償却費の科目（製造原価を使うときか、選んであるときだけ出す）
+  const showExpense = Boolean(settings.manufacturing || state.expenseAccountId);
+  const expense = showExpense
+    ? h(
+        'select',
+        { id: 'f-expense' },
+        h('option', { value: '', text: '減価償却費（販売費及び一般管理費）', selected: !state.expenseAccountId }),
+        accounts
+          .filter((a) => EXPENSE_GROUPS.includes(a.group) && a.normalSide === 'debit' && a.hint !== 'depreciation' && (a.active || a.id === state.expenseAccountId))
+          .sort(compareAccounts)
+          .map((a) => h('option', { value: a.id, text: `${a.code} ${a.name}`, selected: a.id === state.expenseAccountId })),
+      )
+    : null;
   // 耐用年数表から選ぶ：種類と耐用年数を入れる
   const preset = h(
     'select',
@@ -111,6 +125,7 @@ export async function render({ app, outlet, params }) {
       assetNo: assetNo.value.trim(),
       quantity: toInt(quantity.value) ?? NaN,
       location: location.value.trim(),
+      expenseAccountId: expense ? expense.value || null : (state.expenseAccountId ?? null),
     };
   }
 
@@ -245,6 +260,7 @@ export async function render({ app, outlet, params }) {
     h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, h('p', { class: 'field-error', role: 'alert' })),
     lifeWrap,
     usedWrap,
+    expense ? field('償却費の科目', expense, { name: 'expenseAccountId', hint: '工場の機械など、製品を作るために使う資産は製造経費の「減価償却費（製造）」にすると、製造原価報告書に入ります' }) : null,
     individual ? field('事業で使う割合（%）', ratio, { name: 'businessRatio', hint: '車などを私用にも使うときは、事業で使う割合を入れます。残りは事業主貸になります' }) : null,
     carryWrap,
     disposalBox,

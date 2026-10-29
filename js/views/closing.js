@@ -1,6 +1,6 @@
 // 決算・繰越：期末棚卸・減価償却の決算整理仕訳、そのほかの決算整理の案内、次の会計期間への繰越
 import { h, put, field, showToast, confirmDialog, errorBox, amountCell } from '../ui.js';
-import { carryForwardBalances, nextPeriodDates, inventoryAccounts, findInventoryJournals, inventoryLines } from '../closing.js';
+import { carryForwardBalances, nextPeriodDates, inventorySets, findInventoryJournals, inventoryJournalLines } from '../closing.js';
 import { trialBalance, computeOwnerCapital } from '../ledger.js';
 import { findByRole, compareAccounts } from '../accounts.js';
 import { validateJournal } from '../journal.js';
@@ -21,31 +21,42 @@ export async function render({ app, outlet }) {
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
 
   // ---- 1. 期末の棚卸 ----
+  // 商品のほか、製造原価を使う法人は原材料・仕掛品・製品の棚卸もまとめて1つの仕訳にする
   function inventorySection() {
-    const inv = inventoryAccounts(accounts);
-    if (!inv) return h('section', { class: 'panel' }, h('h2', { class: 'section-title', text: '1. 期末の棚卸' }), h('p', { class: 'muted small', text: '期首商品棚卸高・期末商品棚卸高・商品の科目が見つからないため、振替伝票で入力してください。' }));
+    const title = h('h2', { class: 'section-title', text: '1. 期末の棚卸' });
+    const sets = inventorySets(accounts);
+    if (!sets.length) return h('section', { class: 'panel' }, title, h('p', { class: 'muted small', text: '期首商品棚卸高・期末商品棚卸高・商品の科目が見つからないため、振替伝票で入力してください。' }));
     const done = findInventoryJournals(journals, accounts);
     if (done.length) {
       return h(
         'section',
         { class: 'panel' },
-        h('h2', { class: 'section-title', text: '1. 期末の棚卸' }),
+        title,
         h('p', { text: '棚卸の仕訳は登録済みです。' }),
         h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${j.date.replaceAll('-', '/')}）` })))),
       );
     }
-    const goods = trialBalance({ accounts, period, journals }).rows.find((r) => r.account.id === inv.goods.id).closing;
-    const input = h('input', { id: 'inv-amount', type: 'text', inputmode: 'numeric', class: 'amount-input', placeholder: '0' });
+    const tbRows = trialBalance({ accounts, period, journals }).rows;
+    const entries = sets.map((set) => ({
+      set,
+      balance: tbRows.find((r) => r.account.id === set.goods.id).closing,
+      input: h('input', { id: `inv-${set.kind.id}`, type: 'text', inputmode: 'numeric', class: 'amount-input', placeholder: '0' }),
+    }));
     const errorsEl = h('div');
     const save = async () => {
-      const p = parseYen(input.value || '0', { allowZero: true });
-      if (!p.ok) return put(errorsEl, errorBox([`期末の棚卸高：${p.error}`]));
-      if (goods < 0) return put(errorsEl, errorBox([`「${inv.goods.name}」の残高がマイナスです。先に仕訳を確認してください`]));
-      const lines = inventoryLines({ accounts, goodsBalance: goods, closingAmount: p.value });
+      const errors = [];
+      const values = entries.map((e) => {
+        const p = parseYen(e.input.value || '0', { allowZero: true });
+        if (!p.ok) errors.push(`${e.set.kind.label}の期末の棚卸高：${p.error}`);
+        if (e.balance < 0) errors.push(`「${e.set.goods.name}」の残高がマイナスです。先に仕訳を確認してください`);
+        return { set: e.set, balance: e.balance, closingAmount: p.ok ? p.value : 0 };
+      });
+      if (errors.length) return put(errorsEl, errorBox(errors));
+      const lines = inventoryJournalLines(values);
       if (!lines.length) return put(errorsEl, errorBox(['期首・期末とも在庫がないため、仕訳は不要です']));
       const journal = createJournal({ periodId: period.id, date: period.endDate, lines, source: 'inventory' });
-      const errors = validateJournal(journal, { accounts, subAccounts, period });
-      if (errors.length) return put(errorsEl, errorBox(errors));
+      const v = validateJournal(journal, { accounts, subAccounts, period });
+      if (v.length) return put(errorsEl, errorBox(v));
       try {
         const saved = await app.db.saveJournal(journal);
         showToast(`棚卸の仕訳（No.${saved.no}）を登録しました`);
@@ -54,13 +65,17 @@ export async function render({ app, outlet }) {
         put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));
       }
     };
+    const one = entries.length === 1;
     return h(
       'section',
       { class: 'panel' },
-      h('h2', { class: 'section-title', text: '1. 期末の棚卸' }),
-      h('p', { class: 'small', text: `期末に残っている商品・製品の金額（棚卸高）を入力すると、決算整理の仕訳を期末日（${period.endDate.replaceAll('-', '/')}）で登録します。` }),
-      h('div', { class: 'kv' }, h('span', { class: 'muted', text: `期首の在庫（${inv.goods.name}の残高）` }), h('span', { class: 'num', text: `${formatYen(goods)}円` })),
-      field('期末の棚卸高（円）', input, { name: 'inventory', hint: '在庫がなければ 0 のまま登録します' }),
+      title,
+      h('p', { class: 'small', text: `期末に残っている${one ? '商品・製品' : '在庫'}の金額（棚卸高）を入力すると、決算整理の仕訳を期末日（${period.endDate.replaceAll('-', '/')}）で登録します。` }),
+      entries.map((e) => [
+        h('div', { class: 'kv' }, h('span', { class: 'muted', text: `期首の在庫（${e.set.goods.name}の残高）` }), h('span', { class: 'num', text: `${formatYen(e.balance)}円` })),
+        field(one ? '期末の棚卸高（円）' : `${e.set.kind.label}の期末の棚卸高（円）`, e.input, { name: `inventory-${e.set.kind.id}`, hint: one ? '在庫がなければ 0 のまま登録します' : '' }),
+      ]),
+      one ? null : h('p', { class: 'muted small', text: '在庫がない種類は 0 のままにします。原材料・仕掛品の棚卸高は製造原価報告書に、製品・商品の棚卸高は損益計算書の売上原価に入ります。' }),
       errorsEl,
       h('button', { type: 'button', class: 'btn btn-primary btn-block', text: '棚卸の仕訳を登録する', onclick: save }),
     );

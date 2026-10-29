@@ -26,7 +26,19 @@ export const GROUPS = [
   { id: 'reserves_reversal', label: '引当金・準備金等の繰戻額', section: 'pl', side: 'credit', entity: 'individual' },
   { id: 'reserves_provision', label: '引当金・準備金等の繰入額', section: 'pl', side: 'debit', entity: 'individual' },
   { id: 'family_salary', label: '専従者給与', section: 'pl', side: 'debit', entity: 'individual' },
+  // 製造原価（法人。設定で「製造原価を使う」にしたときに科目を追加する）。合計は損益計算書の売上原価の「当期製品製造原価」になる
+  { id: 'mfg_materials', label: '材料費', section: 'pl', side: 'debit', entity: 'corporation', mfg: true },
+  { id: 'mfg_labor', label: '労務費', section: 'pl', side: 'debit', entity: 'corporation', mfg: true },
+  { id: 'mfg_overhead', label: '製造経費', section: 'pl', side: 'debit', entity: 'corporation', mfg: true },
+  { id: 'mfg_wip', label: '仕掛品棚卸高', section: 'pl', side: 'debit', entity: 'corporation', mfg: true },
 ];
+
+/** 製造原価の区分 */
+export const MFG_GROUPS = ['mfg_materials', 'mfg_labor', 'mfg_overhead', 'mfg_wip'];
+
+export function isMfgGroup(groupId) {
+  return MFG_GROUPS.includes(groupId);
+}
 
 export const GROUP_BY_ID = Object.fromEntries(GROUPS.map((g) => [g.id, g]));
 
@@ -79,6 +91,19 @@ export const HINTS = {
   asset_sale_loss: '固定資産売却損',
   asset_retirement_loss: '固定資産除却損',
   misc_expense: '雑費',
+  // 製造原価（法人）
+  raw_materials: '原材料',
+  work_in_process: '仕掛品',
+  finished_goods: '製品',
+  opening_materials: '期首材料棚卸高',
+  material_purchases: '材料仕入高',
+  closing_materials: '期末材料棚卸高',
+  wages: '賃金',
+  mfg_depreciation: '減価償却費（製造）',
+  opening_wip: '期首仕掛品棚卸高',
+  closing_wip: '期末仕掛品棚卸高',
+  opening_finished: '期首製品棚卸高',
+  closing_finished: '期末製品棚卸高',
 };
 
 /** 事業者ごとに必ず存在する役割 */
@@ -253,6 +278,72 @@ const INDIVIDUAL = [
 
 export const TEMPLATES = { corporation: CORPORATION, individual: INDIVIDUAL };
 
+// 製造原価の科目（法人。設定で「製造原価を使う」にしたときに追加する。テンプレートと違い、使っていなければ削除できる）
+// 並びは財務諸表等規則の製造原価明細書（材料費・労務費・経費・当期総製造費用・期首／期末仕掛品棚卸高・当期製品製造原価）と
+// 国税庁「勘定科目内訳明細書」の原価の内訳書（材料費は期首材料棚卸高＋材料仕入高−期末材料棚卸高）に合わせる
+const MANUFACTURING = [
+  ['142', '製品', 'current_assets', N, { hint: 'finished_goods' }],
+  ['143', '仕掛品', 'current_assets', N, { hint: 'work_in_process' }],
+  ['144', '原材料', 'current_assets', N, { hint: 'raw_materials' }],
+  ['513', '期首製品棚卸高', 'cost_of_sales', N, { hint: 'opening_finished' }],
+  ['518', '期末製品棚卸高', 'cost_of_sales', N, { hint: 'closing_finished', contra: true }],
+  ['800', '期首材料棚卸高', 'mfg_materials', N, { hint: 'opening_materials' }],
+  ['801', '材料仕入高', 'mfg_materials', T, { hint: 'material_purchases' }],
+  ['809', '期末材料棚卸高', 'mfg_materials', N, { hint: 'closing_materials', contra: true }],
+  ['810', '賃金', 'mfg_labor', N, { hint: 'wages' }],
+  ['811', '雑給', 'mfg_labor', N],
+  ['812', '賞与（製造）', 'mfg_labor', N],
+  ['813', '法定福利費（製造）', 'mfg_labor', 'purchase_exempt'],
+  ['814', '福利厚生費（製造）', 'mfg_labor', T],
+  ['820', '外注加工費', 'mfg_overhead', T],
+  ['821', '電力費', 'mfg_overhead', T],
+  ['822', '水道光熱費（製造）', 'mfg_overhead', T],
+  ['823', '修繕費（製造）', 'mfg_overhead', T],
+  ['824', '消耗品費（製造）', 'mfg_overhead', T],
+  ['825', '減価償却費（製造）', 'mfg_overhead', N, { hint: 'mfg_depreciation' }],
+  ['826', '地代家賃（製造）', 'mfg_overhead', T],
+  ['827', '保険料（製造）', 'mfg_overhead', 'purchase_exempt'],
+  ['828', '租税公課（製造）', 'mfg_overhead', N],
+  ['829', '運賃（製造）', 'mfg_overhead', T],
+  ['839', '雑費（製造）', 'mfg_overhead', T],
+  ['850', '期首仕掛品棚卸高', 'mfg_wip', N, { hint: 'opening_wip' }],
+  ['859', '期末仕掛品棚卸高', 'mfg_wip', N, { hint: 'closing_wip', contra: true }],
+];
+
+const toAccount = ([code, name, group, tax, opt = {}], template) => ({
+  code,
+  name,
+  group,
+  role: opt.role ?? null,
+  hint: opt.hint ?? null,
+  normalSide: normalSideFor(group, opt.contra),
+  defaultTaxCategory: tax,
+  active: true,
+  sortOrder: Number(code),
+  template,
+});
+
+/**
+ * 製造原価を使うときに追加する科目の元（id・日時は呼び出し側で付ける）
+ * 同じ目印の科目があれば追加しない。コードが使われていれば空いている次の番号にする
+ * @param {Array} existing 今ある科目
+ */
+export function manufacturingAccounts(existing = []) {
+  const hints = new Set(existing.map((a) => a.hint).filter(Boolean));
+  const names = new Set(existing.map((a) => a.name));
+  const codes = new Set(existing.map((a) => String(a.code)));
+  const out = [];
+  for (const row of MANUFACTURING) {
+    const hint = row[4]?.hint;
+    if (hint ? hints.has(hint) : names.has(row[1])) continue;
+    let code = Number(row[0]);
+    while (codes.has(String(code))) code += 1;
+    codes.add(String(code));
+    out.push({ ...toAccount(row, false), code: String(code), sortOrder: code });
+  }
+  return out;
+}
+
 /** 区分と評価勘定かどうかから残高側を決める */
 export function normalSideFor(groupId, contra = false) {
   const side = GROUP_BY_ID[groupId].side;
@@ -266,18 +357,7 @@ export function normalSideFor(groupId, contra = false) {
 export function templateAccounts(entityType) {
   const rows = TEMPLATES[entityType];
   if (!rows) throw new Error(`不明な事業者の種類です: ${entityType}`);
-  return rows.map(([code, name, group, tax, opt = {}]) => ({
-    code,
-    name,
-    group,
-    role: opt.role ?? null,
-    hint: opt.hint ?? null,
-    normalSide: normalSideFor(group, opt.contra),
-    defaultTaxCategory: tax,
-    active: true,
-    sortOrder: Number(code),
-    template: true,
-  }));
+  return rows.map((row) => toAccount(row, true));
 }
 
 /** 科目の並び：区分の順 → 並び順 → コード */

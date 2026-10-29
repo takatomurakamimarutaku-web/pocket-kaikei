@@ -72,6 +72,7 @@ test('不正なファイルは BackupError（貸借不一致・参照切れ・�
   bad((o) => (o.settings.entityType = 'x'), /設定/);
   bad((o) => (o.settings.bankRules = 'x'), /振り分けルール/);
   bad((o) => (o.settings.taxUseSplit = 'yes'), /事業者の設定/);
+  bad((o) => (o.settings.manufacturing = o.settings.entityType === 'corporation' ? 'yes' : true), /事業者の設定/);
   bad((o) => (o.periods[0].openingBalances[0].amount = 900), /期首残高の借方と貸方/);
   repo.close();
 });

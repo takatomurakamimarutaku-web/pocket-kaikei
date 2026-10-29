@@ -3,7 +3,7 @@
 // 区分の向き（資産・費用は借方、負債・純資産・収益は貸方）をプラスとして集計する。
 // 評価勘定（減価償却累計額・期末商品棚卸高など）は区分と逆の残高なので、自動的にマイナス（△）になる。
 // 個人の様式は国税庁「青色申告決算書（一般用）」の損益計算書・貸借対照表の並びに合わせる。
-import { GROUP_BY_ID, compareAccounts, groupLabel } from './accounts.js';
+import { GROUP_BY_ID, compareAccounts, groupLabel, MFG_GROUPS, isContra } from './accounts.js';
 import { trialBalance } from './ledger.js';
 
 /** 科目の期末残高（dc）を区分の向きの金額にする */
@@ -28,6 +28,56 @@ const subtotal = (label, amount, opts = {}) => ({ type: 'subtotal', label, amoun
  */
 export function closingRows({ accounts, period, journals, to = period.endDate }) {
   return trialBalance({ accounts, period, journals, from: period.startDate, to }).rows;
+}
+
+/** 損益計算書の売上原価に入れる「当期製品製造原価」の行（科目ではないが、科目の行と同じ形で並べる） */
+export const MFG_COST_LINE = Object.freeze({ id: 'mfg_cost', code: '', name: '当期製品製造原価', group: 'cost_of_sales', normalSide: 'debit', synthetic: true });
+
+/**
+ * 製造原価報告書（法人）
+ *   材料費＋労務費＋製造経費＝当期総製造費用
+ *   当期総製造費用＋期首仕掛品棚卸高−期末仕掛品棚卸高＝当期製品製造原価
+ * 様式は財務諸表等規則 第75条第2項・ガイドライン75-2の製造原価明細書の並び（他勘定振替高は扱わない）
+ * @returns {{ used: boolean, items: Array, totalCost: number, cost: number }}
+ *   used：製造原価の区分の科目があるか。cost：当期製品製造原価（売上原価に入る額）
+ */
+export function manufacturingReport(rows) {
+  const used = rows.some((r) => MFG_GROUPS.includes(r.account.group));
+  const materials = section('材料費', ['mfg_materials'], rows);
+  const labor = section('労務費', ['mfg_labor'], rows);
+  const overhead = section('製造経費', ['mfg_overhead'], rows);
+  const totalCost = materials.total + labor.total + overhead.total;
+  // 仕掛品：期首（借方の科目）は足し、期末（評価勘定）は区分の向きでマイナスになる
+  const wip = collect(rows, ['mfg_wip']).lines;
+  const opening = wip.filter((l) => !isContra(l.account)).reduce((s, l) => s + l.amount, 0);
+  const closing = wip.filter((l) => isContra(l.account)).reduce((s, l) => s + l.amount, 0);
+  const cost = totalCost + opening + closing;
+  return {
+    used,
+    items: [
+      materials,
+      labor,
+      overhead,
+      subtotal('当期総製造費用', totalCost),
+      subtotal('期首仕掛品棚卸高', opening, { plain: true }),
+      subtotal('合計', totalCost + opening),
+      subtotal('期末仕掛品棚卸高', closing, { plain: true }),
+      subtotal('当期製品製造原価', cost, { strong: true }),
+    ],
+    totalCost,
+    cost,
+  };
+}
+
+/** 売上原価の区分。製造原価の科目があれば「当期製品製造原価」の行を期末の棚卸高（評価勘定）の前に入れる */
+function costOfSales(rows) {
+  const cogs = section('売上原価', ['cost_of_sales'], rows);
+  const mfg = manufacturingReport(rows);
+  if (!mfg.used) return cogs;
+  const at = cogs.lines.findIndex((l) => isContra(l.account));
+  const line = { account: MFG_COST_LINE, amount: mfg.cost };
+  const lines = at < 0 ? [...cogs.lines, line] : [...cogs.lines.slice(0, at), line, ...cogs.lines.slice(at)];
+  return { ...cogs, lines, total: cogs.total + mfg.cost };
 }
 
 /**
@@ -64,7 +114,7 @@ export function incomeStatement(entityType, rows) {
     };
   }
   const sales = section('売上高', ['sales'], rows);
-  const cogs = section('売上原価', ['cost_of_sales'], rows);
+  const cogs = costOfSales(rows);
   const gross = sales.total - cogs.total;
   const sga = section('販売費及び一般管理費', ['sga'], rows);
   const operating = gross - sga.total;

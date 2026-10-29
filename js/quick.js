@@ -5,10 +5,12 @@ import { compareAccounts } from './accounts.js';
 
 const CASH = [{ role: 'cash' }, { role: 'deposit' }];
 const INVENTORY_ROLES = ['opening_inventory', 'closing_inventory'];
+// 製造原価の棚卸高の科目（決算整理でだけ使う）
+const INVENTORY_HINTS = ['opening_finished', 'closing_finished', 'opening_materials', 'closing_materials', 'opening_wip', 'closing_wip'];
 
 /**
  * 取引の種類。slot.pick：候補の条件（上から順に並べる）
- *   { role } / { hint } / { groups, excludeRoles? } / { any: true }（すべての科目） / { fixed: true }（出納帳の口座）
+ *   { role } / { hint } / { groups, excludeRoles?, excludeHints? } / { any: true }（すべての科目） / { fixed: true }（出納帳の口座）
  * slot.defaultHint：初期値にする目印。taxSide：税区分を選ばせる側
  * menu：入力メニューに出すか（false は出納帳から開く）
  */
@@ -30,7 +32,7 @@ export const QUICK_TEMPLATES = [
     desc: '交通費・通信費・消耗品などを払った',
     entity: 'both',
     menu: true,
-    debit: { label: '経費の科目', pick: [{ groups: ['sga', 'non_operating_expenses'] }] },
+    debit: { label: '経費の科目', pick: [{ groups: ['sga', 'non_operating_expenses', 'mfg_labor', 'mfg_overhead'] }] },
     credit: { label: '支払い方', pick: [...CASH, { hint: 'accrued' }, { role: 'owner_borrowings' }, { hint: 'officer_loan' }] },
     taxSide: 'debit',
     memoPlaceholder: '例：電車代 打合せ',
@@ -41,7 +43,7 @@ export const QUICK_TEMPLATES = [
     desc: '販売用の商品・材料を買った',
     entity: 'both',
     menu: true,
-    debit: { label: '仕入の科目', pick: [{ groups: ['cost_of_sales'], excludeRoles: INVENTORY_ROLES }], defaultHint: 'purchases' },
+    debit: { label: '仕入の科目', pick: [{ groups: ['cost_of_sales', 'mfg_materials'], excludeRoles: INVENTORY_ROLES, excludeHints: INVENTORY_HINTS }], defaultHint: 'purchases' },
     credit: { label: '支払い方', pick: [...CASH, { hint: 'payable' }] },
     taxSide: 'debit',
     memoPlaceholder: '例：〇〇商事 4月分',
@@ -153,7 +155,7 @@ function matches(sel, a, fixedId) {
   if (sel.any) return true;
   if (sel.role) return a.role === sel.role;
   if (sel.hint) return a.hint === sel.hint;
-  if (sel.groups) return sel.groups.includes(a.group) && !(sel.excludeRoles || []).includes(a.role);
+  if (sel.groups) return sel.groups.includes(a.group) && !(sel.excludeRoles || []).includes(a.role) && !(sel.excludeHints || []).includes(a.hint);
   return false;
 }
 

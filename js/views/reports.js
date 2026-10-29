@@ -9,17 +9,21 @@ const ITEMS = [
   ['#/reports/monthly', '月次推移表', '月ごとの損益・月末残高と売上・利益のグラフ'],
   ['#/reports/pl', '損益計算書', '売上から利益（所得）まで'],
   ['#/reports/bs', '貸借対照表', '期末の資産・負債・純資産'],
+  ['#/reports/manufacturing', '製造原価報告書', '材料費・労務費・製造経費から当期製品製造原価まで。月次推移も', 'manufacturing'],
   ['#/reports/tax', '消費税集計', '税区分別の集計と割り戻しの参考値'],
   ['#/reports/tax-return', '消費税の申告計算', '一般・簡易・2割特例・3割特例で納める税額'],
   ['#/reports/blue-return', '青色申告決算書', '個人の決算書4ページの各欄（転記用）'],
 ];
 
-export async function render({ outlet }) {
+export async function render({ app, outlet }) {
+  const { settings } = await app.load();
+  // 製造原価報告書は法人で「製造原価を使う」にしたときだけ出す
+  const items = ITEMS.filter(([, , , need]) => need !== 'manufacturing' || (settings.entityType === 'corporation' && settings.manufacturing));
   put(outlet, 
     h(
       'ul',
       { class: 'menu-group' },
-      ITEMS.map(([href, label, sub]) =>
+      items.map(([href, label, sub]) =>
         h(
           'li',
           {},
