@@ -8,6 +8,8 @@ import { isWhite, whiteReturnSet } from '../white-return.js';
 import { formatYen, parseYen } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { docHead } from '../print-forms.js';
+import { incomeTaxDoc, incomeSheets } from '../print-tax-forms.js';
 
 const MARU = '⓪①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚㉛㉜㉝㉞㉟㊱㊲㊳㊴㊵㊶㊷㊸㊹㊺㊻㊼㊽㊾㊿';
 const maru = (n) => (typeof n === 'number' ? MARU[n] || String(n) : n);
@@ -206,6 +208,17 @@ export async function render({ app, outlet }) {
       h('ul', { class: 'it-attach' }, items.filter(([, need]) => need).map(([label, , note]) => h('li', {}, h('strong', { text: label }), note ? h('span', { class: 'muted small block' }, note) : null))),
     );
   }
+
+  // 印刷：第一表は様式と同じ左右2段（左に所得と控除、右に税金の計算）。第二表・第四表・医療費控除の明細書も選べる
+  app.printDoc = ({ printedAt }) => {
+    const r = computeIncomeTax({ year, business, realEstate, input, white });
+    const list = incomeSheets(r, input);
+    const kindLabel = (id) => MEDICAL_KINDS.find((k) => k.id === id)?.label ?? '';
+    return {
+      options: [{ key: 'sheet', label: '印刷する帳票', type: 'select', choices: [['all', '申告書一式'], ...list.map((x) => [x.value, x.label])], value: 'all' }],
+      build: (v) => incomeTaxDoc(r, { head: docHead({ settings, period, printedAt }), input, year, white, realEstate: Boolean(re), kindLabel, sheets: v.sheet === 'all' ? list.map((x) => x.value) : [v.sheet] }),
+    };
+  };
 
   function paint() {
     const r = computeIncomeTax({ year, business, realEstate, input, white });

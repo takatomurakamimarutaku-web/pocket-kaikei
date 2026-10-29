@@ -14,6 +14,8 @@ import {
   DEFAULT_CORPORATE_TAX,
 } from '../js/corporate-tax.js';
 import { makeBook } from './helpers.js';
+import { corporateTaxDoc, schedule4Blocks, schedule1Blocks, schedule52Blocks, CORPORATE_SHEETS, waDate } from '../js/print-tax-forms.js';
+import { layoutDocument } from '../js/print-layout.js';
 
 test('法人税額：中小法人は年800万円以下15%・超える部分23.2%（課税標準は1,000円未満切捨て）', () => {
   const r = corporationTaxAmount({ income: 10000999, months: 12, startDate: '2026-04-01' });
@@ -229,4 +231,116 @@ test('Repository：法人税の入力を期間に保存する。交際費の科�
   await assert.rejects(repo.saveCorporateTax(p.id, { dividends: 1.5 }), ValidationError);
   const accounts = await repo.listAccounts();
   assert.equal(accounts.find((a) => a.code === '608').hint, 'entertainment');
+});
+
+// ---- 申告書の印刷（国税庁の様式の欄の番号と並び） ----
+
+const textOf = (c) => (c !== null && typeof c === 'object' && !Array.isArray(c) ? c.text : c);
+const yen = (t) => {
+  const s = [].concat(textOf(t) ?? '').join('');
+  return s === '' ? 0 : (s.startsWith('△') ? -1 : 1) * Number(s.replace(/[△,]/g, ''));
+};
+/** 左右2段の表（[名前・番号・金額]×2）の番号→金額。区分の見出しは3列にまたがる */
+function sideValues(table) {
+  const m = new Map();
+  for (const row of table.rows) {
+    const cols = [];
+    for (const c of row.cells) {
+      cols.push(c);
+      for (let k = 1; k < (c?.span || 1); k++) cols.push(null);
+    }
+    for (const off of [0, 3]) if (textOf(cols[off + 1])) m.set(textOf(cols[off + 1]), yen(cols[off + 2]));
+  }
+  return m;
+}
+/** 番号の列（2列目）で行を引く */
+const rowsByNo = (table, offset = 0) => new Map(table.rows.filter((r) => r.cells.length > offset + 1).map((r) => [String(textOf(r.cells[offset + 1]) ?? ''), r]).filter(([k]) => k));
+
+test('印刷：別表四（簡易様式）は様式の番号の行に当てはめ、総額＝留保＋社外流出（※を含む）', () => {
+  const b = sampleBook();
+  const r = corporateTaxReturn({ accounts: b.accounts, period: b.period, journals: b.journals, input: b.input, enterpriseInput: b.enterpriseInput });
+  const [table] = schedule4Blocks(r.schedule4);
+  const rows = rowsByNo(table);
+  // 様式の番号（28・33・35・36・42・46〜50 は様式に無い）
+  assert.deepEqual([...rows.keys()].map(Number), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 31, 32, 34, 37, 38, 39, 40, 41, 43, 44, 45, 51, 52]);
+  const v = (no, col) => yen(rows.get(String(no)).cells[col]);
+  assert.equal(v(2, 2), 330000);
+  assert.equal(v(4, 2), 1000000);
+  assert.equal(v(8, 2), 1000000);
+  assert.equal(textOf(rows.get('8').cells[4]), 'その他');
+  assert.equal(v(13, 2), 150000);
+  assert.deepEqual(rows.get('1').cells[5], ['500,000', '']); // 配当
+  assert.equal(v(52, 2), r.schedule4.income.total);
+  assert.equal(v(52, 3), r.schedule4.income.retained);
+  for (const no of [11, 22, 23, 34, 52]) {
+    const row = rows.get(String(no));
+    const out = [].concat(row.cells[5]).reduce((s, t) => s + yen(t), 0);
+    assert.equal(v(no, 2), v(no, 3) + out, `${no} の総額`);
+  }
+});
+
+test('印刷：別表四の寄附金は(27)、受取配当等は(14)の※、様式に無い行は空き行(10)', () => {
+  const b = sampleBook();
+  const input = {
+    ...b.input,
+    adjustments: [
+      { label: '寄附金の損金不算入額', side: 'add', kind: 'outflow', amount: 200000 },
+      { label: '受取配当等の益金不算入額', side: 'sub', kind: 'outflow', amount: 50000 },
+      { label: '損金経理をした罰金等', side: 'add', kind: 'outflow', amount: 30000 },
+    ],
+  };
+  const r = corporateTaxReturn({ accounts: b.accounts, period: b.period, journals: b.journals, input, enterpriseInput: b.enterpriseInput });
+  const rows = rowsByNo(schedule4Blocks(r.schedule4)[0]);
+  const v = (no, col) => yen(rows.get(String(no)).cells[col]);
+  assert.equal(v(27, 2), 200000);
+  assert.equal(textOf(rows.get('14').cells[4]), '※');
+  assert.equal(v(14, 5), 50000);
+  assert.equal(textOf(rows.get('10').cells[0]), '損金経理をした罰金等');
+  // 仮計(23)は寄附金を除き、合計(34)で足す。所得金額(52)は計算の結果と一致
+  assert.equal(v(34, 2) - v(23, 2), 200000);
+  assert.equal(v(52, 2), r.schedule4.income.total);
+  // 外※：減算の※の金額は社外流出から引く
+  assert.deepEqual(rows.get('52').cells[4], ['外※', '']);
+  assert.equal(yen(rows.get('52').cells[5][0]), -50000);
+});
+
+test('印刷：別表一は番号の欄に法人税・地方法人税の金額、次葉二(74)〜(79)に税率ごとの内訳', () => {
+  const b = sampleBook();
+  const r = corporateTaxReturn({ accounts: b.accounts, period: b.period, journals: b.journals, input: b.input, enterpriseInput: b.enterpriseInput });
+  const [table] = schedule1Blocks(r);
+  const m = sideValues(table);
+  assert.equal(m.get('1'), r.corp.income);
+  assert.equal(m.get('2'), r.corp.tax);
+  assert.equal(m.get('13'), r.corp.annual);
+  assert.equal(m.get('15'), r.corp.due);
+  assert.equal(m.get('38'), r.local.annual);
+  assert.equal(m.get('40'), r.local.due);
+  assert.equal(m.get('74') + m.get('76'), Math.floor(r.corp.income / 1000) * 1000);
+  assert.equal(m.get('77') + m.get('79'), r.corp.tax);
+  assert.equal(m.get('47'), 5000000); // 防衛特別法人税の基礎控除（次葉一）
+});
+
+test('印刷：別表五(二)の計の行は計算と一致し、前期分の行に前の事業年度を書く', () => {
+  const b = sampleBook();
+  const r = corporateTaxReturn({ accounts: b.accounts, period: b.period, journals: b.journals, input: b.input, enterpriseInput: b.enterpriseInput });
+  const [table, , prov] = schedule52Blocks(r.schedule52, { startDate: r.period.startDate });
+  const rows = rowsByNo(table);
+  assert.equal(textOf(rows.get('1').cells[0]), 'R7・4・1〜R8・3・31');
+  assert.equal(waDate('2027-03-31'), 'R9・3・31');
+  assert.equal(yen(rows.get('5').cells[7]), r.schedule52.blocks[0].total.closing);
+  assert.equal(yen(rows.get('5').cells[4]), r.schedule52.blocks[0].total.provisionPaid);
+  const pm = sideValues(prov);
+  assert.equal(pm.get('41'), r.provision.closing);
+  assert.equal(pm.get('30') + pm.get('33') - pm.get('40'), pm.get('41'));
+});
+
+test('印刷：法人税の申告書は別表ごとに改ページし、ページの表題が別表の名前になる', () => {
+  const b = sampleBook();
+  const r = corporateTaxReturn({ accounts: b.accounts, period: b.period, journals: b.journals, input: b.input, enterpriseInput: b.enterpriseInput });
+  const pages = layoutDocument(corporateTaxDoc(r, { head: { company: 'テスト株式会社', period: '', printedAt: '2027-05-20' } }));
+  assert.deepEqual(pages.map((p) => p.title), CORPORATE_SHEETS.map((s) => s.title));
+  assert.ok(pages.every((p) => p.orientation === 'portrait'));
+  const one = layoutDocument(corporateTaxDoc(r, { head: {}, sheets: ['s4'] }));
+  assert.equal(one.length, 1);
+  assert.ok(one[0].items.some((it) => it.t === 'text' && it.text === '所得の金額の計算に関する明細書（簡易様式）'));
 });

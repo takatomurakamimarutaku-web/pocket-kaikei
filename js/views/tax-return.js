@@ -11,6 +11,9 @@ import { createJournal } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { closedNotice } from './period-common.js';
+import { docHead } from '../print-forms.js';
+import { captureBlocks } from '../print-capture.js';
+import { consumptionTaxDoc, consumptionSheets } from '../print-tax-forms.js';
 
 export async function render({ app, outlet, query = {} }) {
   const { settings, period, accounts, subAccounts, journals, accountById, subById } = await app.load();
@@ -428,6 +431,19 @@ export async function render({ app, outlet, query = {} }) {
     ),
   );
   paintCalc();
+  // 印刷：申告書（第一表・第二表・付表）は様式の列（付表の A・B・C）で組む。「計算の内容」は画面の表から作る
+  app.printDoc = ({ printedAt }) => {
+    const ok = Number.isFinite(state.interimNational) && Number.isFinite(state.interimLocal) && !Number.isNaN(state.baseSales);
+    if (!ok) return null;
+    const forms = taxReturnForms(computeTaxReturn({ journals, period, entityType, ...state }), { baseSales: state.baseSales });
+    const list = consumptionSheets(forms);
+    const calc = view === 'calc' ? captureBlocks(outlet).blocks : null;
+    const head = docHead({ settings, period, printedAt });
+    return {
+      options: [{ key: 'sheet', label: '印刷する帳票', type: 'select', choices: [['all', '申告書（第一表・第二表・付表）'], ...list.map((x) => [x.value, x.label]), ...(calc ? [['calc', '計算の内容（画面の表）']] : [])], value: calc ? 'calc' : 'all' }],
+      build: (v) => (v.sheet === 'calc' ? { title: '消費税の申告計算', ...head, orientation: 'portrait', blocks: calc } : consumptionTaxDoc(forms, { head, sheets: v.sheet === 'all' ? list.map((x) => x.value) : [v.sheet] })),
+    };
+  };
   typeSelect.addEventListener('change', () => saveSettings().catch(() => {}));
   for (const el of [interimN, interimL, baseSalesInput]) el.addEventListener('change', () => saveSettings().catch(() => {}));
   paint();

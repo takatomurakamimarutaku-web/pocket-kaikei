@@ -6,6 +6,8 @@ import { formatPercent } from '../enterprise-tax.js';
 import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
 import { toCsv, csvFileName } from '../csv.js';
+import { docHead } from '../print-forms.js';
+import { corporateTaxDoc, CORPORATE_SHEETS } from '../print-tax-forms.js';
 
 const TABS = [
   { value: 'summary', label: '概要' },
@@ -228,6 +230,14 @@ export async function render({ app, outlet, query }) {
     ]),
     h('div', { class: 'report-tools no-print' }, h('a', { class: 'btn', href: '#/reports/enterprise-tax', text: '事業税（第六号様式）を見る' })),
   ];
+
+  // ---- 印刷：国税庁の様式の欄の番号と並びに合わせた別表（print-tax-forms.js）。概要・住民税と事業税の画面は全部の別表を既定にする ----
+  app.printDoc = ({ printedAt }) => ({
+    options: [
+      { key: 'sheet', label: '印刷する別表', type: 'select', choices: [['all', '別表一〜十五（全部）'], ...CORPORATE_SHEETS.map((x) => [x.value, x.label])], value: CORPORATE_SHEETS.some((x) => x.value === tab) ? tab : 'all' },
+    ],
+    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
+  });
 
   // ---- 画面 ----
   const csv = () => saveFile(new Blob([toCsv(corporateTaxCsvRows(r))], { type: 'text/csv' }), csvFileName('corporate-tax'));

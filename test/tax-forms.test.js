@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { computeTaxReturn } from '../js/tax-return.js';
 import { taxReturnForms } from '../js/tax-forms.js';
 import { makeBook } from './helpers.js';
+import { consumptionTaxDoc, consumptionSheets, consumptionSheetBlocks } from '../js/print-tax-forms.js';
+import { layoutDocument } from '../js/print-layout.js';
 
 const period2026 = { startDate: '2026-01-01', endDate: '2026-12-31' };
 const byNo = (rows) => Object.fromEntries(rows.map((r) => [r.no, r]));
@@ -105,4 +107,22 @@ test('付表5-3（簡易課税）：④×みなし仕入率', () => {
   assert.deepEqual([s['④'].a, s['④'].b], [69908, 533690]);
   assert.deepEqual([s['⑤'].a, s['⑤'].b, s['⑤'].c], [55926, 426952, 482878]); // 80%
   assert.equal(byNo(f.first.rows)['④'].value, r.deduction);
+});
+
+test('印刷：付表は税率6.24%（A）・7.8%（B）・合計（C）の列に並べ、申告書は表ごとに改ページする', () => {
+  const r = computeTaxReturn({ journals: ntaExample(), period: period2026, entityType: 'individual', method: 'twenty' });
+  const f = taxReturnForms(r);
+  const [table] = consumptionSheetBlocks(f.sheets[0]);
+  assert.deepEqual(table.columns.map((c) => c.label), ['区　　分', '番号', '税率6.24%適用分\nA', '税率7.8%適用分\nB', '合計 C\n(A＋B)']);
+  const row7 = table.rows.find((x) => x.cells[1].text === '⑦');
+  assert.deepEqual(row7.cells.slice(2), ['55,926', '426,952', '482,878']);
+  assert.deepEqual(consumptionSheets(f).map((s) => s.value), ['first', 'second', '付表6']);
+  const doc = consumptionTaxDoc(f, { head: { company: 'テスト' } });
+  const pages = layoutDocument(doc);
+  assert.deepEqual(pages.map((p) => p.title), ['消費税及び地方消費税の申告書', '課税標準額等の内訳書', '税率別消費税額計算表（2割特例）']);
+  assert.deepEqual(pages.map((p) => p.caption), ['第一表（一般用）', '第二表', '付表6']);
+  // 第一表の㉖（合計税額）が左右2段の表に入っている
+  const texts = pages[0].items.filter((it) => it.t === 'text').map((it) => it.text);
+  assert.ok(texts.includes('151,600'));
+  assert.equal(layoutDocument(consumptionTaxDoc(f, { head: {}, sheets: ['second'] })).length, 1);
 });

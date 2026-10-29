@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { incomeTaxOn, basicDeduction, salaryIncome, lifeInsuranceDeduction, earthquakeDeduction, spouseDeduction, dependentDeduction, ageAtYearEnd, computeIncomeTax, validateIncomeTax, DEFAULT_INCOME_TAX } from '../js/income-tax.js';
+import { incomeTaxDoc, incomeFirstBlocks, incomeSheets } from '../js/print-tax-forms.js';
+import { layoutDocument } from '../js/print-layout.js';
 
 const business = { revenue: 10000000, income: 4000000, familySalary: 0, blueDeduction: 650000 };
 
@@ -125,4 +127,26 @@ test('入力の検証', () => {
   assert.match(validateIncomeTax({ ...DEFAULT_INCOME_TAX, socialInsurance: -1 }).join(), /0以上/);
   assert.match(validateIncomeTax({ ...DEFAULT_INCOME_TAX, spouse: { name: '', birthDate: 'x', income: 0 } }).join(), /配偶者の氏名/);
   assert.match(validateIncomeTax({ ...DEFAULT_INCOME_TAX, medical: [{ name: 'a', payee: 'b', kind: 'zzz', paid: 1, reimbursed: 0 }] }).join(), /区分/);
+});
+
+test('印刷：第一表は左に所得と控除、右に税金の計算（様式と同じ左右2段）。第四表・医療費控除の明細書は必要なときだけ', () => {
+  const input = { ...DEFAULT_INCOME_TAX, socialInsurance: 600000, medical: [{ name: '本人', payee: 'A病院', kind: 'treatment', paid: 300000, reimbursed: 0 }] };
+  const r = computeIncomeTax({ year: 2026, business, input });
+  const [table] = incomeFirstBlocks(r);
+  const flat = (row) => row.cells.flatMap((c) => [c, ...Array.from({ length: (c?.span || 1) - 1 }, () => null)]);
+  const cell = (c) => (c && typeof c === 'object' ? c.text : c);
+  const side = new Map();
+  for (const row of table.rows) {
+    const cs = flat(row);
+    for (const off of [0, 3]) if (cell(cs[off + 1])) side.set(`${off}:${cell(cs[off + 1])}`, cell(cs[off + 2]));
+  }
+  assert.equal(side.get('0:⑫'), '4,000,000');
+  assert.equal(side.get('0:⑬'), '600,000');
+  assert.equal(side.get('3:㉛'), r.lines[31].toLocaleString('en-US'));
+  assert.equal(side.get('3:(52)'), r.lines[52].toLocaleString('en-US'));
+  assert.deepEqual(incomeSheets(r, input).map((s) => s.value), ['first', 'second', 'medical']);
+  const pages = layoutDocument(incomeTaxDoc(r, { head: {}, input, year: 2026 }));
+  assert.deepEqual(pages.map((p) => p.caption), ['第一表（令和8年分）', '第二表（令和8年分）', '医療費控除の明細書（令和8年分）']);
+  const loss = computeIncomeTax({ year: 2026, business: { ...business, income: -500000 }, input: DEFAULT_INCOME_TAX });
+  assert.ok(incomeSheets(loss, DEFAULT_INCOME_TAX).some((s) => s.value === 'loss'));
 });
