@@ -6,7 +6,7 @@ import { detectFormat, parseEntries, namesIn, suggestAccounts, suggestTax, build
 import { yayoiCsv } from '../yayoi.js';
 import { encodeShiftJis } from '../sjis.js';
 import { compareAccounts, groupLabel, GROUPS } from '../accounts.js';
-import { validateJournal } from '../journal.js';
+import { validateJournal, voucherOf } from '../journal.js';
 import { formatYen } from '../money.js';
 import { formatPeriod, isInPeriod } from '../period.js';
 import { createJournal } from '../models.js';
@@ -75,7 +75,7 @@ export async function render({ app, outlet }) {
     const before = new Map(items.map((it) => [it.entry.key, it]));
     items = built.items.map((it) => {
       const outside = Boolean(it.date) && !isInPeriod(it.date, period);
-      const journal = createJournal({ periodId: period.id, date: it.date || '', lines: it.lines, adjusting: it.adjusting, source: 'journal_import' });
+      const journal = createJournal({ periodId: period.id, date: it.date || '', lines: it.lines, adjusting: it.adjusting, source: 'journal_import', ...(it.voucherNo ? { voucherNo: it.voucherNo } : {}) });
       const errors = it.errors.length || outside ? it.errors : validateJournal(journal, { accounts, subAccounts: subsForCheck, period });
       const duplicate = !errors.length && existing.has(journalSignature(journal));
       const prev = before.get(it.entry.key);
@@ -259,7 +259,7 @@ export async function render({ app, outlet }) {
         accounts: { ...saved.accounts, ...Object.fromEntries([...accountMap].filter(([, id]) => id)) },
         taxes: { ...saved.taxes, ...Object.fromEntries(taxMap) },
       });
-      showToast(`${done.journals.length}件の仕訳を登録しました（No.${done.journals[0].no}〜${done.journals.at(-1).no}${done.subs ? `、補助科目${done.subs}件` : ''}）`, { duration: 6000 });
+      showToast(`${done.journals.length}件の仕訳を登録しました（伝票No.${voucherOf(done.journals[0])}〜${voucherOf(done.journals.at(-1))}${done.subs ? `、補助科目${done.subs}件` : ''}）`, { duration: 6000 });
       app.navigate('#/journals?month=all');
     } catch (e) {
       put(errorsEl, errorBox(e instanceof ValidationError ? (Array.isArray(e.errors) ? e.errors : Object.values(e.errors)).slice(0, 10) : [errorText(e, '登録')]));

@@ -5,6 +5,8 @@ import { isTaxCategory } from './tax.js';
 
 export const MAX_LINES = 100;
 export const MAX_MEMO = 100;
+/** 伝票No の上限（9桁） */
+export const MAX_VOUCHER_NO = 999999999;
 
 /** 借方合計・貸方合計・差額（借方−貸方） */
 export function journalTotals(lines) {
@@ -37,6 +39,8 @@ export function validateJournal(journal, { accounts, subAccounts, period, origin
   const subById = new Map(subAccounts.map((s) => [s.id, s]));
   const usedBefore = new Set((original?.lines || []).map((l) => `${l.accountId}|${l.subAccountId || ''}`));
   // 部門（departments を渡したときだけ確かめる。Repository とバックアップの検証では必ず渡す）
+  // 伝票No：利用者が付ける番号（1以上の整数。同じ番号を複数の仕訳に付けてもよい）。省略すると保存のときに次の番号を付ける
+  if (journal.voucherNo != null && !isVoucherNo(journal.voucherNo)) errors.push(`伝票Noは1〜${MAX_VOUCHER_NO.toLocaleString('ja-JP')}の整数で入力してください`);
   const departmentById = departments ? new Map(departments.map((d) => [d.id, d])) : null;
   const departmentsBefore = new Set((original?.lines || []).map((l) => l.departmentId).filter(Boolean));
   lines.forEach((l, i) => {
@@ -170,6 +174,47 @@ export function memoCandidates(journals) {
 /** 仕訳の並び：日付 → 番号 */
 export function compareJournals(a, b) {
   return a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no;
+}
+
+/** 伝票No として正しいか（1〜MAX_VOUCHER_NO の整数） */
+export function isVoucherNo(v) {
+  return Number.isInteger(v) && v >= 1 && v <= MAX_VOUCHER_NO;
+}
+
+/** 伝票No（無い古いデータは入力No） */
+export const voucherOf = (j) => j.voucherNo ?? j.no;
+
+/**
+ * 仕訳帳の並び順
+ *   date：日付順（同じ日は伝票No → 入力No）
+ *   input：入力順（入力No。登録した順に付く番号で、変わらない）
+ *   voucher：伝票No順（同じ番号は日付 → 入力No）
+ */
+export const JOURNAL_ORDERS = {
+  date: (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : voucherOf(a) - voucherOf(b) || a.no - b.no),
+  input: (a, b) => a.no - b.no,
+  voucher: (a, b) => voucherOf(a) - voucherOf(b) || (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no),
+};
+
+/** 画面・メッセージでの仕訳の呼び方（伝票No） */
+export function journalLabel(j) {
+  return `伝票No.${voucherOf(j)}`;
+}
+
+/**
+ * 伝票No の入力（全角数字・カンマも可）を整数にする
+ * @returns {{ ok: true, value: number } | { ok: false, error: string }}
+ */
+export function parseVoucherNo(text) {
+  const s = String(text ?? '')
+    .trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[,，]/g, '');
+  if (!s) return { ok: false, error: '伝票Noを入力してください' };
+  if (!/^\d+$/.test(s)) return { ok: false, error: '伝票Noは数字で入力してください' };
+  const value = Number(s);
+  if (!isVoucherNo(value)) return { ok: false, error: `伝票Noは1〜${MAX_VOUCHER_NO.toLocaleString('ja-JP')}の整数で入力してください` };
+  return { ok: true, value };
 }
 
 /**

@@ -3,7 +3,7 @@ import { h, put, field, showToast, confirmDialog, errorBox, amountCell } from '.
 import { carryForwardBalances, nextPeriodDates, inventorySets, findInventoryJournals, inventoryJournalLines } from '../closing.js';
 import { trialBalance, computeOwnerCapital } from '../ledger.js';
 import { findByRole, compareAccounts } from '../accounts.js';
-import { validateJournal } from '../journal.js';
+import { validateJournal, journalLabel } from '../journal.js';
 import { parseYen, formatYen } from '../money.js';
 import { formatPeriod, todayString } from '../period.js';
 import { createJournal, createPeriod } from '../models.js';
@@ -34,7 +34,7 @@ export async function render({ app, outlet }) {
         { class: 'panel' },
         title,
         h('p', { text: '棚卸の仕訳は登録済みです。' }),
-        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${j.date.replaceAll('-', '/')}）` })))),
+        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)}（${j.date.replaceAll('-', '/')}）` })))),
       );
     }
     const tbRows = trialBalance({ accounts, period, journals }).rows;
@@ -60,7 +60,7 @@ export async function render({ app, outlet }) {
       if (v.length) return put(errorsEl, errorBox(v));
       try {
         const saved = await app.db.saveJournal(journal);
-        showToast(`棚卸の仕訳（No.${saved.no}）を登録しました`);
+        showToast(`棚卸の仕訳（${journalLabel(saved)}）を登録しました`);
         app.refresh();
       } catch (e) {
         put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));
@@ -95,7 +95,7 @@ export async function render({ app, outlet }) {
         { class: 'panel' },
         title,
         h('p', { text: '減価償却の仕訳は登録済みです。' }),
-        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${j.date.replaceAll('-', '/')}）` })))),
+        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)}（${j.date.replaceAll('-', '/')}）` })))),
         booked !== total ? h('p', { class: 'notice', text: `固定資産台帳の償却費（${formatYen(total)}円）と仕訳の金額（${formatYen(booked)}円）が違います。台帳を直した場合は、仕訳を削除してから登録し直してください。` }) : null,
         link,
       );
@@ -113,7 +113,7 @@ export async function render({ app, outlet }) {
       if (v.length) return put(errorsEl, errorBox(v));
       try {
         const saved = await app.db.saveJournal(journal);
-        showToast(`減価償却の仕訳（No.${saved.no}）を登録しました`);
+        showToast(`減価償却の仕訳（${journalLabel(saved)}）を登録しました`);
         app.refresh();
       } catch (e) {
         put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));
@@ -160,7 +160,7 @@ export async function render({ app, outlet }) {
         { class: 'panel' },
         title,
         h('p', { text: '家事按分の仕訳は登録済みです。' }),
-        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${j.date.replaceAll('-', '/')}）` })))),
+        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)}（${j.date.replaceAll('-', '/')}）` })))),
         h('p', { class: 'muted small', text: '経費を追加・修正したときや事業割合を変えたときは、この仕訳を削除してから登録し直してください。' }),
       );
     }
@@ -223,7 +223,7 @@ export async function render({ app, outlet }) {
         const v = validateJournal(journal, { accounts, subAccounts, period });
         if (v.length) return put(errorsEl, errorBox(v));
         const saved = await app.db.saveJournal(journal);
-        showToast(`家事按分の仕訳（No.${saved.no}）を登録しました`);
+        showToast(`家事按分の仕訳（${journalLabel(saved)}）を登録しました`);
         app.refresh();
       } catch (e) {
         put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));

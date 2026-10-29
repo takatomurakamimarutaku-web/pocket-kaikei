@@ -1,7 +1,7 @@
 // かんたん取引入力：取引の種類ごとに、日付・金額・科目・摘要から2行の仕訳を作る
 import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox, taxSelect } from '../ui.js';
 import { QUICK_BY_ID, slotCandidates, quickDefaults, buildQuickLines, isFixedSlot, simplePair, isCashAccount } from '../quick.js';
-import { validateJournal, memoCandidates } from '../journal.js';
+import { validateJournal, memoCandidates, journalLabel } from '../journal.js';
 import { TAX_BY_CODE } from '../tax.js';
 import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
@@ -281,7 +281,7 @@ export async function render({ app, outlet, params, query }) {
       journals.push(saved);
       dirty = false;
       const attached = attach.hasPending() ? await attach.commit(saved) : 0;
-      showToast(`No.${saved.no} を登録しました${attached ? `（証憑${attached}件）` : ''}`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${state.date.slice(0, 7)}`), duration: 5000 });
+      showToast(`${journalLabel(saved)} を登録しました${attached ? `（証憑${attached}件）` : ''}`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${state.date.slice(0, 7)}`), duration: 5000 });
       // 続けて入力できるよう、日付と科目を残して金額・摘要を空にする
       state.amount = '';
       state.memo = '';

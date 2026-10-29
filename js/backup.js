@@ -1,5 +1,5 @@
 // バックアップの書き出し・検証（純粋関数）。復元は検証済みのデータを Repository.replaceAll に渡す
-import { validateJournal } from './journal.js';
+import { validateJournal, isVoucherNo } from './journal.js';
 import { GROUP_BY_ID } from './accounts.js';
 import { isValidDate } from './period.js';
 import { isYen } from './money.js';
@@ -16,7 +16,7 @@ import { FILING_TYPES } from './white-return.js';
 import { validateDepartment } from './departments.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 7;
+export const BACKUP_VERSION = 8;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
@@ -73,6 +73,13 @@ const UPGRADES = {
   5: (obj) => ({ ...obj, version: 6, attachments: [], attachmentData: [] }),
   // 6 → 7：部門（departments）を追加
   6: (obj) => ({ ...obj, version: 7, departments: [] }),
+  // 7 → 8：伝票No（仕訳の voucherNo、期間の nextVoucherNo）を追加。今までの仕訳には入力No（no）を付ける
+  7: (obj) => ({
+    ...obj,
+    version: 8,
+    journals: Array.isArray(obj.journals) ? obj.journals.map((j) => (isObj(j) && j.voucherNo == null ? { ...j, voucherNo: j.no } : j)) : obj.journals,
+    periods: Array.isArray(obj.periods) ? obj.periods.map((p) => (isObj(p) && p.nextVoucherNo == null ? { ...p, nextVoucherNo: p.nextJournalNo || 1 } : p)) : obj.periods,
+  }),
 };
 
 /**
@@ -141,6 +148,7 @@ export function parseBackup(text) {
   }
   for (const p of obj.periods) {
     if (!hasBase(p) || !isValidDate(p.startDate) || !isValidDate(p.endDate) || !Array.isArray(p.openingBalances)) bad('会計期間');
+    if (p.nextVoucherNo != null && (!Number.isInteger(p.nextVoucherNo) || p.nextVoucherNo < 1)) bad('会計期間');
     for (const ob of p.openingBalances) {
       if (!accountIds.has(ob.accountId) || !isYen(ob.amount)) bad('期首残高');
       if (ob.subAccountId && subById.get(ob.subAccountId)?.accountId !== ob.accountId) bad('期首残高');
@@ -155,7 +163,7 @@ export function parseBackup(text) {
   const periodById = new Map(obj.periods.map((p) => [p.id, p]));
   if (!periodById.has(obj.currentPeriodId)) throw new BackupError('現在の会計期間が見つかりません');
   obj.journals.forEach((j) => {
-    if (!hasBase(j) || !Number.isInteger(j.no) || !Array.isArray(j.lines)) bad('仕訳');
+    if (!hasBase(j) || !Number.isInteger(j.no) || !isVoucherNo(j.voucherNo) || !Array.isArray(j.lines)) bad('仕訳');
     // 無効化された科目を使った過去の仕訳も正しいので、仕訳自身を original として渡す
     const errors = validateJournal(j, { accounts: obj.accounts, subAccounts: obj.subAccounts, period: periodById.get(j.periodId), original: j, departments: obj.departments });
     if (errors.length) throw new BackupError(`仕訳 No.${j.no}（${j.date}）が不正です：${errors[0]}`);

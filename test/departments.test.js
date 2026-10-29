@@ -229,7 +229,7 @@ test('Repository：部門の追加・名前の重複・並び替え・使って�
   // バックアップ：部門を含み、往復で同じ。バージョン6は空で読み込む。不正な部門・存在しない部門の仕訳は拒否
   const backup = createBackup(dump);
   assert.equal(backup.version, BACKUP_VERSION);
-  assert.equal(BACKUP_VERSION, 7);
+  assert.ok(BACKUP_VERSION >= 7);
   const parsed = parseBackup(JSON.stringify(backup));
   assert.deepEqual(parsed.departments.map((d) => d.name), ['店舗']);
   const { departments: _omit, ...v6 } = backup;
@@ -275,7 +275,7 @@ test('スキーマ移行：バージョン6のデータを残したまま部門�
   });
   const repo = await openDB({ indexedDB: idb });
   assert.equal(repo.db.version, DB_VERSION);
-  assert.equal(DB_VERSION, 7);
+  assert.ok(DB_VERSION >= 7);
   assert.ok(repo.db.objectStoreNames.contains('departments'));
   assert.equal((await repo.listTemplates())[0].name, '家賃');
   assert.deepEqual(await repo.listDepartments(), []);

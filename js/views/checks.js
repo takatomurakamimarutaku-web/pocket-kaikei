@@ -4,6 +4,7 @@ import { duplicateJournals, negativeCashDays, abnormalBalances, suspenseBalances
 import { taxChecks } from '../tax-reports.js';
 import { formatYen } from '../money.js';
 import { formatPeriod, todayString } from '../period.js';
+import { journalLabel } from '../journal.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 
@@ -11,7 +12,7 @@ export async function render({ app, outlet }) {
   const { period, accounts, subAccounts, journals, accountById, subById } = await app.load();
   const ctx = { accounts, subAccounts, period, journals };
   const name = (accountId, subAccountId) => `${accountById.get(accountId)?.name ?? '（不明な科目）'}${subAccountId ? `／${subById.get(subAccountId)?.name ?? ''}` : ''}`;
-  const jlink = (j) => h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, class: 'link', text: `No.${j.no}` });
+  const jlink = (j) => h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, class: 'link', text: journalLabel(j) });
   const amountOf = (j) => j.lines.filter((l) => l.side === 'debit').reduce((s, l) => s + l.amount, 0);
   const memoOf = (j) => j.lines.find((l) => l.memo)?.memo ?? '';
 

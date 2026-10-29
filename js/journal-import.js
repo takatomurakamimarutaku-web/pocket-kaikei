@@ -9,6 +9,7 @@
 // 出典の URL は docs/spec-phase2-transfer.md（アプリのソースには国税庁以外の URL を書かない決まり）
 // 科目・税区分は名前で照らし合わせ、合わないものは利用者が選ぶ。金額は整数の円
 import { parseDate, parseAmount } from './bank-import.js';
+import { isVoucherNo } from './journal.js';
 import { normalize } from './search.js';
 import { TAX_BY_CODE } from './tax.js';
 
@@ -97,6 +98,14 @@ export function parseEntries(rows, detected) {
   return detected.format === 'yayoi' ? yayoiEntries(rows) : headerEntries(rows, detected);
 }
 
+/** CSV の番号（伝票No など）が数字だけなら伝票No にする。それ以外（英字入りなど）は付けない（保存のときに次の番号） */
+function voucherFrom(text) {
+  const s = String(text ?? '').trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return isVoucherNo(n) ? n : null;
+}
+
 function yayoiEntries(rows) {
   const entries = [];
   let open = null;
@@ -114,7 +123,7 @@ function yayoiEntries(rows) {
     }
     const starts = flag === '2000' || flag === '2111' || flag === '2110' || !open;
     if (starts) {
-      open = { key: `row${rowNo}`, date: parseDate(r[3]), dateText: r[3], adjusting: Boolean(r[2]?.trim()), rows: [], lines: [], errors: [] };
+      open = { key: `row${rowNo}`, date: parseDate(r[3]), dateText: r[3], voucherNo: voucherFrom(r[1]), adjusting: Boolean(r[2]?.trim()), rows: [], lines: [], errors: [] };
       if (!open.date) open.errors.push(`${rowNo}行目：取引日付「${r[3] ?? ''}」が読めません`);
       if (flag === '2100' || flag === '2101') open.errors.push(`${rowNo}行目：複数行の仕訳の1行目（2110）がありません`);
       entries.push(open);
@@ -140,7 +149,7 @@ function headerEntries(rows, { headerRow, columns: c }) {
     // 番号の列があれば、同じ番号・日付が続く行を1つの仕訳にする（番号が空の行は1行で1つの仕訳）
     const key = no ? `${no}|${date || dateText}` : `row${rowNo}`;
     if (!open || open.key !== key) {
-      open = { key, date, adjusting: false, rows: [], lines: [], errors: [] };
+      open = { key, date, voucherNo: voucherFrom(no), adjusting: false, rows: [], lines: [], errors: [] };
       if (!date) open.errors.push(`${rowNo}行目：取引日「${dateText}」が読めません`);
       entries.push(open);
     }
@@ -273,7 +282,8 @@ export function journalSignature(j) {
  * @param {Array} entries parseEntries の結果
  * @param {{ accountMap: Map, taxMap: Map, subAccounts: Array, accountById: Map }} ctx
  *   accountMap：CSVの科目名 → accountId、taxMap：CSVの税区分名 → 税区分（空欄は科目の既定）
- * @returns {{ items: Array<{ entry, date, adjusting, lines, errors }>, newSubs: Array<{ accountId, name }> }}
+ * @returns {{ items: Array<{ entry, date, voucherNo, adjusting, lines, errors }>, newSubs: Array<{ accountId, name }> }}
+ *   voucherNo：CSV の番号が数字だけならその番号（伝票No）、なければ null
  *   lines の subAccountId は既存の補助科目の id か、新しく作る補助科目の 'new:科目id:名前'
  */
 export function buildImport(entries, { accountMap, taxMap, subAccounts, accountById }) {
@@ -300,7 +310,7 @@ export function buildImport(entries, { accountMap, taxMap, subAccounts, accountB
       lines.push({ side: l.side, accountId, subAccountId, amount: l.amount, taxCategory: TAX_BY_CODE[taxCategory] ? taxCategory : 'none', memo: l.memo.slice(0, 200) });
     }
     if (!entry.lines.length && !entry.errors.length) errors.push('金額のある明細がありません');
-    return { entry, date: entry.date, adjusting: entry.adjusting, lines, errors };
+    return { entry, date: entry.date, voucherNo: entry.voucherNo ?? null, adjusting: entry.adjusting, lines, errors };
   });
   return { items, newSubs: [...newSubs.values()] };
 }

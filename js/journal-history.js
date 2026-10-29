@@ -15,7 +15,7 @@ export const LATE_INPUT_MONTHS = 2;
 export const HISTORY_ACTIONS = { create: '登録', update: '訂正', delete: '削除', restore: '削除の取消' };
 
 /** 比べる項目（updatedAt など保存のたびに変わる項目は比べない） */
-const snapshot = (j) => (j ? { date: j.date, lines: j.lines, source: j.source ?? null } : null);
+const snapshot = (j) => (j ? { date: j.date, voucherNo: j.voucherNo ?? null, lines: j.lines, source: j.source ?? null } : null);
 
 /** 内容が変わったか */
 export function journalChanged(before, after) {
@@ -47,7 +47,7 @@ export function journalAmount(j) {
 /**
  * 組合せ検索（すべての条件を満たす仕訳）
  * @param {Array} journals
- * @param {{ dateFrom?, dateTo?, amountMin?, amountMax?, accountId?, party?, text? }} c
+ * @param {{ dateFrom?, dateTo?, amountMin?, amountMax?, accountId?, party?, text?, voucherFrom?, voucherTo? }} c
  *   金額は仕訳の借方合計か、いずれかの行の金額が範囲に入れば当てはまる
  *   取引先（party）は補助科目の名前か摘要に含まれる文字
  * @param {{ subById: Map, normalize: Function, accountById: Map }} ctx
@@ -61,6 +61,8 @@ export function searchJournals(journals, c, { subById, normalize, accountById })
     if (c.dateTo && j.date > c.dateTo) return false;
     if ((c.amountMin != null || c.amountMax != null) && !(inRange(journalAmount(j)) || j.lines.some((l) => inRange(l.amount)))) return false;
     if (c.accountId && !j.lines.some((l) => l.accountId === c.accountId)) return false;
+    const voucher = j.voucherNo ?? j.no;
+    if ((c.voucherFrom != null && voucher < c.voucherFrom) || (c.voucherTo != null && voucher > c.voucherTo)) return false;
     if (party && !j.lines.some((l) => [subById.get(l.subAccountId)?.name, l.memo].some((t) => t && normalize(t).includes(party)))) return false;
     if (text && !j.lines.some((l) => [l.memo, accountById.get(l.accountId)?.name, subById.get(l.subAccountId)?.name].some((t) => t && normalize(t).includes(text)))) return false;
     return true;
@@ -69,7 +71,7 @@ export function searchJournals(journals, c, { subById, normalize, accountById })
 
 /** 検索条件が1つでも入っているか */
 export function hasCriteria(c) {
-  return Boolean(c.dateFrom || c.dateTo || c.amountMin != null || c.amountMax != null || c.accountId || c.party || c.text);
+  return Boolean(c.dateFrom || c.dateTo || c.amountMin != null || c.amountMax != null || c.accountId || c.party || c.text || c.voucherFrom != null || c.voucherTo != null);
 }
 
 /**
@@ -80,6 +82,7 @@ export function describeChange(before, after, { accountById, subById, formatYen,
   if (!before || !after) return [];
   const out = [];
   if (before.date !== after.date) out.push(`日付 ${before.date.replaceAll('-', '/')} → ${after.date.replaceAll('-', '/')}`);
+  if ((before.voucherNo ?? before.no) !== (after.voucherNo ?? after.no)) out.push(`伝票No ${before.voucherNo ?? before.no} → ${after.voucherNo ?? after.no}`);
   const dep = (l) => (l.departmentId ? `［${departmentById.get(l.departmentId)?.name ?? '部門'}］` : '');
   const line = (l) => `${l.side === 'debit' ? '借方' : '貸方'} ${accountById.get(l.accountId)?.name ?? '（不明）'}${l.subAccountId ? `・${subById.get(l.subAccountId)?.name ?? ''}` : ''}${dep(l)} ${formatYen(l.amount)}${l.memo ? `「${l.memo}」` : ''}`;
   const a = before.lines.map(line);

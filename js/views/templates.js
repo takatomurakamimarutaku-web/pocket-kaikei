@@ -5,6 +5,7 @@ import { formatYen } from '../money.js';
 import { monthsInPeriod, todayString } from '../period.js';
 import { errorText } from '../errors.js';
 import { closedNotice } from './period-common.js';
+import { journalLabel, voucherOf } from '../journal.js';
 
 export async function render({ app, outlet, query }) {
   const { period, journals, accountById } = await app.load();
@@ -37,7 +38,7 @@ export async function render({ app, outlet, query }) {
         { class: 'recurring-item' },
         h('label', { class: 'check' }, box, h('span', { class: 'recurring-name', text: s.template.name })),
         h('span', { class: 'muted small', text: `${s.date.replaceAll('-', '/')}・${formatYen(templateAmount(s.template))}円` }),
-        s.done ? h('a', { href: `#/journal/${encodeURIComponent(s.done.id)}/edit`, class: 'link small', text: `登録済み No.${s.done.no}` }) : !s.inPeriod ? h('span', { class: 'muted small', text: '会計期間の外' }) : null,
+        s.done ? h('a', { href: `#/journal/${encodeURIComponent(s.done.id)}/edit`, class: 'link small', text: `登録済み ${journalLabel(s.done)}` }) : !s.inPeriod ? h('span', { class: 'muted small', text: '会計期間の外' }) : null,
       );
     });
     const create = async () => {
@@ -45,7 +46,7 @@ export async function render({ app, outlet, query }) {
       if (!targets.length) return showToast('登録する仕訳を選んでください');
       try {
         const saved = await app.db.saveJournals(targets.map((s) => journalFromTemplate(s.template, { periodId: period.id, date: s.date })));
-        showToast(`${saved.length}件の仕訳を登録しました（No.${saved[0].no}〜）`);
+        showToast(`${saved.length}件の仕訳を登録しました（伝票No.${voucherOf(saved[0])}〜）`);
         app.refresh();
       } catch (e) {
         put(errorsEl, errorBox(Array.isArray(e.errors) ? e.errors : [errorText(e, '登録')]));

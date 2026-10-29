@@ -321,7 +321,7 @@ test('積上げ計算の明細：明細ごとの税込金額・消費税額等�
   const { stackedTaxCsv } = await import('../js/csv.js');
   const csv = stackedTaxCsv(rows, { accountById: new Map(book.accounts.map((a) => [a.id, a])), subById: new Map() });
   const lines = csv.replace(/^﻿/, '').trim().split('\r\n');
-  assert.equal(lines[0], '日付,No.,売上・仕入,科目,補助科目,税区分,摘要,税込金額,消費税額等,経過措置の割合,経過措置で控除する国税');
+  assert.equal(lines[0], '日付,伝票No.,売上・仕入,科目,補助科目,税区分,摘要,税込金額,消費税額等,経過措置の割合,経過措置で控除する国税');
   assert.match(lines[1], /^2026\/02\/01,1,売上,売上高,,/);
   assert.match(lines.at(-1), /,1007,91,80%,57$/);
 });

@@ -36,10 +36,11 @@ function book(entityType, { manufacturing = false, subs = [], departmentNames = 
   return { accounts, byName, subAccounts, subId, departments, journals, j };
 }
 
-/** 伝票番号を日付順に振り、期間の次の番号を入れる */
+/** 入力No・伝票No を日付順に振り、期間の次の番号を入れる */
 function finish(period, journals) {
-  journals.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).forEach((x, i) => (x.no = i + 1));
+  journals.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).forEach((x, i) => ((x.no = i + 1), (x.voucherNo = i + 1)));
   period.nextJournalNo = journals.length + 1;
+  period.nextVoucherNo = journals.length + 1;
 }
 
 function individualSample(year) {

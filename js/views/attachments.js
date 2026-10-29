@@ -4,6 +4,7 @@ import { searchAttachments, ATTACHMENT_KINDS, formatBytes, attachmentFileName } 
 import { attachmentThumb, attachmentText, editAttachment } from './attachment-panel.js';
 import { attachmentsCsv, csvFileName } from '../csv.js';
 import { parseYen } from '../money.js';
+import { journalLabel } from '../journal.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 
@@ -89,8 +90,8 @@ export async function render({ app, outlet, query }) {
     if (!j) return h('span', { class: 'muted small', text: a.journalId ? '仕訳は削除されています' : '仕訳につながっていません' });
     const other = j.periodId !== period.id ? `（${slash(periodById.get(j.periodId)?.startDate ?? '')}からの期間）` : '';
     return j.periodId === period.id
-      ? h('a', { class: 'small', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${slash(j.date)}）の仕訳を開く` })
-      : h('span', { class: 'muted small', text: `No.${j.no}（${slash(j.date)}）${other}` });
+      ? h('a', { class: 'small', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)}（${slash(j.date)}）の仕訳を開く` })
+      : h('span', { class: 'muted small', text: `${journalLabel(j)}（${slash(j.date)}）${other}` });
   }
 
   function paint() {

@@ -233,16 +233,16 @@ test('スキーマ移行：バージョン5のデータを残したまま証憑�
   repo.close();
 });
 
-test('索引簿の CSV：取引年月日・金額・取引先・保存用のファイル名・ハッシュ値・仕訳No.', () => {
+test('索引簿の CSV：取引年月日・金額・取引先・保存用のファイル名・ハッシュ値・伝票No.', () => {
   const a = { id: 'a', date: '2026-10-31', amount: 110000, partner: '㈱国税商事', kind: 'electronic', name: 'inv.pdf', type: 'application/pdf', size: 1234, sha256: SHA_ABC, journalId: 'j1', memo: '10月分', createdAt: '2026-11-01T00:00:00.000Z' };
   const csv = attachmentsCsv([a, { ...a, id: 'b', journalId: 'gone', amount: null, date: '' }], {
-    journalById: new Map([['j1', { no: 7, date: '2026-10-31' }]]),
+    journalById: new Map([['j1', { no: 7, voucherNo: 9, date: '2026-10-31' }]]),
     kindLabels: ATTACHMENT_KINDS,
     fileName: attachmentFileName,
   });
   const lines = csv.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
-  assert.equal(lines[0], '取引年月日,取引金額,取引先,種類,保存用のファイル名,元のファイル名,大きさ（バイト）,SHA-256,仕訳No.,仕訳の日付,メモ,登録日時');
-  assert.equal(lines[1], `2026/10/31,110000,㈱国税商事,電子取引のデータ,20261031_㈱国税商事_110000.pdf,inv.pdf,1234,${SHA_ABC},7,2026/10/31,10月分,2026-11-01T00:00:00.000Z`);
+  assert.equal(lines[0], '取引年月日,取引金額,取引先,種類,保存用のファイル名,元のファイル名,大きさ（バイト）,SHA-256,伝票No.,仕訳の日付,メモ,登録日時');
+  assert.equal(lines[1], `2026/10/31,110000,㈱国税商事,電子取引のデータ,20261031_㈱国税商事_110000.pdf,inv.pdf,1234,${SHA_ABC},9,2026/10/31,10月分,2026-11-01T00:00:00.000Z`);
   assert.equal(lines[2].split(',').slice(0, 2).join(','), ',');
   assert.equal(lines[2].split(',')[8], '');
 });

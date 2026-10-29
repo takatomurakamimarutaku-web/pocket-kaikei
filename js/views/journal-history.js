@@ -17,6 +17,9 @@ export function historyItem(e, { accountById, subById, departmentById = new Map(
   const j = e.after || e.before;
   const changes = e.action === 'update' ? describeChange(e.before, e.after, { accountById, subById, formatYen, departmentById }) : [];
   const late = e.action === 'create' && isLateInput(j.date, e.at);
+  // 伝票No（変えられる）と入力No（変わらない）。伝票No を持たない古い履歴は入力No だけ
+  const voucher = j.voucherNo ?? e.journalNo;
+  const label = voucher != null && voucher !== e.journalNo ? `伝票No.${voucher}（入力No.${e.journalNo ?? '-'}）` : `伝票No.${e.journalNo ?? '-'}`;
   const lineText = (l) => `${l.side === 'debit' ? '借方' : '貸方'} ${accountById.get(l.accountId)?.name ?? '（不明な科目）'} ${formatYen(l.amount)}${l.memo ? `「${l.memo}」` : ''}`;
   return h(
     'li',
@@ -25,7 +28,7 @@ export function historyItem(e, { accountById, subById, departmentById = new Map(
       'div',
       { class: 'history-head' },
       h('span', { class: `history-badge ${e.action}`, text: HISTORY_ACTIONS[e.action] }),
-      e.action === 'delete' ? h('strong', { text: `No.${e.journalNo ?? '-'}` }) : h('a', { href: `#/journal/${encodeURIComponent(e.journalId)}/edit`, class: 'link', text: `No.${e.journalNo ?? '-'}` }),
+      e.action === 'delete' ? h('strong', { text: label }) : h('a', { href: `#/journal/${encodeURIComponent(e.journalId)}/edit`, class: 'link', text: label }),
       h('span', { class: 'muted small', text: `取引日 ${j.date.replaceAll('-', '/')}` }),
       h('span', { class: 'muted small', text: `${HISTORY_ACTIONS[e.action]}日時 ${formatDateTime(e.at)}` }),
       late ? h('span', { class: 'late-flag', text: `取引日から${LATE_INPUT_MONTHS}か月を過ぎた入力` }) : null,
@@ -55,9 +58,9 @@ export async function render({ app, outlet, query }) {
   );
 
   function csv() {
-    const rows = [['日時', '種類', '仕訳No.', '取引日', '変更前', '変更後']];
+    const rows = [['日時', '種類', '入力No.', '伝票No.', '取引日', '変更前', '変更後']];
     const text = (j) => (j ? `${j.date} ${j.lines.map((l) => `${l.side === 'debit' ? '借' : '貸'}:${accountById.get(l.accountId)?.name ?? ''}:${l.amount}${l.memo ? `:${l.memo}` : ''}`).join(' / ')}` : '');
-    for (const e of visible()) rows.push([e.at, HISTORY_ACTIONS[e.action], e.journalNo ?? '', (e.after || e.before).date, text(e.before), text(e.after)]);
+    for (const e of visible()) rows.push([e.at, HISTORY_ACTIONS[e.action], e.journalNo ?? '', (e.after || e.before).voucherNo ?? e.journalNo ?? '', (e.after || e.before).date, text(e.before), text(e.after)]);
     if (rows.length === 1) return showToast('書き出す履歴がありません');
     saveFile(new Blob([toCsv(rows)], { type: 'text/csv' }), csvFileName('journal-history'));
   }
