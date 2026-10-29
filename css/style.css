@@ -839,3 +839,13 @@ input.budget-input { text-align: right; font-variant-numeric: tabular-nums; padd
 .attach-link { padding: 0 4px 4px 66px; }
 .jc-attach { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; margin-right: 8px; }
 .jc-attach svg { width: 14px; height: 14px; }
+
+/* 会計ソフトとの受け渡し */
+.ti-map { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.ti-map-row { display: grid; gap: 4px; }
+.ti-map-name { font-weight: 600; overflow-wrap: anywhere; }
+.ti-map select.is-missing { border-color: var(--warn-text); }
+.ti-map + details { margin-top: 12px; }
+.ti-note { margin: 0; color: var(--warn-text); }
+.ti-ok > summary { margin: 4px 4px 8px; }
+.ti-points li + li { margin-top: 4px; }
