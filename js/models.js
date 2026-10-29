@@ -60,6 +60,9 @@ export function createAsset(fields = {}, now = new Date()) {
     usefulLife: null,
     businessRatio: 100,
     disposedOn: null,
+    carryOn: null, // 前の会計ソフトの帳簿価額を引き継いだ日（期首）
+    carryBook: null, // その日の帳簿価額
+    carryRevisedBase: null, // 定率法で切り替え済みのときの改定取得価額
     memo: '',
     ...stamp(now),
     ...fields,

@@ -223,7 +223,23 @@ mkdirSync(OUT, { recursive: true });
       await page.fill('#f-life', '5');
     }
   });
-  if (!(await page.locator('.asset-row').count())) errors.push('固定資産を登録できない');
+  // アプリを使う前からある資産：前の帳簿の期首帳簿価額を引き継ぐ
+  await addAsset(async () => {
+    await page.fill('#f-name', '軽自動車');
+    await page.selectOption('#f-category', 'vehicle');
+    await page.fill('#f-acquired', '2023-04-01');
+    await page.dispatchEvent('#f-acquired', 'input');
+    await page.fill('#f-cost', '1200000');
+    await page.selectOption('#f-method', 'straight');
+    await page.fill('#f-life', '4');
+    if (!(await page.locator('.carry-box').isVisible())) errors.push('前の帳簿からの引き継ぎ欄が出ない');
+    await page.fill('#f-carry-book', '400000');
+    await page.dispatchEvent('#f-carry-book', 'input');
+    await page.waitForTimeout(200);
+    const first = await page.locator('.report tbody tr').first().innerText();
+    if (!first.includes('2026') || !first.includes('300,000')) errors.push(`引き継いだ帳簿価額から償却していない：${first}`);
+  }, '35a-asset-carry');
+  if ((await page.locator('.asset-row').count()) !== 3) errors.push('固定資産を登録できない');
   await shot('35-assets-list', true);
 
   // 銀行明細CSVの取り込み（Shift_JIS・三菱UFJ銀行に似せた形式）

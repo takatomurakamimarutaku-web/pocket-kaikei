@@ -414,6 +414,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .acc-title { font-weight: 700; }
 .acc-tags { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .acc-row.asset-row, .acc-row.asset-plain { grid-template-columns: 1fr; }
+.carry-box { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3) 0; margin: 0 0 var(--sp-4); }
+.carry-box[hidden] { display: none; }
+.carry-box legend { padding: 0 6px; font-size: var(--fs-footnote); font-weight: 700; color: var(--muted); }
 .asset-flow { display: flex; flex-wrap: wrap; gap: 2px 12px; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .asset-flow .asset-dep { color: var(--text); font-weight: 600; }
 .sub-row { display: flex; align-items: center; gap: 8px; padding: 8px 16px; min-height: 48px; }

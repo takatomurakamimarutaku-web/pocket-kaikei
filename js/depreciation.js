@@ -201,8 +201,25 @@ export function validateAsset(asset, { entityType, accounts }) {
     if (!isValidDate(asset.disposedOn)) e.disposedOn = '日付が正しくありません';
     else if (isValidDate(asset.startedOn) && asset.disposedOn < asset.startedOn) e.disposedOn = '使い始めた日より前にはできません';
   }
+  if (asset.carryOn != null || asset.carryBook != null || asset.carryRevisedBase != null) {
+    const floorYen = cat?.intangible ? 0 : 1;
+    if (!usesLife(asset.method)) e.carryBook = '帳簿価額の引き継ぎは定額法・定率法の資産だけです';
+    else if (!isValidDate(asset.carryOn)) e.carryBook = '引き継ぐ日付が正しくありません';
+    else if (isValidDate(asset.startedOn) && asset.carryOn <= asset.startedOn) e.carryBook = '使い始めた日より後の期首の帳簿価額を入力してください（使い始めた年からアプリを使うなら空欄）';
+    else if (asset.disposedOn && asset.carryOn > asset.disposedOn) e.carryBook = '除却・売却した日より後の引き継ぎはできません';
+    else if (!isYen(asset.carryBook) || asset.carryBook < floorYen || asset.carryBook > cost) e.carryBook = `帳簿価額は${floorYen}円以上・取得価額以下の整数で入力してください`;
+    if (asset.carryRevisedBase != null) {
+      if (asset.method !== 'declining') e.carryRevisedBase = '改定取得価額は定率法の資産だけです';
+      else if (!isYen(asset.carryRevisedBase) || asset.carryRevisedBase < 1 || asset.carryRevisedBase > cost) e.carryRevisedBase = '改定取得価額は1円以上・取得価額以下の整数で入力してください';
+    }
+  }
   if (String(asset.memo ?? '').length > 100) e.memo = 'メモは100文字以内にしてください';
   return e;
+}
+
+/** 前の会計ソフトの帳簿価額を引き継いでいるか（定額法・定率法で、日付と金額があるとき） */
+export function hasCarryOver(asset) {
+  return usesLife(asset.method) && isValidDate(asset.carryOn) && isYen(asset.carryBook);
 }
 
 /**
@@ -248,8 +265,16 @@ export function depreciationSchedule(asset, periods) {
   let book = asset.cost;
   let usedMonths = 0; // 一括償却の経過月数
   let revisedBase = null; // 定率法の改定取得価額
+  const carry = hasCarryOver(asset);
   for (const r of ranges(periods, asset.startedOn)) {
     if (r.endDate < asset.startedOn) continue;
+    // 前の会計ソフトの帳簿価額を引き継ぐ：引き継いだ日より前の期間は出さず、その日の帳簿価額から計算を続ける。
+    // 定率法で切り替え済みなら、前の帳簿の改定取得価額を使う（無ければ、引き継いだ年に保証額を下回ればその年の期首帳簿価額）
+    if (carry && r.startDate < asset.carryOn) continue;
+    if (carry && r.startDate >= asset.carryOn && !out.length) {
+      book = asset.carryBook;
+      if (asset.method === 'declining' && isYen(asset.carryRevisedBase)) revisedBase = asset.carryRevisedBase;
+    }
     if (book <= floor || out.length >= 200) break;
     if (asset.method !== 'lump3' && asset.disposedOn && r.startDate > asset.disposedOn) break;
     const from = r.startDate > asset.startedOn ? r.startDate : asset.startedOn;
@@ -312,7 +337,10 @@ export function openingBook(asset, periods, period) {
   const row = depreciationFor(asset, periods, period);
   if (row) return row.opening;
   const prev = depreciationSchedule(asset, periods).filter((r) => r.endDate < period.startDate);
-  return prev.length ? prev[prev.length - 1].closing : asset.cost;
+  if (prev.length) return prev[prev.length - 1].closing;
+  // 引き継いだ帳簿価額が備忘価額（1円）だけのときは償却の行が無いので、引き継いだ額をそのまま使う
+  if (hasCarryOver(asset) && period.startDate >= asset.carryOn) return asset.carryBook;
+  return asset.cost;
 }
 
 /**
