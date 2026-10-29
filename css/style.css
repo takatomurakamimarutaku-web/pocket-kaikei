@@ -923,6 +923,10 @@ div.menu-row.ar-row::after { visibility: hidden; }
 .bd-pick-group { margin: 8px 0 0; font-weight: 700; }
 .bd-pick .check { margin-bottom: 0; min-height: 40px; }
 .bd-pick-sub { padding-left: 1.6em; }
+/* 内訳書の e-Tax 用 CSV */
+.bd-etax ul { margin: 4px 0 var(--sp-3); padding-left: 1.2em; }
+.bd-etax-files li { margin-bottom: 2px; }
+.bd-etax-name { font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* 画面ロック：解除するまでアプリの画面を見せない（確認ダイアログ .overlay はこの上に出す） */
 body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility: hidden; }
