@@ -3,6 +3,7 @@ import { h, put, field, segmented, amountCell, showToast } from '../ui.js';
 import { depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionReplaced } from '../blue-return.js';
 import { blueReturnSet, hasRealEstate, isRealEstateAsset, realEstateDetails, realEstateForFirstTable } from '../real-estate.js';
 import { depreciationTableView } from './blue-return.js';
+import { isWhite } from '../white-return.js';
 import { formatYen, parseYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 import { ValidationError } from '../db.js';
@@ -18,6 +19,10 @@ export async function render({ app, outlet, query }) {
       h('p', { class: 'empty', text: settings.entityType === 'individual' ? '不動産所得の設定が「なし」です。設定の「不動産所得」を「事業と両方」か「不動産だけ」にすると使えます。' : '青色申告決算書（不動産所得用）は個人の様式です。' }),
       settings.entityType === 'individual' ? h('a', { href: '#/settings', class: 'btn', text: '設定へ' }) : null,
     );
+    return;
+  }
+  if (isWhite(settings)) {
+    put(outlet, h('p', { class: 'empty', text: '設定の申告の種類が白色申告です。白色申告では青色申告決算書の代わりに収支内訳書を提出します。' }), h('a', { href: '#/reports/white-return', class: 'btn', text: '収支内訳書へ' }));
     return;
   }
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);

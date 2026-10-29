@@ -19,6 +19,7 @@ import { validateCapex } from './asset-tools.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js';
+import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 
 export const DB_NAME = 'pocket-kaikei';
 export const DB_VERSION = 6;
@@ -352,6 +353,7 @@ export class Repository {
       if (patch.entityType && patch.entityType !== cur.entityType) throw new ValidationError(['個人/法人は変更できません']);
       const next = { ...cur, ...patch, entityType: cur.entityType, updatedAt: now() };
       if (!String(next.businessName || '').trim()) throw new ValidationError({ businessName: '事業者名を入力してください' });
+      if (next.filing !== undefined && (!FILING_TYPES.includes(next.filing) || (next.filing === 'white' && next.entityType !== 'individual'))) throw new ValidationError(['申告の種類を選んでください（白色申告は個人だけ）']);
       meta.put({ key: 'settings', value: next });
       return next;
     });
@@ -561,6 +563,23 @@ export class Repository {
       const errors = validateBlueReturnSettings(value);
       if (errors.length) throw new ValidationError(errors);
       const next = { ...period, blueReturn: value, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 収支内訳書（白色申告）の設定（事業専従者・不動産の貸付けの規模・土地等を取得するための負債の利子）を期間に保存する */
+  saveWhiteReturnSettings(periodId, patch) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+      const value = { ...(period.whiteReturn || {}), ...patch };
+      const errors = validateWhiteReturnSettings(value);
+      if (errors.length) throw new ValidationError(errors);
+      if (value.workers) value.workers = value.workers.map((w) => ({ name: w.name.trim(), spouse: w.spouse, work: w.work }));
+      const next = { ...period, whiteReturn: value, updatedAt: now() };
       store.put(next);
       return next;
     });

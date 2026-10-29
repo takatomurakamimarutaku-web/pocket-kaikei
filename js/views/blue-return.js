@@ -2,6 +2,7 @@
 import { h, put, field, segmented, amountCell } from '../ui.js';
 import { monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionReplaced } from '../blue-return.js';
 import { blueReturnSet, hasRealEstate, isRealEstateAsset } from '../real-estate.js';
+import { isWhite } from '../white-return.js';
 import { formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 
@@ -43,6 +44,10 @@ export async function render({ app, outlet, query }) {
   const { settings, period, accounts, journals } = await app.load();
   if (settings.entityType !== 'individual') {
     put(outlet, h('p', { class: 'empty', text: '青色申告決算書は個人事業主の様式です。法人は損益計算書・貸借対照表をご利用ください。' }), h('a', { href: '#/reports', class: 'btn', text: '帳票へ' }));
+    return;
+  }
+  if (isWhite(settings)) {
+    put(outlet, h('p', { class: 'empty', text: '設定の申告の種類が白色申告です。白色申告では青色申告決算書の代わりに収支内訳書を提出します。' }), h('a', { href: '#/reports/white-return', class: 'btn', text: '収支内訳書へ' }));
     return;
   }
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);

@@ -6,7 +6,7 @@
 // 法人は税引前当期純利益から始め、法人税等は「法人税等の支払額」で差し引く。
 // 減価償却費・固定資産の売却損益は営業活動で足し戻し、同じ額を投資活動（固定資産の増減）から除く。
 import { GROUP_BY_ID, isBsGroup, isMfgGroup } from './accounts.js';
-import { closingRows, incomeStatement } from './statements.js';
+import { closingRows, incomeStatement, incomeBeforeLabel } from './statements.js';
 import { openingRows } from './compare.js';
 import { monthsInPeriod } from './period.js';
 import { recurringStatus } from './templates.js';
@@ -38,7 +38,7 @@ export function cfLineOf(account, entityType) {
  * キャッシュフロー計算書（間接法）
  * @returns {{ sections: Array<{ title, lines: Array<{key,label,amount}>, total, subtotal? }>, net, opening, closing, matches: boolean }}
  */
-export function cashFlowStatement({ entityType, accounts, period, journals }) {
+export function cashFlowStatement({ entityType, accounts, period, journals, white = false }) {
   const individual = entityType === 'individual';
   const open = new Map(openingRows({ accounts, period }).map((r) => [r.account.id, groupAmount(r)]));
   const close = closingRows({ accounts, period, journals });
@@ -68,7 +68,7 @@ export function cashFlowStatement({ entityType, accounts, period, journals }) {
   const v = (k) => cf[k] || 0;
 
   const opLines = [
-    { key: 'profit', label: individual ? '所得金額（青色申告特別控除前）' : '税引前当期純利益', amount: profit },
+    { key: 'profit', label: individual ? `所得金額（${incomeBeforeLabel(white).short}）` : '税引前当期純利益', amount: profit },
     { key: 'depreciation', label: '減価償却費', amount: depreciation },
     ...(individual ? [] : [{ key: 'gain_loss', label: '固定資産売却損益・除却損', amount: gainLoss }]),
     ...(individual ? [] : [{ key: 'allowance', label: '貸倒引当金の増減', amount: v('allowance') }]),

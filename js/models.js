@@ -1,7 +1,7 @@
 // レコードの生成と定数（DOM に依存しない）
 // 全レコードに id（UUID）・createdAt・updatedAt を持たせる（将来のクラウド同期のため）
 
-export const ENTITY_LABELS = { individual: '個人事業主（青色申告）', corporation: '法人' };
+export const ENTITY_LABELS = { individual: '個人事業主', corporation: '法人' };
 export const TAX_STATUS_LABELS = { taxable: '課税事業者', exempt: '免税事業者' };
 
 export function newId() {

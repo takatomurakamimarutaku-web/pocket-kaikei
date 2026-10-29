@@ -15,6 +15,14 @@
 // - 地震保険料控除：国税庁 No.1145
 //   https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1145.htm
 // - 復興特別所得税：基準所得税額の2.1%（確定申告の手引き）。申告納税額は100円未満切捨て
+// - 損失申告（第四表）：国税庁「令和7年分 確定申告書の書き方（損失申告用）」
+//   https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/003.pdf
+//   ・青色申告者は純損失の金額を翌年以後3年間繰り越せる。白色申告者が繰り越せるのは変動所得の損失・被災事業用資産の損失（と雑損失）だけ
+//   ・雑損控除・医療費控除・寄附金控除の計算には、繰越損失を差し引いた後の所得金額（第四表の「M」）を使う
+//   国税庁 タックスアンサー No.2070 純損失の繰越控除と繰戻還付 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2070.htm
+//   国税庁「専門用語の解説」：合計所得金額は純損失・雑損失等の繰越控除を適用する前、総所得金額等は適用した後の金額
+//   https://www.nta.go.jp/taxes/shiraberu/taxanswer/yogo/senmon.htm
+//   基礎控除・配偶者控除・寡婦・ひとり親・勤労学生の所得要件は合計所得金額で判定する
 // 欄の番号は令和7年分の様式（特定親族特別控除の欄が加わり、基礎控除が㉕・控除の合計が㉚）に合わせた
 import { isYen } from './money.js';
 
@@ -180,7 +188,7 @@ export function dependentDeduction({ birthDate, income, livingWithParent = false
   return { kind: 'general', amount: 380000, age };
 }
 
-export const DEPENDENT_KIND_LABELS = { none: '対象外（所得超過）', child: '16歳未満（控除なし・住民税の欄に記入）', general: '一般の扶養親族', specific: '特定扶養親族', elderly: '老人扶養親族', elderly_parent: '老人扶養親族（同居老親等）', specific_relative: '特定親族特別控除' };
+export const DEPENDENT_KIND_LABELS = { family_worker: '事業専従者（控除の対象外）', none: '対象外（所得超過）', child: '16歳未満（控除なし・住民税の欄に記入）', general: '一般の扶養親族', specific: '特定扶養親族', elderly: '老人扶養親族', elderly_parent: '老人扶養親族（同居老親等）', specific_relative: '特定親族特別控除' };
 
 /** 入力の初期値（period.incomeTaxReturn） */
 export const DEFAULT_INCOME_TAX = {
@@ -199,14 +207,22 @@ export const DEFAULT_INCOME_TAX = {
   widow: 'none', // none | widow | single_parent
   workingStudent: false,
   disabled: { normal: 0, special: 0, specialLiving: 0 }, // 人数
-  spouse: null, // { name, birthDate, income }
-  dependents: [], // [{ name, relation, birthDate, income, livingWithParent }]
+  spouse: null, // { name, birthDate, income, familyWorker? }
+  dependents: [], // [{ name, relation, birthDate, income, livingWithParent, familyWorker? }]  familyWorker：事業専従者（配偶者控除・扶養控除の対象外）
   medical: [], // [{ name, payee, kind, paid, reimbursed }]
   donations: 0,
   housingLoanCredit: 0,
   prepaid1: 0,
   prepaid2: 0,
+  lossCarry: { y3: 0, y2: 0, y1: 0 }, // 前年分までに引ききれなかった純損失の金額（3年前・2年前・前年の分）
 };
+
+/** 繰越損失の年分（古い順。第四表（二）の4 の欄の並び） */
+export const LOSS_YEARS = [
+  ['y3', 3],
+  ['y2', 2],
+  ['y1', 1],
+];
 
 const TEXT_MAX = 40;
 const yen0 = (v) => isYen(v) && v >= 0;
@@ -219,6 +235,7 @@ export function validateIncomeTax(v) {
   for (const k of amounts) if (!yen0(v[k])) e.push('金額は0以上の整数で入力してください');
   for (const k of Object.keys(DEFAULT_INCOME_TAX.life)) if (!yen0(v.life?.[k])) e.push('生命保険料は0以上の整数で入力してください');
   for (const k of Object.keys(DEFAULT_INCOME_TAX.earthquake)) if (!yen0(v.earthquake?.[k])) e.push('地震保険料は0以上の整数で入力してください');
+  for (const [k] of LOSS_YEARS) if (!yen0(v.lossCarry?.[k])) e.push('繰越損失の金額は0以上の整数で入力してください');
   for (const k of Object.keys(DEFAULT_INCOME_TAX.disabled)) if (!(Number.isInteger(v.disabled?.[k]) && v.disabled[k] >= 0 && v.disabled[k] <= 20)) e.push('障害者の人数は0〜20で入力してください');
   if (!['none', 'widow', 'single_parent'].includes(v.widow)) e.push('寡婦・ひとり親を選んでください');
   if (typeof v.workingStudent !== 'boolean') e.push('勤労学生かどうかを選んでください');
@@ -227,6 +244,7 @@ export function validateIncomeTax(v) {
     if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > TEXT_MAX) e.push(`${label}の氏名を${TEXT_MAX}文字以内で入力してください`);
     if (!isDate(p.birthDate)) e.push(`${label}の生年月日を入力してください`);
     if (!isYen(p.income)) e.push(`${label}の合計所得金額は整数で入力してください`);
+    if (p.familyWorker !== undefined && typeof p.familyWorker !== 'boolean') e.push('事業専従者かどうかを選んでください');
   };
   if (v.spouse !== null) {
     if (typeof v.spouse !== 'object') e.push('配偶者の入力が正しくありません');
@@ -261,11 +279,12 @@ export const MEDICAL_KINDS = [
  * 確定申告書の計算
  * @param {object} p
  * @param {number} p.year 年分
- * @param {object} p.business 青色申告決算書の { revenue（㋐）, income（①）, familySalary, blueDeduction }
- * @param {object} [p.realEstate] 青色申告決算書（不動産所得用）の { revenue（㋒）, income（③） }。③は土地等の負債利子の分を除いた額
+ * @param {object} p.business 青色申告決算書（白色は収支内訳書）の { revenue（㋐）, income（①）, familySalary（専従者給与・専従者控除）, blueDeduction }
+ * @param {object} [p.realEstate] 不動産所得用の { revenue（㋒）, income（③） }。③は土地等の負債利子の分を除いた額
  * @param {object} p.input period.incomeTaxReturn
+ * @param {boolean} [p.white] 白色申告（本年の純損失は繰り越せない）
  */
-export function computeIncomeTax({ year, business, realEstate = null, input }) {
+export function computeIncomeTax({ year, business, realEstate = null, input, white = false }) {
   const r = rulesFor(year);
   if (!r) return { supported: false, year };
   const v = { ...DEFAULT_INCOME_TAX, ...input };
@@ -282,14 +301,27 @@ export function computeIncomeTax({ year, business, realEstate = null, input }) {
   L[10] = Math.max(0, L[7] + L[8] + L[9]);
   L[11] = 0;
   // 事業所得・不動産所得の赤字は給与所得などと損益通算する（不動産所得の赤字のうち土地等の負債利子の分は③に入れていない）
-  L[12] = Math.max(0, L[1] + L[3] + L[6] + L[10] + L[11]);
-  const total = L[12]; // 合計所得金額（分離課税なし）
+  const ordinary = L[1] + L[3] + L[6] + L[10] + L[11]; // 第四表の経常所得（損益通算の後）
+  const total = Math.max(0, ordinary); // 合計所得金額（繰越控除の前。分離課税なし）
+  const netLoss = ordinary < 0 ? -ordinary : 0; // 本年分の純損失の金額
+  // 繰越損失は古い年分から差し引く
+  let left = total;
+  const lossCarry = { ...DEFAULT_INCOME_TAX.lossCarry, ...(v.lossCarry || {}) };
+  const carry = LOSS_YEARS.map(([key, ago]) => {
+    const available = lossCarry[key];
+    const used = Math.min(available, left);
+    left -= used;
+    return { key, year: year - ago, available, used, remaining: available - used };
+  });
+  const carried = carry.reduce((s, c) => s + c.used, 0);
+  L[12] = total - carried; // 総所得金額等（繰越控除の後。第四表の M）
 
   // 所得から差し引かれる金額
   // 生年月日が入っていない人（入力の途中）は計算に入れない
   const complete = (p) => p && /^\d{4}-\d{2}-\d{2}$/.test(p.birthDate) && isYen(p.income);
-  const dependents = v.dependents.filter(complete).map((d) => ({ ...d, ...dependentDeduction(d, year) }));
-  const childRule = r.lifeChildRule && dependents.some((d) => d.age < 23 && d.income <= r.dependentLimit);
+  // 事業専従者（青色事業専従者・白色の事業専従者）は控除対象配偶者・扶養親族にならない（国税庁 No.2075）
+  const dependents = v.dependents.filter(complete).map((d) => ({ ...d, ...(d.familyWorker ? { kind: 'family_worker', amount: 0, age: ageAtYearEnd(d.birthDate, year) } : dependentDeduction(d, year)) }));
+  const childRule = r.lifeChildRule && dependents.some((d) => d.kind !== 'family_worker' && d.age < 23 && d.income <= r.dependentLimit);
   const life = lifeInsuranceDeduction(v.life, childRule);
   L[13] = v.socialInsurance;
   L[14] = v.smallBusinessAid;
@@ -298,7 +330,7 @@ export function computeIncomeTax({ year, business, realEstate = null, input }) {
   L[17] = total <= 5000000 ? (v.widow === 'widow' ? 270000 : v.widow === 'single_parent' ? r.singleParent : 0) : 0;
   L[19] = v.workingStudent && total <= r.studentLimit ? 270000 : 0;
   L[20] = v.disabled.normal * 270000 + v.disabled.special * 400000 + v.disabled.specialLiving * 750000;
-  const spouse = complete(v.spouse) ? { ...v.spouse, ...spouseDeduction({ ownIncome: total, spouseIncome: v.spouse.income, spouseAge: ageAtYearEnd(v.spouse.birthDate, year), year }) } : null;
+  const spouse = !complete(v.spouse) ? null : v.spouse.familyWorker ? { ...v.spouse, kind: null, amount: 0 } : { ...v.spouse, ...spouseDeduction({ ownIncome: total, spouseIncome: v.spouse.income, spouseAge: ageAtYearEnd(v.spouse.birthDate, year), year }) };
   L[21] = spouse?.kind ? spouse.amount : 0;
   // 扶養控除・特定親族特別控除には本人の所得の要件がない
   L[23] = dependents.filter((d) => d.kind !== 'specific_relative').reduce((s, d) => s + d.amount, 0);
@@ -309,9 +341,9 @@ export function computeIncomeTax({ year, business, realEstate = null, input }) {
   const medicalPaid = v.medical.reduce((s, m) => s + m.paid, 0);
   const medicalReimbursed = v.medical.reduce((s, m) => s + Math.min(m.reimbursed, m.paid), 0);
   const medicalNet = medicalPaid - medicalReimbursed;
-  const medicalThreshold = Math.min(100000, Math.floor((total * 5) / 100));
+  const medicalThreshold = Math.min(100000, Math.floor((L[12] * 5) / 100));
   L[28] = Math.min(Math.max(0, medicalNet - medicalThreshold), 2000000);
-  L[29] = v.donations ? Math.max(0, Math.min(v.donations, Math.floor((total * 40) / 100)) - 2000) : 0;
+  L[29] = v.donations ? Math.max(0, Math.min(v.donations, Math.floor((L[12] * 40) / 100)) - 2000) : 0;
   L[30] = L[26] + L[27] + L[28] + L[29];
 
   // 税金の計算
@@ -344,6 +376,16 @@ export function computeIncomeTax({ year, business, realEstate = null, input }) {
     childRule,
     medical: { paid: medicalPaid, reimbursed: medicalReimbursed, net: medicalNet, threshold: medicalThreshold },
     totalIncome: total,
+    loss: {
+      needed: netLoss > 0 || carry.some((c) => c.available > 0),
+      ordinary,
+      netLoss,
+      carryForward: white ? 0 : netLoss, // 第四表（二）の3：翌年以後に繰り越す損失額（青色申告者の損失の金額）
+      carry,
+      carried,
+      expired: carry[0].remaining, // 3年前の分の引ききれなかった額は翌年に繰り越せない
+      next: { y3: carry[1].remaining, y2: carry[2].remaining, y1: white ? 0 : netLoss },
+    },
     other: { spouseIncome: v.spouse?.income ?? null, familySalary: business.familySalary, blueDeduction: business.blueDeduction, miscWithholding: v.miscWithholding },
   };
 }

@@ -6,14 +6,16 @@ import { bsFigures, plFigures, indicators, formatMonths } from '../analysis.js';
 import { formatPeriod, monthsInPeriod } from '../period.js';
 import { formatYen } from '../money.js';
 import { loadPrevious } from './report-common.js';
+import { isWhite } from '../white-return.js';
 
 const format = (unit, v) => (v == null ? '—' : unit === 'permille' ? formatPermille(v) : unit === 'months' ? formatMonths(v) : `${formatYen(v)}円`);
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
   const entityType = settings.entityType;
+  const white = isWhite(settings);
   const { pl } = buildStatements({ entityType, accounts, period, journals });
-  const current = indicators({ entityType, pl: plFigures(entityType, pl.profits), bs: bsFigures(closingRows({ accounts, period, journals })), months: monthsInPeriod(period).length });
+  const current = indicators({ entityType, pl: plFigures(entityType, pl.profits), bs: bsFigures(closingRows({ accounts, period, journals })), months: monthsInPeriod(period).length, white });
   // 前期：損益は前期の帳簿（あれば）、残高は当期の期首残高（＝前期末）
   const previous = await loadPrevious(app, period);
   const prevPl = previous ? buildStatements({ entityType, accounts, period: previous.period, journals: previous.journals }).pl : null;
@@ -22,6 +24,7 @@ export async function render({ app, outlet }) {
     pl: prevPl ? plFigures(entityType, prevPl.profits) : null,
     bs: bsFigures(openingRows({ accounts, period })),
     months: previous ? monthsInPeriod(previous.period).length : 12,
+    white,
   });
   const noSales = pl.profits.sales <= 0;
 

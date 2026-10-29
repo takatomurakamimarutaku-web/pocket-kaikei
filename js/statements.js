@@ -81,14 +81,24 @@ function costOfSales(rows) {
 }
 
 /**
+ * 個人の所得金額（帳簿の利益）の呼び名。青色申告は青色申告特別控除の前、白色申告は事業専従者控除の前の金額
+ * （白色申告では家族への給与は経費にならず、収支内訳書で専従者控除を差し引くため）
+ */
+export function incomeBeforeLabel(white = false) {
+  return white ? { full: '専従者控除前の所得金額', short: '専従者控除前' } : { full: '青色申告特別控除前の所得金額', short: '青色申告特別控除前' };
+}
+
+/**
  * 損益計算書
  * @returns {{ items: Array, netIncome: number, profits: Record<string, number> }}
  *   profits：売上・売上原価・販管費（経費）の合計と段階利益（経営分析で使う）
  *   items：画面にそのまま並べる行（group：区分と科目、subtotal：段階利益）
  *   netIncome：法人は当期純利益、個人は青色申告特別控除前の所得金額（不動産所得があれば事業所得との合計）
+ * @param {{ white?: boolean }} [opts] white：白色申告（所得金額の呼び名を「専従者控除前」にする）
  */
-export function incomeStatement(entityType, rows) {
+export function incomeStatement(entityType, rows, { white = false } = {}) {
   if (entityType === 'individual') {
+    const before = incomeBeforeLabel(white);
     const sales = section(groupLabel('sales', 'individual'), ['sales'], rows);
     const cogs = section('売上原価', ['cost_of_sales'], rows);
     const diff1 = sales.total - cogs.total;
@@ -101,7 +111,7 @@ export function incomeStatement(entityType, rows) {
     const items = [sales, cogs, subtotal('差引金額', diff1), sga, subtotal('差引金額', diff2), reversal, family, provision];
     // 不動産所得の科目があれば、事業所得と分けて出す（青色申告決算書は一般用と不動産所得用に分かれる）
     if (!rows.some((r) => isReGroup(r.account.group))) {
-      items.push(subtotal('青色申告特別控除前の所得金額', business, { strong: true }));
+      items.push(subtotal(before.full, business, { strong: true }));
       return { items, netIncome: business, profits: { sales: sales.total, cogs: cogs.total, diff1, sga: sga.total, diff2, income: business, businessIncome: business, realEstateIncome: 0 } };
     }
     const reIncome = section('不動産収入', ['re_income'], rows);
@@ -110,12 +120,12 @@ export function incomeStatement(entityType, rows) {
     const realEstate = reIncome.total - reExpenses.total - reFamily.total;
     const income = business + realEstate;
     items.push(
-      subtotal('事業所得（青色申告特別控除前）', business),
+      subtotal(`事業所得（${before.short}）`, business),
       reIncome,
       reExpenses,
       reFamily,
-      subtotal('不動産所得（青色申告特別控除前）', realEstate),
-      subtotal('青色申告特別控除前の所得金額（合計）', income, { strong: true }),
+      subtotal(`不動産所得（${before.short}）`, realEstate),
+      subtotal(`${before.full}（合計）`, income, { strong: true }),
     );
     return { items, netIncome: income, profits: { sales: sales.total, cogs: cogs.total, diff1, sga: sga.total, diff2, income, businessIncome: business, realEstateIncome: realEstate } };
   }
@@ -156,9 +166,10 @@ export function incomeStatement(entityType, rows) {
 /**
  * 貸借対照表
  * @param {number} netIncome incomeStatement の netIncome
+ * @param {{ white?: boolean }} [opts]
  * @returns {{ assets: Array, liabilities: Array, totalAssets: number, totalLiabilitiesAndEquity: number, balanced: boolean }}
  */
-export function balanceSheet(entityType, rows, netIncome) {
+export function balanceSheet(entityType, rows, netIncome, { white = false } = {}) {
   if (entityType === 'individual') {
     const current = section('流動資産', ['current_assets'], rows);
     const fixed = section('固定資産', ['tangible_fixed_assets', 'intangible_fixed_assets', 'investments', 'deferred_assets'], rows);
@@ -172,7 +183,7 @@ export function balanceSheet(entityType, rows, netIncome) {
       liabilities: [
         liabilities,
         capital,
-        subtotal('青色申告特別控除前の所得金額', netIncome),
+        subtotal(incomeBeforeLabel(white).full, netIncome),
         subtotal('負債・資本合計', totalLE, { strong: true }),
       ],
       totalAssets,
@@ -221,9 +232,9 @@ export function balanceSheet(entityType, rows, netIncome) {
 }
 
 /** PL と BS をまとめて作る */
-export function buildStatements({ entityType, accounts, period, journals, to }) {
+export function buildStatements({ entityType, accounts, period, journals, to, white = false }) {
   const rows = closingRows({ accounts, period, journals, to });
-  const pl = incomeStatement(entityType, rows);
-  const bs = balanceSheet(entityType, rows, pl.netIncome);
+  const pl = incomeStatement(entityType, rows, { white });
+  const bs = balanceSheet(entityType, rows, pl.netIncome, { white });
   return { pl, bs };
 }

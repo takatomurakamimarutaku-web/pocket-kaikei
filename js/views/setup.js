@@ -71,7 +71,7 @@ export async function render({ app, outlet }) {
           syncEntity();
         },
       }),
-      { hint: '勘定科目と決算書の様式が切り替わります' },
+      { hint: '勘定科目と決算書の様式が切り替わります。個人の青色申告・白色申告は、あとから設定で選べます（最初は青色申告）' },
     ),
     individualPeriodField,
     corporatePeriodField,

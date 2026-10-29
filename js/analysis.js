@@ -81,7 +81,7 @@ export function breakEven(pl) {
  * @param {{ entityType, pl: object|null, bs: object|null, months: number }} p pl：plFigures、bs：bsFigures、months：期間の月数
  * @returns {Array<{ title, items: Array<{ key, label, value: number|null, unit: 'permille'|'months'|'yen', formula }> }>}
  */
-export function indicators({ entityType, pl, bs, months }) {
+export function indicators({ entityType, pl, bs, months, white = false }) {
   const individual = entityType === 'individual';
   const salesWord = individual ? '売上(収入)金額' : '売上高';
   const sales = pl?.sales ?? 0;
@@ -96,7 +96,7 @@ export function indicators({ entityType, pl, bs, months }) {
       items: [
         item('gross_margin', '売上総利益率', ifPl(() => permille(pl.gross, sales)), 'permille', `（${salesWord}−売上原価）÷${salesWord}`),
         ...(individual
-          ? [item('income_ratio', '所得率', ifPl(() => permille(pl.income, sales)), 'permille', `青色申告特別控除前の所得金額÷${salesWord}`)]
+          ? [item('income_ratio', '所得率', ifPl(() => permille(pl.income, sales)), 'permille', `${white ? '専従者控除前' : '青色申告特別控除前'}の所得金額÷${salesWord}`)]
           : [
               item('operating_margin', '営業利益率', ifPl(() => permille(pl.operating, sales)), 'permille', '営業利益÷売上高'),
               item('ordinary_margin', '経常利益率', ifPl(() => permille(pl.ordinary, sales)), 'permille', '経常利益÷売上高'),

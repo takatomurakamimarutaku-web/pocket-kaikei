@@ -5,6 +5,7 @@ import { openingDiff } from '../ledger.js';
 import { compareStatement, hideZeroRows, openingRows, formatPermille } from '../compare.js';
 import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
+import { isWhite } from '../white-return.js';
 import { zeroToggle, openingWarning, statementRows, loadPrevious } from './report-common.js';
 
 const slash = (d) => d.replaceAll('-', '/');
@@ -13,11 +14,12 @@ export async function render({ app, outlet, route, query }) {
   const { settings, period, accounts, journals } = await app.load();
   const individual = settings.entityType === 'individual';
   const isPl = route.kind === 'pl';
-  const { pl, bs } = buildStatements({ entityType: settings.entityType, accounts, period, journals });
+  const white = isWhite(settings);
+  const { pl, bs } = buildStatements({ entityType: settings.entityType, accounts, period, journals, white });
   // 前期：損益計算書は前期の帳簿、貸借対照表は当期の期首残高（前期末の残高を繰り越したもの）
   const previous = isPl ? await loadPrevious(app, period) : null;
-  const prevPl = previous ? buildStatements({ entityType: settings.entityType, accounts, period: previous.period, journals: previous.journals }).pl : null;
-  const prevBs = isPl ? null : balanceSheet(settings.entityType, openingRows({ accounts, period }), 0);
+  const prevPl = previous ? buildStatements({ entityType: settings.entityType, accounts, period: previous.period, journals: previous.journals, white }).pl : null;
+  const prevBs = isPl ? null : balanceSheet(settings.entityType, openingRows({ accounts, period }), 0, { white });
   const labels = isPl ? ['当期', '前期'] : individual ? ['期末', '期首'] : ['当期末', '前期末'];
 
   let showZero = false;
@@ -110,7 +112,7 @@ export async function render({ app, outlet, route, query }) {
       '決算整理（棚卸・減価償却・家事按分など）は ',
       h('a', { href: '#/closing', class: 'link', text: '決算・繰越' }),
       ' から登録できます。',
-      individual && isPl ? ['青色申告特別控除と所得金額は ', h('a', { href: '#/reports/blue-return', class: 'link', text: '青色申告決算書' }), ' で計算します。'] : null,
+      individual && isPl ? (white ? ['専従者控除と所得金額は ', h('a', { href: '#/reports/white-return', class: 'link', text: '収支内訳書' }), ' で計算します。'] : ['青色申告特別控除と所得金額は ', h('a', { href: '#/reports/blue-return', class: 'link', text: '青色申告決算書' }), ' で計算します。']) : null,
       ' 指標は ',
       h('a', { href: '#/reports/analysis', class: 'link', text: '経営分析' }),
       ' で見られます。',
