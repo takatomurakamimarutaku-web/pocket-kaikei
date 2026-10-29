@@ -763,3 +763,10 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .template-item { margin: 0; }
 .template-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .template-item p { margin: 4px 0 8px; }
+.check-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.check-head .section-title { margin: 0; }
+.check-count { font-size: 0.8rem; font-weight: 800; padding: 1px 10px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
+.check-count.warn { background: var(--warn-bg); color: var(--warn-text); }
+.check-count.info { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary-strong); }
+.check-count.ok { background: var(--ok-bg); color: var(--ok-text); }
+.check-section.is-ok .muted { display: none; }
