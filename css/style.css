@@ -171,6 +171,9 @@ p { margin: 0.25em 0; }
 @keyframes view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .loading { color: var(--muted); text-align: center; padding: 40px 0; }
 
+/* PC 幅だけで使う部品（css/desktop.css で表示する） */
+.sidebar, .desktop-only { display: none; }
+
 /* ---- 下部タブ ---- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
