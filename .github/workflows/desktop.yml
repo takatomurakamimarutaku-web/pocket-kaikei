@@ -45,11 +45,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: desktop
+          # GitHub はファイル名の日本語を「.」に置き換えるため、配布ファイル名は英字にする
+          assetNamePattern: 'pocket-kaikei_[version]_[arch][setup][ext]'
           # __VERSION__ は tauri-action が tauri.conf.json（＝ルートの package.json）のバージョンに置き換える
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (inputs.release && 'v__VERSION__') || '' }}
           releaseName: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.release) && 'Pocket会計 v__VERSION__' || '' }}
           releaseBody: |
-            Windows 10/11 用のインストーラーです。下の「Assets」から `-setup.exe` をダウンロードして実行してください。
+            Windows 10/11 用のインストーラーです。下の「Assets」から `pocket-kaikei_…_x64-setup.exe` をダウンロードして実行してください。
             署名していないため、初回に「WindowsによってPCが保護されました」と出ます。「詳細情報」→「実行」で進めます。
             データはこのPCの中だけに保存されます。スマホやブラウザ版とはバックアップファイル（JSON）で受け渡してください。
           releaseDraft: true

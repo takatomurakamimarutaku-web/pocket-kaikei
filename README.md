@@ -19,7 +19,7 @@ HTML / CSS / JavaScript（ES Modules）だけで作られており、ビルド�
 
 PC では Windows 用のアプリ（exe）でも使えます。中身はこの PWA と同じファイルで、[Tauri](https://tauri.app/) で包んでいます。
 
-1. [Releases](https://github.com/takatomurakamimarutaku-web/pocket-kaikei/releases) から `Pocket会計_x.y.z_x64-setup.exe` をダウンロードして実行する（管理者権限は不要）
+1. [Releases](https://github.com/takatomurakamimarutaku-web/pocket-kaikei/releases) から `pocket-kaikei_x.y.z_x64-setup.exe` をダウンロードして実行する（管理者権限は不要）
 2. 署名していないため「WindowsによってPCが保護されました」と出たら、「詳細情報」→「実行」で進める
 3. データはこの PC の中（`%LOCALAPPDATA%\io.github.takatomurakamimarutaku-web.pocket-kaikei`）だけに保存されます。ブラウザ版やスマホとはバックアップファイル（JSON）で受け渡してください
 4. 新しい版は Releases から入れ直すと上書きされ、データは引き継がれます
