@@ -117,8 +117,8 @@ export function assetsCsv(register, { accountById, individual }) {
   if (individual) head.push('うち経費');
   head.push('期末帳簿価額', '売却・除却日', '売却・除却', '売却額', 'メモ');
   const rows = [head];
-  for (const { asset: a, opening, row, closing } of register) {
-    const r = [a.assetNo || '', a.name, CATEGORY_BY_ID[a.category]?.label ?? '', accountById.get(a.accountId)?.name ?? '', a.quantity ?? 1, a.location || '', slash(a.acquiredOn), slash(a.startedOn), a.cost, methodLabel(a) || a.method, usesLife(a.method) ? a.usefulLife : '', row?.rate ? (row.rate / 1000).toFixed(3) : ''];
+  for (const { asset: a, cost, opening, row, closing } of register) {
+    const r = [a.assetNo || '', a.name, CATEGORY_BY_ID[a.category]?.label ?? '', accountById.get(a.accountId)?.name ?? '', a.quantity ?? 1, a.location || '', slash(a.acquiredOn), slash(a.startedOn), cost ?? a.cost, methodLabel(a) || a.method, usesLife(a.method) ? a.usefulLife : '', row?.rate ? (row.rate / 1000).toFixed(3) : ''];
     if (individual) r.push(`${a.businessRatio ?? 100}%`);
     r.push(opening ?? '', row?.amount ?? 0, row?.special ?? 0);
     if (individual) r.push(row?.business ?? 0);

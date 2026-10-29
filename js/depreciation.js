@@ -303,6 +303,15 @@ export function validateAsset(asset, { entityType, accounts }) {
       else if (!isYen(asset.carryRevisedBase) || asset.carryRevisedBase < 1 || asset.carryRevisedBase > cost) e.carryRevisedBase = '改定取得価額は1円以上・取得価額以下の整数で入力してください';
     }
   }
+  // 資本的支出（parentId：元の資産）・一部の売却・除却（splitFrom：分けた元の資産、splits：分けた記録）。v0.37.0 で追加
+  if (asset.parentId != null && (typeof asset.parentId !== 'string' || !asset.parentId || asset.parentId === asset.id)) e.parentId = '元の資産が正しくありません';
+  if (asset.splitFrom != null && (typeof asset.splitFrom !== 'string' || !asset.splitFrom || asset.splitFrom === asset.id)) e.splitFrom = '分けた元の資産が正しくありません';
+  if (asset.splits != null) {
+    if (!Array.isArray(asset.splits) || asset.splits.some((sp) => !sp || typeof sp.id !== 'string' || !isValidDate(sp.date) || !isValidDate(sp.periodStart) || sp.periodStart > sp.date || !isYen(sp.cost) || sp.cost < 1 || !(sp.quantity == null || (Number.isInteger(sp.quantity) && sp.quantity >= 1)))) e.splits = '一部の売却・除却の記録が正しくありません';
+    else if (asset.splits.length && !usesLife(asset.method)) e.splits = '一部の売却・除却は定額法・定率法の資産だけです';
+    else if (isValidDate(asset.startedOn) && asset.splits.some((sp) => sp.date < asset.startedOn)) e.splits = '一部の売却・除却の日は使い始めた日以後にしてください';
+    else if (hasCarryOver(asset) && asset.splits.some((sp) => sp.periodStart < asset.carryOn)) e.splits = '一部の売却・除却は、前の帳簿から引き継いだ日以後にしてください';
+  }
   // 特別償却（v0.36.0 で追加。任意）：事業供用年度に 取得価額×率
   if (asset.specialRate != null) {
     if (!Number.isInteger(asset.specialRate) || asset.specialRate < 1 || asset.specialRate > SPECIAL_RATE_MAX) e.specialRate = `特別償却の率は1〜${SPECIAL_RATE_MAX}%の整数で入力してください（即時償却は100）`;
@@ -370,6 +379,7 @@ function* ranges(periods, startedOn) {
  *   ordinary：普通償却費、special：特別償却費（事業供用年度だけ）、amount：その期間の償却費（合計）
  *   business：経費になる額（事業で使う割合）、private：私用分
  *   switched：定率法で改定償却率に切り替えた、equal：旧定額法・旧定率法の95%到達後の均等償却
+ *   splits：この期間の期首に一部の売却・除却で分けた分 [{ id, cost, book, revisedBase }]（opening は分けたあとの帳簿価額）
  *   償却が終わる（残り1円・無形は0円）か、除却・売却した期間までを返す
  */
 export function depreciationSchedule(asset, periods) {
@@ -380,9 +390,11 @@ export function depreciationSchedule(asset, periods) {
   const variant = methodVariant(asset);
   const { rate: baseRate, revised, guarantee } = ratesFor(asset) || { rate: 0, revised: 0, guarantee: 0 };
   const old = variant === 'old_straight' || variant === 'old_declining';
-  // 旧定額法・旧定率法の有形：償却費の累積額が取得価額の95%に達したときの帳簿価額（＝取得価額×5%）と、その後の5年間の均等償却
-  const tail = old && !cat?.intangible ? asset.cost - Math.floor((asset.cost * 95) / 100) : 0;
-  let book = asset.cost;
+  // 一部を売却・除却した資産：asset.cost は今の取得価額。分けた期間より前は、分けた分を足した取得価額で計算する
+  const splits = [...(asset.splits || [])].sort((a, b) => (a.periodStart < b.periodStart ? -1 : 1));
+  let cost = asset.cost + splits.reduce((sum, sp) => sum + sp.cost, 0);
+  let nextSplit = 0;
+  let book = cost;
   let usedMonths = 0; // 一括償却の経過月数
   let revisedBase = null; // 定率法の改定取得価額
   const carry = hasCarryOver(asset);
@@ -396,6 +408,18 @@ export function depreciationSchedule(asset, periods) {
       book = asset.carryBook;
       if (asset.method === 'declining' && isYen(asset.carryRevisedBase)) revisedBase = asset.carryRevisedBase;
     }
+    // 一部の売却・除却：その期間の期首に、取得価額・帳簿価額・改定取得価額を分けた割合で減らす（分けた分は別の資産として償却・処理する）
+    const removed = [];
+    while (nextSplit < splits.length && splits[nextSplit].periodStart <= r.startDate) {
+      const sp = splits[nextSplit++];
+      const part = { id: sp.id, cost: sp.cost, book: Math.floor((book * sp.cost) / cost), revisedBase: revisedBase === null ? null : Math.floor((revisedBase * sp.cost) / cost) };
+      book -= part.book;
+      if (revisedBase !== null) revisedBase -= part.revisedBase;
+      cost -= sp.cost;
+      removed.push(part);
+    }
+    // 旧定額法・旧定率法の有形：償却費の累積額が取得価額の95%に達したときの帳簿価額（＝取得価額×5%）と、その後の5年間の均等償却
+    const tail = old && !cat?.intangible ? cost - Math.floor((cost * 95) / 100) : 0;
     if (book <= floor || out.length >= 200) break;
     if (asset.method !== 'lump3' && asset.disposedOn && r.startDate > asset.disposedOn) break;
     const from = r.startDate > asset.startedOn ? r.startDate : asset.startedOn;
@@ -404,7 +428,7 @@ export function depreciationSchedule(asset, periods) {
     let amount = 0;
     let switched = false;
     let equal = false;
-    let base = asset.cost; // 償却の基礎になる金額（青色申告決算書の「償却の基礎になる金額」）
+    let base = cost; // 償却の基礎になる金額（青色申告決算書の「償却の基礎になる金額」）
     let rate = null; // 使った率（1/1000。一括償却・少額・均等償却は null）
     let limit = book - floor; // この期間に償却できる上限
     if (asset.method === 'small' || asset.method === 'sme') {
@@ -413,7 +437,7 @@ export function depreciationSchedule(asset, periods) {
       // 一括償却資産：取得価額 × 期間の月数 / 36（月の途中から使っても期間の月数で計算する）
       const pm = periodMonths(r);
       usedMonths += pm;
-      amount = usedMonths >= 36 ? book : Math.floor((asset.cost * pm) / 36);
+      amount = usedMonths >= 36 ? book : Math.floor((cost * pm) / 36);
     } else if (old && tail && book <= tail) {
       // 95%に達した翌年から5年間の均等償却：{(取得価額×5%−1円)÷5}×月数/12。5年で1円になるよう1円未満は切り上げる（No.2105 の計算例）
       equal = true;
@@ -421,8 +445,8 @@ export function depreciationSchedule(asset, periods) {
       amount = Math.ceil(((tail - 1) * months) / 60);
     } else if (variant === 'old_straight') {
       // 旧定額法：(取得価額−残存価額（有形は10%）)×償却率。累積額は取得価額の95%まで
-      base = cat?.intangible ? asset.cost : Math.floor((asset.cost * 9) / 10);
-      const annual = cat?.intangible ? Math.floor((asset.cost * baseRate) / 1000) : Math.floor((asset.cost * 9 * baseRate) / 10000);
+      base = cat?.intangible ? cost : Math.floor((cost * 9) / 10);
+      const annual = cat?.intangible ? Math.floor((cost * baseRate) / 1000) : Math.floor((cost * 9 * baseRate) / 10000);
       amount = Math.floor((annual * months) / 12);
       rate = baseRate;
       if (tail) limit = book - tail;
@@ -433,12 +457,12 @@ export function depreciationSchedule(asset, periods) {
       rate = baseRate;
       limit = book - tail;
     } else if (variant === 'straight') {
-      const annual = Math.floor((asset.cost * baseRate) / 1000);
+      const annual = Math.floor((cost * baseRate) / 1000);
       amount = Math.floor((annual * months) / 12);
       rate = baseRate;
     } else if (variant === 'declining250' || variant === 'declining200') {
       // 調整前償却額が償却保証額（取得価額×保証率）に満たない年から、改定取得価額×改定償却率に切り替える
-      if (revisedBase === null && guarantee && book * baseRate * 100 < asset.cost * guarantee) revisedBase = book;
+      if (revisedBase === null && guarantee && book * baseRate * 100 < cost * guarantee) revisedBase = book;
       switched = revisedBase !== null;
       const annual = switched ? Math.floor((revisedBase * revised) / 1000) : Math.floor((book * baseRate) / 1000);
       amount = Math.floor((annual * months) / 12);
@@ -448,7 +472,7 @@ export function depreciationSchedule(asset, periods) {
     const ordinary = Math.max(0, Math.min(amount, limit));
     // 特別償却：使い始めた日を含む期間に 取得価額×率（月数按分しない）。即時償却（100%）は 取得価額−普通償却費
     const first = r.startDate <= asset.startedOn && asset.startedOn <= r.endDate;
-    const extra = special && first ? Math.max(0, Math.min(Math.floor((asset.cost * special) / 100), book - floor - ordinary)) : 0;
+    const extra = special && first ? Math.max(0, Math.min(Math.floor((cost * special) / 100), book - floor - ordinary)) : 0;
     amount = ordinary + extra;
     const business = Math.floor((amount * ratio) / 100);
     out.push({
@@ -467,6 +491,7 @@ export function depreciationSchedule(asset, periods) {
       closing: book - amount,
       ...(switched ? { switched: true } : {}),
       ...(equal ? { equal: true } : {}),
+      ...(removed.length ? { splits: removed } : {}),
     });
     book -= amount;
     if (asset.method !== 'lump3' && asset.disposedOn && asset.disposedOn <= r.endDate) break;
@@ -488,21 +513,32 @@ export function openingBook(asset, periods, period) {
   if (prev.length) return prev[prev.length - 1].closing;
   // 引き継いだ帳簿価額が備忘価額（1円）だけのときは償却の行が無いので、引き継いだ額をそのまま使う
   if (hasCarryOver(asset) && period.startDate >= asset.carryOn) return asset.carryBook;
-  return asset.cost;
+  return costAt(asset, period);
+}
+
+/** その会計期間の取得価額（一部を売却・除却した資産は、分けた期間より前なら分けた分を足す） */
+export function costAt(asset, period) {
+  return asset.cost + (asset.splits || []).filter((sp) => sp.periodStart > period.startDate).reduce((sum, sp) => sum + sp.cost, 0);
+}
+
+/** 一部の売却・除却で分けた資産（splitFrom）で、分けた期間より前の期間か（その期間は元の資産に含まれている） */
+function beforeSplit(asset, period) {
+  return Boolean(asset.splitFrom) && hasCarryOver(asset) && period.startDate < asset.carryOn;
 }
 
 /**
  * 会計期間の固定資産台帳（期首に使っていた資産と、期中に使い始めた資産）
- * @returns {Array<{ asset, opening, row, closing }>} row：その期間の償却（なければ null）
+ * @returns {Array<{ asset, cost, opening, row, closing }>} cost：その期間の取得価額、row：その期間の償却（なければ null）
  */
 export function assetRegister(assets, periods, period) {
   return assets
     .filter((a) => a.startedOn <= period.endDate)
     .filter((a) => !a.disposedOn || a.disposedOn >= period.startDate || a.method === 'lump3')
+    .filter((a) => !beforeSplit(a, period))
     .map((asset) => {
       const row = depreciationFor(asset, periods, period);
       const opening = row ? row.opening : openingBook(asset, periods, period);
-      return { asset, opening, row, closing: row ? row.closing : opening };
+      return { asset, cost: costAt(asset, period), opening, row, closing: row ? row.closing : opening };
     })
     .filter((x) => x.row || x.opening > 0)
     .sort((a, b) => (a.asset.startedOn < b.asset.startedOn ? -1 : a.asset.startedOn > b.asset.startedOn ? 1 : String(a.asset.name).localeCompare(String(b.asset.name), 'ja')));

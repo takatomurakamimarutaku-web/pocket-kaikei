@@ -15,7 +15,8 @@ import {
   defaultAssetAccount,
   EXPENSE_GROUPS,
 } from '../depreciation.js';
-import { LIFE_PRESETS, usedAssetLife, canDispose, findDisposalJournals } from '../asset-tools.js';
+import { LIFE_PRESETS, usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults } from '../asset-tools.js';
+import { formatYen } from '../money.js';
 import { compareAccounts } from '../accounts.js';
 import { parseYen } from '../money.js';
 import { todayString } from '../period.js';
@@ -30,7 +31,7 @@ const toInt = (v) => {
   return /^\d+$/.test(t) ? Number(t) : null;
 };
 
-export async function render({ app, outlet, params }) {
+export async function render({ app, outlet, params, query = {} }) {
   const { settings, period, accounts, journals } = await app.load();
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
   const individual = settings.entityType === 'individual';
@@ -41,9 +42,18 @@ export async function render({ app, outlet, params }) {
   }
   const today = todayString();
   const defaultDate = today >= period.startDate && today <= period.endDate ? today : period.endDate;
+  // 資本的支出の追加（#/asset/new?parent=元の資産）：元の資産と種類・耐用年数・科目を同じにする
+  const capexParent = !original && query.parent ? assets.find((a) => a.id === query.parent && canAddCapex(a)) : null;
   const state = original
     ? { ...original }
-    : createAsset({ acquiredOn: defaultDate, startedOn: defaultDate, method: individual ? 'straight' : 'declining', usefulLife: 4, businessRatio: 100 });
+    : capexParent
+      ? createAsset(capexDefaults(capexParent, defaultDate))
+      : createAsset({ acquiredOn: defaultDate, startedOn: defaultDate, method: individual ? 'straight' : 'declining', usefulLife: 4, businessRatio: 100 });
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  const parent = state.parentId ? byId.get(state.parentId) : null;
+  const children = original ? assets.filter((a) => a.parentId === original.id) : [];
+  // 一部を売却・除却した資産（分けた元・分けた資産）は、償却の計算に使う項目を変えられない
+  const splitLocked = Boolean(original && (original.splits?.length || original.splitFrom));
 
   const accountsFor = (catId) => {
     const group = CATEGORY_BY_ID[catId]?.intangible ? 'intangible_fixed_assets' : 'tangible_fixed_assets';
@@ -269,7 +279,7 @@ export async function render({ app, outlet, params }) {
         disposals.length ? h('p', { class: 'small' }, '仕訳：', disposals.map((j) => h('a', { class: 'link', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no} ` }))) : h('p', { class: 'muted small', text: '仕訳はありません（この期間に登録していない、または帳簿価額が0円）。' }),
         h('button', { type: 'button', class: 'btn btn-danger-text', text: '売却・除却を取り消す', onclick: undoDisposal }),
       )
-    : h('div', {}, disposedField, original && canDispose(original) ? h('a', { class: 'btn btn-block', href: `#/asset/${encodeURIComponent(original.id)}/dispose`, text: '売却・除却する（仕訳も作る）' }) : null);
+    : h('div', {}, splitLocked ? null : disposedField, original && canDispose(original) ? h('a', { class: 'btn btn-block', href: `#/asset/${encodeURIComponent(original.id)}/dispose`, text: '売却・除却する（全部・一部。仕訳も作る）' }) : null);
   const revisedWrap = h('div', {}, field('改定取得価額（定率法で切り替え済みのとき）', carryRevised, { name: 'carryRevisedBase', hint: '前の帳簿で改定償却率に切り替えていれば、切り替えた年の期首帳簿価額。空欄なら、引き継いだ年に償却保証額を下回ったときにその年の期首帳簿価額で切り替えます' }));
   const carryWrap = h(
     'fieldset',
@@ -278,9 +288,39 @@ export async function render({ app, outlet, params }) {
     field(`${slash(carryOn)} の期首の帳簿価額（円）`, carryBook, { name: 'carryBook', hint: 'アプリを使う前から持っている資産は、前の会計ソフトや前年の決算書（減価償却費の計算の「未償却残高」）の金額を入れると、そこから償却を続けます' }),
     revisedWrap,
   );
+  const link = (a) => h('a', { class: 'link', href: `#/asset/${encodeURIComponent(a.id)}`, text: a.name });
+  // 資本的支出・一部の売却除却の関係
+  const relationBox = h(
+    'div',
+    { class: 'field', dataset: { field: 'parentId' } },
+    parent ? h('p', { class: 'notice' }, h('span', {}, link(parent), ' の資本的支出です。元の資産と同じ種類・耐用年数で、使い始めた日から新たな資産として償却します（国税庁 No.2107）。')) : null,
+    state.parentId && !parent ? h('p', { class: 'notice', text: '資本的支出の元の資産が見つかりません。' }) : null,
+    original?.splitFrom ? h('p', { class: 'notice' }, h('span', {}, byId.get(original.splitFrom) ? link(byId.get(original.splitFrom)) : '元の資産', ` から ${original.carryOn ? `${slash(original.carryOn)} の期首に` : ''}分けた一部です。取り消すと元の資産に戻ります。`)) : null,
+    original?.splits?.length
+      ? h(
+          'div',
+          { class: 'notice block' },
+          h('p', { text: `一部を売却・除却しています（取得価額は今の額 ${formatYen(original.cost)}円）。` }),
+          h('ul', { class: 'small' }, original.splits.map((sp) => h('li', {}, `${slash(sp.date)}：取得価額 ${formatYen(sp.cost)}円${sp.quantity ? `・${sp.quantity}個` : ''} `, byId.get(sp.id) ? link(byId.get(sp.id)) : null))),
+          h('p', { class: 'small', text: '取得価額・日付・償却の方法などは変えられません。直すときは、分けた資産の画面で売却・除却を取り消してください。' }),
+        )
+      : null,
+    h('p', { class: 'field-error', role: 'alert' }),
+  );
+  const capexBox =
+    original && (children.length || canAddCapex(original))
+      ? h(
+          'section',
+          { class: 'panel' },
+          h('h3', { class: 'section-title', text: '資本的支出' }),
+          children.length ? h('ul', { class: 'small' }, children.map((c) => h('li', {}, link(c), ` ${slash(c.startedOn)}・${formatYen(c.cost)}円`))) : h('p', { class: 'muted small', text: '使える期間を延ばしたり価値を高めたりする改良の支出（資本的支出）は、新たな資産として償却します。通常の修理・維持は修繕費です。' }),
+          canAddCapex(original) ? h('a', { class: 'btn btn-block', href: `#/asset/new?parent=${encodeURIComponent(original.id)}`, text: '資本的支出を追加する' }) : null,
+        )
+      : null;
   const form = h(
     'form',
     { novalidate: true, onsubmit: (e) => (e.preventDefault(), save()), oninput: paint, onchange: paint },
+    relationBox,
     field('名前', name, { name: 'name' }),
     h('div', { class: 'field' }, preset),
     h('div', { class: 'field-row' }, field('種類', category, { name: 'category' }), field('勘定科目', account, { name: 'accountId' })),
@@ -318,10 +358,20 @@ export async function render({ app, outlet, params }) {
   });
 
   paintAccounts();
+  if (state.parentId) {
+    category.disabled = true;
+    life.disabled = true;
+    preset.hidden = true;
+  }
+  if (splitLocked) {
+    for (const el of [category, acquiredOn, startedOn, cost, method, life, carryBook, carryRevised, specialRate, preset]) el.disabled = true;
+    usedWrap.hidden = true;
+  }
   put(
     outlet,
     form,
     h('section', { class: 'panel' }, preview),
+    capexBox,
     original ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn btn-danger-text', text: 'この固定資産を削除', onclick: remove })) : null,
   );
   paint();
@@ -341,14 +391,15 @@ export async function render({ app, outlet, params }) {
   async function undoDisposal() {
     const ok = await confirmDialog({
       title: '売却・除却を取り消しますか？',
-      message: '売却・除却の仕訳を削除し、売却・除却した日を空にします。',
+      message: original.splitFrom ? '売却・除却の仕訳を削除し、この資産を元の資産に戻します（取得価額・数量を元の資産に足します）。' : '売却・除却の仕訳を削除し、売却・除却した日を空にします。',
       buttons: [{ label: 'キャンセル', value: false }, { label: '取り消す', value: true, variant: 'danger' }],
     });
     if (!ok) return;
     try {
       await app.db.undoDisposal(original.id);
-      showToast('取り消しました');
-      app.refresh();
+      showToast(original.splitFrom ? '取り消して、元の資産に戻しました' : '取り消しました');
+      if (original.splitFrom) app.navigate(`#/asset/${encodeURIComponent(original.splitFrom)}`, { replace: true });
+      else app.refresh();
     } catch (e) {
       showToast(e instanceof ValidationError && Array.isArray(e.errors) ? e.errors.join(' ') : errorText(e, '取り消し'));
     }
@@ -366,7 +417,7 @@ export async function render({ app, outlet, params }) {
       showToast('削除しました');
       app.goBack('#/assets');
     } catch (e) {
-      showToast(errorText(e, '削除'));
+      showToast(e instanceof ValidationError && Array.isArray(e.errors) ? e.errors.join(' ') : errorText(e, '削除'));
     }
   }
 }

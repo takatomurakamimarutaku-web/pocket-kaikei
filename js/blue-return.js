@@ -209,7 +209,7 @@ export function monthlySalesPurchases({ accounts, period, journals }) {
  * @returns {{ rows: Array, total: { ordinary, special, amount, business, closing } }}
  */
 export function depreciationTable({ assets, periods, period }) {
-  const rows = assetRegister(assets, periods, period).map(({ asset, opening, row, closing }) => {
+  const rows = assetRegister(assets, periods, period).map(({ asset, cost, opening, row, closing }) => {
     const rateText = row?.rate ? (row.rate / 1000).toFixed(3) : asset.method === 'lump3' ? '1/3' : '';
     // 摘要：一括償却・少額の区分、95%到達後の「均等償却」、特別償却の制度の名前、除却した日
     const note = [
@@ -225,7 +225,7 @@ export function depreciationTable({ assets, periods, period }) {
       name: asset.name,
       category: CATEGORY_BY_ID[asset.category]?.label ?? '',
       acquired: asset.startedOn.slice(0, 7).replace('-', '/'),
-      cost: asset.cost,
+      cost,
       base: row?.base ?? opening,
       method: usesLife(asset.method) ? methodLabel(asset) : '',
       life: usesLife(asset.method) ? asset.usefulLife : null,
