@@ -173,3 +173,17 @@ export function taxFormsCsv(f) {
   for (const t of f.sheets) for (const r of t.rows) out.push([t.title, r.no, r.label, v(r.a), v(r.b), r.text ?? v(r.c)]);
   return toCsv(out);
 }
+
+/** 勘定科目内訳明細書（内訳書ごとに見出し行・列名・行・計） */
+export function breakdownCsv(forms) {
+  const out = [];
+  for (const f of forms) {
+    out.push([`${f.no} ${f.title}`]);
+    out.push(f.columns.map((c) => c.label));
+    for (const r of f.rows) out.push(f.columns.map((c) => (c.num ? r[c.key] ?? 0 : r[c.key] ?? '')));
+    const first = f.columns.findIndex((c) => c.num);
+    out.push(f.columns.map((c, i) => (i === 0 ? '計' : i < first ? '' : c.num ? (c.key === 'amount' ? f.total : f.rows.reduce((s, r) => s + (r[c.key] || 0), 0)) : '')));
+    out.push([]);
+  }
+  return toCsv(out);
+}

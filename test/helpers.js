@@ -16,6 +16,8 @@ export function makeBook(entityType, { startDate = '2026-01-01', endDate = '2026
     createdAt: '',
     updatedAt: '',
   }));
+  // 同じ名前の補助が複数の科目にあるときは、その科目の補助を選ぶ
+  const findSub = (accountName, subName) => subAccounts.find((s) => s.name === subName && s.accountId === byName[accountName].id) || subAccounts.find((s) => s.name === subName);
   const period = createPeriod({ startDate, endDate });
   let no = 0;
   /** j('2026-01-05', [['現金', 1000]], [['売上高', 1000]], '摘要') 。行は [科目名, 金額, 税区分?, 補助名?] */
@@ -32,7 +34,7 @@ export function makeBook(entityType, { startDate = '2026-01-01', endDate = '2026
   const line = (side, [name, amount, taxCategory, subName], memo) => ({
     side,
     accountId: byName[name].id,
-    subAccountId: subName ? subAccounts.find((s) => s.name === subName).id : null,
+    subAccountId: subName ? findSub(name, subName).id : null,
     amount,
     taxCategory: taxCategory ?? byName[name].defaultTaxCategory,
     memo,
@@ -40,7 +42,7 @@ export function makeBook(entityType, { startDate = '2026-01-01', endDate = '2026
   const opening = (list) => {
     period.openingBalances = list.map(([name, amount, subName]) => ({
       accountId: byName[name].id,
-      subAccountId: subName ? subAccounts.find((s) => s.name === subName).id : null,
+      subAccountId: subName ? findSub(name, subName).id : null,
       amount,
     }));
   };

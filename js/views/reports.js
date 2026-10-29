@@ -20,14 +20,17 @@ const GROUPS = [
     ['#/reports/tax', '消費税集計', '税区分別・科目別税区分集計表・月別推移・税区分のチェック', 'tax'],
     ['#/reports/tax-return', '消費税の申告計算', '一般・簡易・2割特例・3割特例で納める税額', 'calc'],
   ]],
-  ['申告', 'data', [['#/reports/blue-return', '青色申告決算書', '個人の決算書4ページの各欄（転記用）', 'form', 'individual']]],
+  ['申告', 'data', [
+    ['#/reports/blue-return', '青色申告決算書', '個人の決算書4ページの各欄（転記用）', 'form', 'individual'],
+    ['#/reports/breakdown', '勘定科目内訳明細書', '預貯金・売掛金・買掛金・借入金・役員給与・地代家賃など。補助科目ごと', 'list', 'corporation'],
+  ]],
 ];
 
 export async function render({ app, outlet }) {
   const { settings } = await app.load();
   const corp = settings.entityType === 'corporation';
   // 製造原価報告書は法人で「製造原価を使う」にしたときだけ、青色申告決算書は個人だけ出す
-  const show = (need) => !need || (need === 'manufacturing' && corp && settings.manufacturing) || (need === 'individual' && !corp);
+  const show = (need) => !need || (need === 'manufacturing' && corp && settings.manufacturing) || (need === 'individual' && !corp) || (need === 'corporation' && corp);
   put(
     outlet,
     GROUPS.map(([title, tone, items]) => {

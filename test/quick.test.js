@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { QUICK_TEMPLATES, QUICK_BY_ID, quickTemplatesFor, slotCandidates, quickDefaults, buildQuickLines, simplePair, isCashAccount } from '../js/quick.js';
-import { fillHints, findByHint, HINTS, templateAccounts, TEMPLATES, manufacturingAccounts } from '../js/accounts.js';
+import { fillHints, findByHint, HINTS, templateAccounts, TEMPLATES, manufacturingAccounts, BREAKDOWN_HINTS } from '../js/accounts.js';
 import { validateJournal } from '../js/journal.js';
 import { firstNegativeDate } from '../js/ledger.js';
 import { createJournal } from '../js/models.js';
@@ -19,6 +19,7 @@ test('テンプレートの目印：個人・法人とも使う目印の科目�
     for (const hint of Object.keys(HINTS)) {
       const hits = accounts.filter((a) => a.hint === hint);
       if (mfgHints.has(hint) && entityType === 'individual') assert.equal(hits.length, 0);
+      else if (BREAKDOWN_HINTS.includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 内訳書は法人だけ
       else if (['officer_loan', 'accumulated_depreciation', 'consumption_tax_payable', 'asset_sale_gain', 'asset_sale_loss', 'asset_retirement_loss'].includes(hint) && entityType === 'individual') assert.equal(hits.length, 0); // 個人は直接法
       else assert.equal(hits.length, 1, `${entityType} ${hint}`);
     }
