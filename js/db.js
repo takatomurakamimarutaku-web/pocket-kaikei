@@ -12,6 +12,7 @@ import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId, createAccount, createBudget, createSubAccount } from './models.js';
+import { validatePaymentTerms } from './receivables.js';
 import { validateAsset } from './depreciation.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
@@ -673,6 +674,8 @@ export class Repository {
       if (!(await req(tx.objectStore('accounts').get(sub.accountId)))) throw new Error('勘定科目が見つかりません');
       const siblings = await req(tx.objectStore('subAccounts').index('accountId').getAll(sub.accountId));
       if (siblings.some((s) => s.id !== sub.id && s.name === name)) throw new ValidationError({ name: '同じ名前の補助科目があります' });
+      const termsError = validatePaymentTerms(sub.paymentTerms);
+      if (termsError) throw new ValidationError({ paymentTerms: termsError });
       const next = { ...sub, name, updatedAt: now() };
       tx.objectStore('subAccounts').put(next);
       return next;

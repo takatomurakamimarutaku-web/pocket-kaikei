@@ -12,6 +12,7 @@ import { taxChecks } from '../tax-reports.js';
 import { findInventoryJournals } from '../closing.js';
 import { findDepreciationJournals } from '../depreciation.js';
 import { icon } from '../icons.js';
+import { PARTY_KINDS, partyBalances } from '../receivables.js';
 import { periodContext, closedNotice } from './period-common.js';
 
 const slash = (d) => d.replaceAll('-', '/');
@@ -19,7 +20,7 @@ const dayMs = 86400000;
 
 export async function render({ app, outlet }) {
   const data = await app.load();
-  const { settings, period, accounts, journals, accountById } = data;
+  const { settings, period, accounts, subAccounts, journals, accountById } = data;
   const individual = settings.entityType === 'individual';
   const { pl } = buildStatements({ entityType: settings.entityType, accounts, period, journals });
   const rows = closingRows({ accounts, period, journals });
@@ -55,6 +56,16 @@ export async function render({ app, outlet }) {
     const inv = findInventoryJournals(journals, accounts).length;
     const dep = findDepreciationJournals(journals).length;
     if (!inv || !dep) todos.push({ href: '#/closing', title: '決算整理をする', sub: `期末 ${slash(period.endDate)}。${[!inv ? '棚卸' : '', !dep ? '減価償却' : ''].filter(Boolean).join('・')}の仕訳が未登録`, level: today > period.endDate ? 'warn' : 'info' });
+  }
+
+  // 入金予定日・支払予定日を過ぎた売掛金・買掛金（支払条件を設定した取引先だけ）
+  if (!period.closed && today >= period.startDate && today <= period.endDate) {
+    for (const kind of ['receivable', 'payable']) {
+      const k = PARTY_KINDS[kind];
+      const r = partyBalances(kind, { accounts, subAccounts, journals, period, asOf: today });
+      const late = r.parties.filter((p) => p.overdue > 0);
+      if (late.length) todos.push({ href: `#/receivables?kind=${kind}`, title: `${k.due}を過ぎた${k.label}を確かめる`, sub: `${late.map((p) => p.name).slice(0, 3).join('・')}${late.length > 3 ? ' ほか' : ''}　${formatYen(r.totals.overdue)}円`, level: 'warn' });
+    }
   }
 
   // 最近の仕訳（更新の新しい順に5件）

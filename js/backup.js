@@ -9,6 +9,7 @@ import { validateAsset } from './depreciation.js';
 import { validateTemplate } from './templates.js';
 import { validateBudget } from './budget.js';
 import { validateAttachment, bytesToBase64, base64ToBytes, sha256Hex, toArrayBuffer } from './attachments.js';
+import { validatePaymentTerms } from './receivables.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
 export const BACKUP_VERSION = 6;
@@ -118,7 +119,7 @@ export function parseBackup(text) {
   if (missing.length) throw new BackupError('必要な勘定科目（元入金・資本金など）がありません');
   const accountIds = new Set(obj.accounts.map((a) => a.id));
   for (const sa of obj.subAccounts) {
-    if (!hasBase(sa) || !isStr(sa.name) || !accountIds.has(sa.accountId)) bad('補助科目');
+    if (!hasBase(sa) || !isStr(sa.name) || !accountIds.has(sa.accountId) || validatePaymentTerms(sa.paymentTerms)) bad('補助科目');
     unique(sa, '補助科目');
   }
   const subById = new Map(obj.subAccounts.map((x) => [x.id, x]));
