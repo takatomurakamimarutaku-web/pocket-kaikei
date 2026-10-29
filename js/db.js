@@ -323,6 +323,20 @@ export class Repository {
     });
   }
 
+  /** 青色申告決算書の設定（青色申告特別控除額）を期間に保存する */
+  saveBlueReturnSettings(periodId, { deduction }) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+      if (![0, 100000, 550000, 650000, 750000].includes(deduction)) throw new ValidationError(['青色申告特別控除額を選んでください']);
+      const next = { ...period, blueReturn: { deduction }, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
   listPeriods() {
     return this.run(['periods'], 'readonly', async (tx) => (await req(tx.objectStore('periods').getAll())).sort((a, b) => (a.startDate < b.startDate ? -1 : 1)));
   }

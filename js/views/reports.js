@@ -10,6 +10,7 @@ const ITEMS = [
   ['#/reports/bs', '貸借対照表', '期末の資産・負債・純資産'],
   ['#/reports/tax', '消費税集計', '税区分別の集計と割り戻しの参考値'],
   ['#/reports/tax-return', '消費税の申告計算', '一般・簡易・2割特例・3割特例で納める税額'],
+  ['#/reports/blue-return', '青色申告決算書', '個人の決算書4ページの各欄（転記用）'],
 ];
 
 export async function render({ outlet }) {

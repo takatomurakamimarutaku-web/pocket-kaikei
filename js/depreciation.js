@@ -234,7 +234,8 @@ function* ranges(periods, startedOn) {
  * 減価償却の年ごとの明細
  * @param {object} asset
  * @param {Array} periods 会計期間（startDate・endDate・id）。1件以上
- * @returns {Array<{ startDate, endDate, periodId, months, opening, amount, business, private, closing, switched? }>}
+ * @returns {Array<{ startDate, endDate, periodId, months, base, rate, opening, amount, business, private, closing, switched? }>}
+ *   base：償却の基礎になる金額、rate：使った率（1/1000。一括償却・少額は null）
  *   amount：その期間の償却費（全体）、business：経費になる額（事業で使う割合）、private：私用分
  *   償却が終わる（残り1円・無形は0円）か、除却・売却した期間までを返す
  */
@@ -256,6 +257,8 @@ export function depreciationSchedule(asset, periods) {
     const months = Math.min(periodMonths(r), monthsBetween(from, to));
     let amount = 0;
     let switched = false;
+    let base = asset.cost; // 償却の基礎になる金額（青色申告決算書の「償却の基礎になる金額」）
+    let rate = null; // 使った率（1/1000。一括償却・少額は null）
     if (asset.method === 'small' || asset.method === 'sme') {
       amount = book;
     } else if (asset.method === 'lump3') {
@@ -266,12 +269,15 @@ export function depreciationSchedule(asset, periods) {
     } else if (asset.method === 'straight') {
       const annual = Math.floor((asset.cost * straight) / 1000);
       amount = Math.floor((annual * months) / 12);
+      rate = straight;
     } else if (asset.method === 'declining') {
       // 調整前償却額が償却保証額（取得価額×保証率）に満たない年から、改定取得価額×改定償却率に切り替える
       if (revisedBase === null && guarantee && book * declining * 100 < asset.cost * guarantee) revisedBase = book;
       switched = revisedBase !== null;
       const annual = switched ? Math.floor((revisedBase * revised) / 1000) : Math.floor((book * declining) / 1000);
       amount = Math.floor((annual * months) / 12);
+      base = switched ? revisedBase : book;
+      rate = switched ? revised : declining;
     }
     amount = Math.max(0, Math.min(amount, book - floor));
     const business = Math.floor((amount * ratio) / 100);
@@ -280,6 +286,8 @@ export function depreciationSchedule(asset, periods) {
       endDate: r.endDate,
       periodId: r.periodId,
       months,
+      base,
+      rate,
       opening: book,
       amount,
       business,

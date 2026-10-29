@@ -274,6 +274,18 @@ mkdirSync(OUT, { recursive: true });
     if ((await page.getByRole('radio', { name: '2割' }).getAttribute('aria-checked')) !== 'true') errors.push('計算の方法が保存されない');
   }
 
+  // 青色申告決算書（個人のみ）
+  if (entity === 'individual') {
+    await go('#/reports/blue-return?page=1');
+    await shot('42-blue-return-1', true);
+    for (const n of ['2', '3', '4']) {
+      await page.getByRole('radio', { name: new RegExp(`^${n} `) }).click();
+      await page.waitForTimeout(200);
+      await shot(`4${Number(n) + 1}-blue-return-${n}`, true);
+    }
+    if (!(await page.locator('.check-line.ok').count())) errors.push('青色申告決算書の貸借対照表が一致しない');
+  }
+
   // 決算・繰越
   await go('#/closing');
   await shot('26-closing', true);
