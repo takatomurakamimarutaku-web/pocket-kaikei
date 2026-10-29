@@ -563,6 +563,7 @@ details.panel > summary { cursor: pointer; list-style: revert; }
   .blue-return.br-wide td:not(.num) { min-width: 3.5em; }
   .br-page.is-off { display: block; }
   .br-page + .br-page { break-before: page; }
+  .lg-section .section-title { break-after: avoid; margin: 10px 0 2px; font-size: 11pt; }
   .br-page-title { font-size: 11pt; margin: 0 0 4px; }
   .br-page h2:not(.br-page-title), .blue-return caption { font-size: 10pt; margin: 6px 0 2px; padding: 0; }
   .blue-return th .block { display: inline; margin-left: 6px; }

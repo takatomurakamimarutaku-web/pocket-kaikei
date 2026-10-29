@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { csvCell, toCsv, journalsCsv, trialBalanceCsv, BOM } from '../js/csv.js';
-import { trialBalance } from '../js/ledger.js';
+import { csvCell, toCsv, journalsCsv, trialBalanceCsv, ledgerCsv, BOM } from '../js/csv.js';
+import { trialBalance, generalLedgers } from '../js/ledger.js';
 import { makeBook } from './helpers.js';
 
 test('エスケープ：カンマ・ダブルクォート・改行を含む値を囲む', () => {
@@ -33,4 +33,18 @@ test('試算表CSV：動きのない科目は出さず、合計行を付ける�
   assert.ok(lines.some((l) => l.startsWith('621,地代家賃,販売費及び一般管理費,0,5000,0,5000')));
   assert.equal(lines.at(-1), ',合計,,,5000,5000,');
   assert.equal(lines.length, 5);
+});
+
+test('総勘定元帳：全科目を科目順に、繰越の行と取引の行（取引も残高もない科目は出さない）', () => {
+  const b = makeBook('individual');
+  b.opening([['現金', 50000], ['元入金', 50000]]);
+  const journals = [b.j('2026-02-01', [['通信費', 3000]], [['現金', 3000]], '電話代'), b.j('2026-03-01', [['現金', 10000]], [['売上高', 10000]])];
+  const lgs = generalLedgers({ accounts: b.accounts, period: b.period, journals });
+  assert.deepEqual(lgs.map((l) => l.account.name), ['現金', '元入金', '売上高', '通信費']);
+  const lines = ledgerCsv(lgs, { carried: '前期繰越' }).slice(BOM.length).trim().split('\r\n');
+  assert.equal(lines[0], 'コード,勘定科目,補助科目,日付,No.,相手科目,摘要,借方,貸方,残高');
+  const cash = b.byName['現金'].code;
+  assert.equal(lines[1], `${cash},現金,,,,前期繰越,,,,50000`);
+  assert.equal(lines[2], `${cash},現金,,2026/02/01,1,通信費,電話代,,3000,47000`);
+  assert.equal(lines[3], `${cash},現金,,2026/03/01,2,売上高,,10000,,57000`);
 });

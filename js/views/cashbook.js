@@ -1,5 +1,6 @@
 // 現金出納帳・預金出納帳：口座（補助科目）ごとの入金・出金・残高。ここから入金・出金を記録できる
-import { h, put, amountCell, emptyState } from '../ui.js';
+import { h, put, amountCell, emptyState, saveFile } from '../ui.js';
+import { ledgerCsv, csvFileName } from '../csv.js';
 import { generalLedger, carriedLabel, firstNegativeDate } from '../ledger.js';
 import { compareAccounts } from '../accounts.js';
 import { isCashAccount } from '../quick.js';
@@ -114,6 +115,21 @@ export async function render({ app, outlet, query }) {
             ),
           )
         : emptyState(isAll ? 'この口座の取引はまだありません' : 'この月の取引はありません'),
+      lg.rows.length
+        ? h(
+            'div',
+            { class: 'report-tools no-print' },
+            h('button', {
+              type: 'button',
+              class: 'btn',
+              text: '表示中の出納帳をCSVで書き出す',
+              onclick: () => {
+                const subName = subId ? subAccounts.find((x) => x.id === subId)?.name ?? '' : '';
+                saveFile(new Blob([ledgerCsv([lg], { carried: carriedLabel(period, from), debitLabel: '入金', creditLabel: '出金', subName })], { type: 'text/csv' }), csvFileName('cashbook'));
+              },
+            }),
+          )
+        : null,
     );
   }
 
