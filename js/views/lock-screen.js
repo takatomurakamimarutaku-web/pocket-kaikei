@@ -72,7 +72,7 @@ export function lockScreen({ device, lock, onErase }) {
   async function forgot() {
     const ok = await confirmDialog({
       title: 'パスコードを忘れたとき',
-      message: 'パスコードは取り出せません。この端末のすべての帳簿のデータと画面ロックを消して、初期設定からやり直します。バックアップファイルがあれば、初期設定のあとに「バックアップ」から復元できます。元に戻せません。',
+      message: 'パスコードは取り出せません。この端末のすべての事業所のデータと画面ロックを消して、初期設定からやり直します。バックアップファイルがあれば、初期設定のあとに「バックアップ」から復元できます。元に戻せません。',
       buttons: [
         { label: 'キャンセル', value: false },
         { label: 'すべて消す', value: true, variant: 'danger' },

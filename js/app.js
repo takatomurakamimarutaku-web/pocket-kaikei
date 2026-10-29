@@ -150,7 +150,7 @@ const routes = [
   { path: '/reports/breakdown', view: breakdownView, title: '勘定科目内訳明細書', tab: 'reports', back: '#/reports', print: true },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },
-  { path: '/books', view: booksView, title: '帳簿の切替', tab: 'more', back: '#/more' },
+  { path: '/books', view: booksView, title: '事業所の切替', tab: 'more', back: '#/more' },
   { path: '/lock', view: lockSettingsView, title: '画面ロック', tab: 'more', back: '#/more' },
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },
   { path: '/account/new', view: accountEditView, title: '科目の追加', tab: 'more', back: '#/accounts' },
@@ -211,7 +211,7 @@ async function start() {
     refreshLock: async () => {
       lock = await device.getLock();
     },
-    /** 帳簿を切り替える（今の帳簿のデータベースを閉じて、切り替えた帳簿のデータベースを開く） */
+    /** 事業所（帳簿）を切り替える（今の帳簿のデータベースを閉じて、切り替えた帳簿のデータベースを開く） */
     switchBook: async (id, hash = '#/home') => {
       const next = await device.switchBook(id);
       const nextDb = await openDB({ name: next.dbName });
@@ -266,10 +266,10 @@ async function start() {
         router.navigate('#/home', { replace: true });
         return null;
       }
-      // 帳簿の一覧に出す名前（事業者名）を覚えておく
-      if (settings && settings.businessName !== app.book.label) {
+      // 事業所の一覧に出す名前（事業者名）と個人・法人の別を覚えておく
+      if (settings && (settings.businessName !== app.book.label || settings.entityType !== app.book.entityType)) {
         device
-          .setBookLabel(app.book.id, settings.businessName)
+          .setBookInfo(app.book.id, { label: settings.businessName, entityType: settings.entityType })
           .then((b) => b && (app.book = b))
           .catch(() => {});
       }

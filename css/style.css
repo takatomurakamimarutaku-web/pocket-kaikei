@@ -361,6 +361,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .hero-edit { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin: -6px -6px 0 0; border-radius: 50%; color: rgba(255, 255, 255, 0.85); }
 .hero-edit svg { width: 20px; height: 20px; }
 .hero-edit:active { background: rgba(255, 255, 255, 0.12); }
+.hero-top .hero-name { flex: 1; min-width: 0; }
+.hero-switch { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-top: -2px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 0.78rem; font-weight: 700; text-decoration: none; }
+.hero-switch svg { width: 16px; height: 16px; }
+.hero-switch:active { background: rgba(255, 255, 255, 0.26); }
 .hero-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 14px; }
 .tag { padding: 2px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.16); font-size: 0.72rem; font-weight: 700; }
 .hero-period-head { display: flex; justify-content: space-between; font-size: 0.78rem; opacity: 0.9; margin-bottom: 6px; }
@@ -950,7 +954,8 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .book-name { margin: 0; font-weight: 700; display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .book-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .book-badge { padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); font-size: 0.72rem; font-weight: 700; }
-.book-list + .btn-block { margin-bottom: var(--sp-4); }
+.book-list { margin-bottom: var(--sp-4); }
+.book-type { margin: -6px 0 0; }
 .lock-form input::placeholder { letter-spacing: 0.05em; font-size: 1rem; }
 
 /* 更新履歴 */
