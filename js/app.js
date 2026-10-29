@@ -32,6 +32,7 @@ import * as periodsView from './views/periods.js';
 import * as closingView from './views/closing.js';
 import * as assetsView from './views/assets.js';
 import * as assetFormView from './views/asset-form.js';
+import * as assetDisposeView from './views/asset-dispose.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
 const routes = [
@@ -65,6 +66,7 @@ const routes = [
   { path: '/assets', view: assetsView, title: '固定資産台帳', tab: 'more', back: '#/more', print: true },
   { path: '/asset/new', view: assetFormView, title: '固定資産の登録', tab: 'more', back: '#/assets' },
   { path: '/asset/:id', view: assetFormView, title: '固定資産の編集', tab: 'more', back: '#/assets' },
+  { path: '/asset/:id/dispose', view: assetDisposeView, title: '固定資産の売却・除却', tab: 'more', back: '#/assets' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
 ];
 

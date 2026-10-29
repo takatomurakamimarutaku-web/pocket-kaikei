@@ -214,6 +214,16 @@ export function validateAsset(asset, { entityType, accounts }) {
     }
   }
   if (String(asset.memo ?? '').length > 100) e.memo = 'メモは100文字以内にしてください';
+  // v0.14.0 で追加した項目（古いデータには無い）
+  if (String(asset.assetNo ?? '').length > 20) e.assetNo = '資産番号は20文字以内にしてください';
+  if (asset.quantity != null && (!Number.isInteger(asset.quantity) || asset.quantity < 1 || asset.quantity > 99999)) e.quantity = '数量は1〜99999の整数で入力してください';
+  if (String(asset.location ?? '').length > 40) e.location = '設置場所は40文字以内にしてください';
+  if (asset.disposalType != null) {
+    if (!['sell', 'retire'].includes(asset.disposalType)) e.disposedOn = '売却か除却かが正しくありません';
+    else if (!asset.disposedOn) e.disposedOn = '売却・除却した日を入力してください';
+    if (asset.disposalType === 'sell' && (!isYen(asset.salePrice) || asset.salePrice < 0)) e.disposedOn = '売却額は0円以上の整数にしてください';
+  }
+  if (asset.salePrice != null && asset.disposalType !== 'sell') e.disposedOn = '売却額は売却した資産だけに入れます';
   return e;
 }
 

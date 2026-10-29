@@ -178,6 +178,30 @@ async function putJournal(tx, journal) {
   return record;
 }
 
+async function putAsset(tx, asset) {
+  const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+  const accounts = await req(tx.objectStore('accounts').getAll());
+  const record = {
+    ...asset,
+    name: String(asset.name ?? '').trim(),
+    memo: String(asset.memo ?? '').trim(),
+    assetNo: String(asset.assetNo ?? '').trim(),
+    location: String(asset.location ?? '').trim(),
+    quantity: asset.quantity ?? 1,
+    businessRatio: settings?.entityType === 'individual' ? asset.businessRatio : 100,
+    disposedOn: asset.disposedOn || null,
+    disposalType: asset.disposedOn ? (asset.disposalType ?? null) : null,
+    salePrice: asset.disposedOn && asset.disposalType === 'sell' ? asset.salePrice : null,
+  };
+  const errors = validateAsset(record, { entityType: settings?.entityType, accounts });
+  if (Object.keys(errors).length) throw new ValidationError(errors);
+  const store = tx.objectStore('assets');
+  const before = await req(store.get(record.id));
+  const next = { ...record, createdAt: before?.createdAt ?? record.createdAt, updatedAt: now() };
+  store.put(next);
+  return next;
+}
+
 export class Repository {
   constructor(db) {
     this.db = db;
@@ -586,23 +610,34 @@ export class Repository {
 
   /** 固定資産の追加・更新（検証してから保存）。法人は事業で使う割合を100%にする */
   saveAsset(asset) {
-    return this.run(['meta', 'accounts', 'assets'], 'readwrite', async (tx) => {
-      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
-      const accounts = await req(tx.objectStore('accounts').getAll());
-      const record = {
-        ...asset,
-        name: String(asset.name ?? '').trim(),
-        memo: String(asset.memo ?? '').trim(),
-        businessRatio: settings?.entityType === 'individual' ? asset.businessRatio : 100,
-        disposedOn: asset.disposedOn || null,
-      };
-      const errors = validateAsset(record, { entityType: settings?.entityType, accounts });
-      if (Object.keys(errors).length) throw new ValidationError(errors);
-      const store = tx.objectStore('assets');
-      const before = await req(store.get(record.id));
-      const next = { ...record, createdAt: before?.createdAt ?? record.createdAt, updatedAt: now() };
-      store.put(next);
-      return next;
+    return this.run(['meta', 'accounts', 'assets'], 'readwrite', (tx) => putAsset(tx, asset));
+  }
+
+  /**
+   * 固定資産の売却・除却：資産（売却・除却した日・種類・売却額）と、その仕訳を1つのトランザクションで保存する
+   * @param {object} asset disposedOn・disposalType・salePrice を入れた資産
+   * @param {object|null} journal 売却・除却の仕訳（source: 'asset_disposal'、sourceId: 資産の id）。帳簿価額0円の除却などは null
+   */
+  disposeAsset(asset, journal) {
+    return this.run(['meta', 'accounts', 'subAccounts', 'periods', 'journals', 'assets'], 'readwrite', async (tx) => {
+      const saved = await putAsset(tx, asset);
+      const savedJournal = journal ? await putJournal(tx, { ...journal, source: 'asset_disposal', sourceId: saved.id }) : null;
+      return { asset: saved, journal: savedJournal };
+    });
+  }
+
+  /** 売却・除却の取り消し：その資産の売却・除却の仕訳を削除し（tombstone を残す）、売却・除却の項目を空にする */
+  undoDisposal(assetId) {
+    return this.run(['meta', 'accounts', 'periods', 'journals', 'assets', 'tombstones'], 'readwrite', async (tx) => {
+      const asset = await req(tx.objectStore('assets').get(assetId));
+      if (!asset) throw new Error('固定資産が見つかりません');
+      const journals = (await req(tx.objectStore('journals').getAll())).filter((j) => j.source === 'asset_disposal' && j.sourceId === assetId);
+      for (const j of journals) {
+        if ((await req(tx.objectStore('periods').get(j.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+        tx.objectStore('journals').delete(j.id);
+        tx.objectStore('tombstones').put(tombstone('journals', j.id));
+      }
+      return putAsset(tx, { ...asset, disposedOn: null, disposalType: null, salePrice: null });
     });
   }
 

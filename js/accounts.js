@@ -75,6 +75,10 @@ export const HINTS = {
   accumulated_depreciation: '減価償却累計額',
   taxes_dues: '租税公課',
   consumption_tax_payable: '未払消費税等',
+  asset_sale_gain: '固定資産売却益',
+  asset_sale_loss: '固定資産売却損',
+  asset_retirement_loss: '固定資産除却損',
+  misc_expense: '雑費',
 };
 
 /** 事業者ごとに必ず存在する役割 */
@@ -172,15 +176,15 @@ const CORPORATION = [
   ['624', '租税公課', 'sga', N, { hint: 'taxes_dues' }],
   ['625', '支払報酬料', 'sga', T],
   ['626', '減価償却費', 'sga', N, { hint: 'depreciation' }],
-  ['699', '雑費', 'sga', T],
+  ['699', '雑費', 'sga', T, { hint: 'misc_expense' }],
   ['700', '受取利息', 'non_operating_income', 'sales_exempt'],
   ['701', '受取配当金', 'non_operating_income', N],
   ['702', '雑収入', 'non_operating_income', 'sales_10'],
   ['710', '支払利息', 'non_operating_expenses', 'purchase_exempt'],
   ['711', '雑損失', 'non_operating_expenses', N],
-  ['720', '固定資産売却益', 'extraordinary_income', N],
-  ['730', '固定資産売却損', 'extraordinary_losses', N],
-  ['731', '固定資産除却損', 'extraordinary_losses', N],
+  ['720', '固定資産売却益', 'extraordinary_income', N, { hint: 'asset_sale_gain' }],
+  ['730', '固定資産売却損', 'extraordinary_losses', N, { hint: 'asset_sale_loss' }],
+  ['731', '固定資産除却損', 'extraordinary_losses', N, { hint: 'asset_retirement_loss' }],
   ['740', '法人税、住民税及び事業税', 'income_taxes', N],
 ];
 
@@ -241,7 +245,7 @@ const INDIVIDUAL = [
   ['621', '車両費', 'sga', T],
   ['622', '新聞図書費', 'sga', T],
   ['623', '会議費', 'sga', T],
-  ['699', '雑費', 'sga', T],
+  ['699', '雑費', 'sga', T, { hint: 'misc_expense' }],
   ['700', '貸倒引当金繰戻額', 'reserves_reversal', N],
   ['710', '貸倒引当金繰入額', 'reserves_provision', N],
   ['720', '専従者給与', 'family_salary', N],

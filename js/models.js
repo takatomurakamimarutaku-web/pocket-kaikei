@@ -63,6 +63,11 @@ export function createAsset(fields = {}, now = new Date()) {
     carryOn: null, // 前の会計ソフトの帳簿価額を引き継いだ日（期首）
     carryBook: null, // その日の帳簿価額
     carryRevisedBase: null, // 定率法で切り替え済みのときの改定取得価額
+    assetNo: '', // 資産番号（任意）
+    quantity: 1, // 数量
+    location: '', // 設置場所（任意。償却資産申告などで使う）
+    disposalType: null, // 売却（sell）・除却（retire）
+    salePrice: null, // 売却額（税込）
     memo: '',
     ...stamp(now),
     ...fields,
