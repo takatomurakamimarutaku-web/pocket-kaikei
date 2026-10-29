@@ -86,7 +86,7 @@ export async function render({ app, outlet, query }) {
         stat('出金', lg.credit),
         stat('残高', lg.closing),
       ),
-      lg.account.active ? h('div', { class: 'actions cb-actions' }, add('cash_in', '＋ 入金を記録', 'btn-primary'), add('cash_out', '− 出金を記録', 'btn-primary')) : h('p', { class: 'muted small', text: 'この科目は無効のため、記録はできません' }),
+      period.closed ? null : lg.account.active ? h('div', { class: 'actions cb-actions' }, add('cash_in', '＋ 入金を記録', 'btn-primary'), add('cash_out', '− 出金を記録', 'btn-primary')) : h('p', { class: 'muted small', text: 'この科目は無効のため、記録はできません' }),
       lg.rows.length
         ? h(
             'div',

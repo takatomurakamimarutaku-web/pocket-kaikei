@@ -9,6 +9,7 @@ import { normalize } from '../search.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
+import { closedNotice } from './period-common.js';
 
 const SIDE_LABEL = { debit: '借方', credit: '貸方' };
 
@@ -241,6 +242,22 @@ export async function render({ app, outlet, params, query }) {
       ),
     );
     saveBtn.disabled = t.diff !== 0 || t.debit === 0;
+  }
+
+  // 締めた期間の仕訳は表示のみ（編集中の仕訳はその仕訳の期間、新規は表示中の期間で判定）
+  const locked = editing ? (await app.db.listPeriods()).find((p) => p.id === editing.periodId)?.closed : period.closed;
+  if (locked) {
+    app.setTitle(editing ? '仕訳の表示' : '仕訳の入力');
+    put(outlet, closedNotice({ closed: true }), editing ? journalCardLike(editing) : null);
+    return;
+  }
+  function journalCardLike(j) {
+    return h(
+      'div',
+      { class: 'panel' },
+      h('p', { class: 'muted small', text: `No.${j.no}・${j.date.replaceAll('-', '/')}` }),
+      h('ul', { class: 'plain-list' }, j.lines.map((l) => h('li', { text: `${SIDE_LABEL[l.side]}　${accountById.get(l.accountId)?.name ?? '（不明な科目）'}　${formatYen(l.amount)}円${l.memo ? `　${l.memo}` : ''}` }))),
+    );
   }
 
   const form = h(

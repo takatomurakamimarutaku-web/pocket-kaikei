@@ -10,6 +10,7 @@ import { normalize } from '../search.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
+import { closedNotice } from './period-common.js';
 
 const SIDE_LABEL = { debit: '借方', credit: '貸方' };
 /** ボタンで並べる候補の上限。これより多いと科目選択シートで選ぶ */
@@ -24,6 +25,10 @@ export async function render({ app, outlet, params, query }) {
     return;
   }
   app.setTitle(template.menu ? template.label : `${template.label}の記録`);
+  if (period.closed) {
+    put(outlet, closedNotice(period));
+    return;
+  }
   const fixedAccount = accountById.get(query.account);
   const fixedSide = ['debit', 'credit'].find((s) => isFixedSlot(template[s]));
   if (fixedSide && !(isCashAccount(fixedAccount) && fixedAccount.active)) {

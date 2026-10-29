@@ -482,3 +482,5 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .period-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
 .period-row + .period-row { border-top: 1px solid var(--separator); }
 .notice .btn { justify-self: start; }
+.period-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.menu-sub.is-closed { color: var(--primary-strong); font-weight: 700; }

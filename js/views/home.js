@@ -7,7 +7,7 @@ import { shouldRemindBackup } from '../backup.js';
 import { currentInstallState } from '../install.js';
 import { ENTITY_LABELS, TAX_STATUS_LABELS } from '../models.js';
 import { openingDiff } from '../ledger.js';
-import { periodContext } from './period-common.js';
+import { periodContext, closedNotice } from './period-common.js';
 
 export async function render({ app, outlet }) {
   const data = await app.load();
@@ -44,6 +44,7 @@ export async function render({ app, outlet }) {
           h('a', { href: '#/backup', class: 'link', text: 'バックアップする' }),
         )
       : null,
+    closedNotice(period),
     pctx.next
       ? h('div', { class: 'notice' }, h('span', { text: `過去の会計期間（${formatPeriod(period)}）を表示しています。` }), h('a', { href: '#/periods', class: 'link', text: '会計期間を切り替える' }))
       : today > period.endDate

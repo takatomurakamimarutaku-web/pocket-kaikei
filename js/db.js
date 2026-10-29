@@ -1,7 +1,7 @@
 // IndexedDB 操作。データの読み書きは必ずこの Repository を通す（将来の同期処理を差し込む場所を1か所にするため）
 import { validateJournal } from './journal.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES } from './accounts.js';
-import { validatePeriod } from './period.js';
+import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId } from './models.js';
@@ -10,6 +10,9 @@ export const DB_NAME = 'pocket-kaikei';
 export const DB_VERSION = 1;
 export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'tombstones'];
 const ALL_STORES = ['meta', ...DATA_STORES];
+
+/** 締めた会計期間を変更しようとしたときのメッセージ */
+export const CLOSED_PERIOD_MESSAGE = 'この会計期間は締めてあるため変更できません（会計期間の画面で締めを解除できます）';
 
 export class ValidationError extends Error {
   constructor(errors) {
@@ -234,6 +237,7 @@ export class Repository {
       const store = tx.objectStore('periods');
       const period = await req(store.get(periodId));
       if (!period) throw new Error('会計期間が見つかりません');
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       const others = (await req(store.getAll())).filter((p) => p.id !== periodId);
       if (others.some((p) => p.startDate <= endDate && startDate <= p.endDate)) throw new ValidationError(['ほかの会計期間と重なります']);
       const journals = await req(tx.objectStore('journals').index('periodId').getAll(periodId));
@@ -251,10 +255,11 @@ export class Repository {
    */
   saveOpeningBalances(periodId, balances) {
     return this.run(['meta', 'periods', 'accounts', 'subAccounts'], 'readwrite', async (tx) => {
-      const result = await normalizeOpening(tx, balances);
       const store = tx.objectStore('periods');
       const period = await req(store.get(periodId));
       if (!period) throw new Error('会計期間が見つかりません');
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+      const result = await normalizeOpening(tx, balances);
       const next = { ...period, openingBalances: result, updatedAt: now() };
       store.put(next);
       return next;
@@ -263,6 +268,36 @@ export class Repository {
 
   listPeriods() {
     return this.run(['periods'], 'readonly', async (tx) => (await req(tx.objectStore('periods').getAll())).sort((a, b) => (a.startDate < b.startDate ? -1 : 1)));
+  }
+
+  /**
+   * 会計期間を締める（仕訳・期首残高・日付を変更できなくする）。次の期間へ繰り越した後だけ締められる
+   */
+  closePeriod(periodId) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const all = await req(store.getAll());
+      const nextStart = addDays(period.endDate, 1);
+      if (!all.some((p) => p.startDate === nextStart)) throw new ValidationError(['次の期間へ繰り越してから締めてください']);
+      const ts = now();
+      const next = { ...period, closed: true, closedAt: ts, updatedAt: ts };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 締めの解除 */
+  reopenPeriod(periodId) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const next = { ...period, closed: false, closedAt: null, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
   }
 
   /** 表示・入力する会計期間を切り替える */
@@ -405,6 +440,7 @@ export class Repository {
       const journals = tx.objectStore('journals');
       const period = await req(periods.get(journal.periodId));
       const original = (await req(journals.get(journal.id))) || null;
+      if (period?.closed || (original && (await req(periods.get(original.periodId)))?.closed)) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       const errors = validateJournal(journal, {
         accounts: await req(tx.objectStore('accounts').getAll()),
         subAccounts: await req(tx.objectStore('subAccounts').getAll()),
@@ -427,9 +463,10 @@ export class Repository {
 
   /** 仕訳の削除。tombstone を記録し、「元に戻す」用に削除した仕訳を返す */
   deleteJournal(id) {
-    return this.run(['journals', 'tombstones'], 'readwrite', async (tx) => {
+    return this.run(['journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
       const j = await req(tx.objectStore('journals').get(id));
       if (!j) return null;
+      if ((await req(tx.objectStore('periods').get(j.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       tx.objectStore('journals').delete(id);
       tx.objectStore('tombstones').put(tombstone('journals', id));
       return j;
@@ -438,7 +475,8 @@ export class Repository {
 
   /** 削除の取り消し */
   restoreJournal(journal) {
-    return this.run(['journals', 'tombstones'], 'readwrite', (tx) => {
+    return this.run(['journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
+      if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       tx.objectStore('journals').put(journal);
       tx.objectStore('tombstones').delete(journal.id);
     });

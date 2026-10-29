@@ -9,7 +9,7 @@ import { formatPeriod, todayString } from '../period.js';
 import { createJournal, createPeriod } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
-import { periodContext } from './period-common.js';
+import { periodContext, closedNotice } from './period-common.js';
 
 export async function render({ app, outlet }) {
   const data = await app.load();
@@ -154,8 +154,9 @@ export async function render({ app, outlet }) {
   put(
     outlet,
     h('p', { class: 'muted small', text: `会計期間 ${formatPeriod(period)}` }),
-    inventorySection(),
-    othersSection,
+    closedNotice(period),
+    period.closed ? null : inventorySection(),
+    period.closed ? null : othersSection,
     carrySection(),
     h('p', { class: 'center small' }, h('a', { href: '#/backup', class: 'link', text: 'バックアップを取る' })),
   );

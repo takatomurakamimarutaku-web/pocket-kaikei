@@ -1,4 +1,5 @@
 // 会計期間の前後関係と、繰越後に前期が変わったかの確認（画面共通）
+import { h } from '../ui.js';
 import { previousPeriod, nextPeriod, isOpeningStale, carryForwardBalances } from '../closing.js';
 
 /**
@@ -21,4 +22,10 @@ export async function periodContext(app, { settings, period, accounts, subAccoun
     return app.db.saveOpeningBalances(period.id, balances);
   };
   return { periods, prev, next, stale, recompute };
+}
+
+/** 締めた期間を表示中の注意（締めていなければ null） */
+export function closedNotice(period) {
+  if (!period.closed) return null;
+  return h('div', { class: 'notice' }, h('span', { text: 'この会計期間は締めてあるため、表示のみで変更できません。' }), h('a', { href: '#/periods', class: 'link', text: '会計期間へ' }));
 }
