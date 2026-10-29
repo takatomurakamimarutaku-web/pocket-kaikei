@@ -337,6 +337,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .list-meta { color: var(--muted); font-size: var(--fs-footnote); font-weight: 600; margin: var(--sp-2) 4px; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; background: var(--surface-2); color: var(--text); }
 .badge-warn { background: var(--warn-bg); color: var(--warn-text); }
+.badge-ok { background: var(--ok-bg); color: var(--ok-text); }
+.badge-new { background: var(--primary); color: var(--on-primary); }
 .error-box { margin: var(--sp-3) 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); font-size: 0.88rem; border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); }
 .error-box ul { margin: 0; padding-left: 1.2em; }
 .check-line { margin: var(--sp-3) 4px; padding: 8px 12px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; }
@@ -930,3 +932,13 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .book-badge { padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); font-size: 0.72rem; font-weight: 700; }
 .book-list + .btn-block { margin-bottom: var(--sp-4); }
 .lock-form input::placeholder { letter-spacing: 0.05em; font-size: 1rem; }
+
+/* 更新履歴 */
+.changelog-lead { margin: var(--sp-2) 4px var(--sp-3); }
+.changelog-entry.is-new { border-color: var(--primary); }
+.changelog-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.changelog-version { font-size: 1rem; font-weight: 800; margin: 0; }
+.changelog-date { margin-left: auto; }
+.changelog-title { font-weight: 700; margin: var(--sp-2) 0 var(--sp-1); }
+.changelog-items { margin: 0; padding-left: 1.2em; }
+.changelog-items li + li { margin-top: 4px; }

@@ -1,5 +1,5 @@
 // PWA の構成を検証する: node scripts/check-pwa.js
-// 1. manifest の必須項目  2. キャッシュ対象ファイルの存在と漏れ  3. 絶対パス・外部URLが無いこと
+// 1. manifest の必須項目  2. キャッシュ対象ファイルの存在と漏れ  3. 絶対パス・外部URLが無いこと  4. バージョンと更新履歴
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, extname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -169,12 +169,28 @@ export function runChecks(root = ROOT) {
   return { errors, version, urls };
 }
 
+/**
+ * バージョンの食い違いと更新履歴の抜けを検証する（package.json・js/version.js・js/changelog.js）。
+ * 版を上げたのに更新履歴を書き忘れると、ここで止まる
+ */
+export async function checkVersions(root = ROOT) {
+  const errors = [];
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const { APP_VERSION } = await import(pathToFileURL(join(root, 'js/version.js')).href);
+  const { CHANGELOG, checkChangelog } = await import(pathToFileURL(join(root, 'js/changelog.js')).href);
+  if (pkg.version !== APP_VERSION) errors.push(`package.json の version（${pkg.version}）と js/version.js の APP_VERSION（${APP_VERSION}）が違います`);
+  errors.push(...checkChangelog(CHANGELOG, APP_VERSION));
+  return { errors, appVersion: APP_VERSION };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { errors, version, urls } = runChecks();
+  const versions = await checkVersions();
+  errors.push(...versions.errors);
   if (errors.length) {
     console.error(`NG: ${errors.length}件の問題があります`);
     for (const e of errors) console.error(`  - ${e}`);
     process.exit(1);
   }
-  console.log(`OK: manifest / キャッシュ対象 ${urls.length}件（${version}）/ 絶対パス・外部URLなし`);
+  console.log(`OK: manifest / キャッシュ対象 ${urls.length}件（${version}）/ 絶対パス・外部URLなし / 更新履歴 ${versions.appVersion}`);
 }
