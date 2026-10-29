@@ -14,8 +14,9 @@ export async function render({ app, outlet }) {
   const individual = settings.entityType === 'individual';
   const register = assetRegister(assets, periods, period);
   const shown = new Set(register.map((x) => x.asset.id));
-  // 台帳に出ない資産（償却が終わった・除却した・まだ使っていない）
-  const others = assets.filter((a) => !shown.has(a.id)).sort((a, b) => (a.startedOn < b.startedOn ? 1 : -1));
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  // 台帳に出ない資産（償却が終わった・除却した・まだ使っていない）。一部の売却・除却で分けた資産は、分けた期間より前は元の資産に含まれるので出さない
+  const others = assets.filter((a) => !shown.has(a.id) && !(a.splitFrom && a.carryOn && period.startDate < a.carryOn)).sort((a, b) => (a.startedOn < b.startedOn ? 1 : -1));
   const total = register.reduce((s, x) => s + (x.row?.amount || 0), 0);
   const business = register.reduce((s, x) => s + (x.row?.business || 0), 0);
   const sme = smeUsage(assets, period);
@@ -46,7 +47,9 @@ export async function render({ app, outlet }) {
       ),
     );
 
-  const card = ({ asset, opening, row, closing }) =>
+  // 資本的支出・一部の売却除却の関係（元の資産の名前）
+  const relation = (a) => (a.parentId ? `「${byId.get(a.parentId)?.name ?? '元の資産'}」の資本的支出` : a.splitFrom ? `「${byId.get(a.splitFrom)?.name ?? '元の資産'}」から分けた一部` : '');
+  const card = ({ asset, cost, opening, row, closing }) =>
     h(
       'li',
       {},
@@ -66,8 +69,12 @@ export async function render({ app, outlet }) {
             individual && asset.businessRatio < 100 ? h('span', { class: 'badge', text: `事業${asset.businessRatio}%` }) : null,
             asset.disposedOn ? h('span', { class: 'badge badge-warn', text: `${DISPOSAL[asset.disposalType] ?? '除却'} ${slash(asset.disposedOn)}` }) : null,
             asset.quantity > 1 ? h('span', { class: 'muted small', text: `${asset.quantity}個` }) : null,
+            asset.parentId ? h('span', { class: 'badge', text: '資本的支出' }) : null,
+            asset.splitFrom ? h('span', { class: 'badge', text: '一部' }) : null,
+            asset.splits?.length && cost !== asset.cost + asset.splits.reduce((t, sp) => t + sp.cost, 0) ? h('span', { class: 'badge', text: '一部を売却・除却' }) : null,
           ),
-          h('span', { class: 'muted small', text: `${accountById.get(asset.accountId)?.name ?? ''}・${slash(asset.startedOn)} から使用・取得価額 ${formatYen(asset.cost)}円` }),
+          relation(asset) ? h('span', { class: 'muted small', text: relation(asset) }) : null,
+          h('span', { class: 'muted small', text: `${accountById.get(asset.accountId)?.name ?? ''}・${slash(asset.startedOn)} から使用・取得価額 ${formatYen(cost ?? asset.cost)}円` }),
           h(
             'span',
             { class: 'asset-flow small' },
@@ -127,6 +134,6 @@ export async function render({ app, outlet }) {
           ),
         ]
       : null,
-    h('p', { class: 'muted small', text: '償却費は国税庁の償却率表（平成19年4月1日以後の定額法、平成24年4月1日以後の200%定率法）で計算します。1円未満は切り捨てます。' }),
+    h('p', { class: 'muted small', text: '償却費は国税庁の償却率表（旧定額法・旧定率法・定額法・250%定率法・200%定率法）で計算します。1円未満は切り捨てます。' }),
   );
 }

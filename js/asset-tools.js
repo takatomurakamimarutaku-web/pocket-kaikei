@@ -10,7 +10,12 @@
 // - 個人の事業用の固定資産（機械・車両など）の売却は譲渡所得（事業所得ではない）：No.3105
 //   https://www.nta.go.jp/taxes/shiraberu/taxanswer/joto/3105.htm
 // - 個人の業務用資産の取壊し・除却の損失は必要経費：No.2210 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2210.htm
-import { CATEGORY_BY_ID, usesLife, depreciationSchedule, hasCarryOver, MIN_LIFE } from './depreciation.js';
+// - 資本的支出：元の資産と種類・耐用年数が同じ資産を新たに取得したものとして、支出額を取得価額にして償却する（平成19年4月1日以後の支出）
+//   No.2107 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2107.htm 、法人税法施行令55条
+//   （国税庁「2 固定資産の取得価額等」https://www.nta.go.jp/law/joho-zeikaishaku/hojin/070622-2/03.htm）
+import { CATEGORY_BY_ID, usesLife, depreciationSchedule, hasCarryOver, MIN_LIFE, NEW_METHOD_FROM } from './depreciation.js';
+import { isValidDate } from './period.js';
+import { newId } from './models.js';
 
 /** よく使う資産の耐用年数（耐用年数表から抜粋。表にないものは利用者が年数を入力する） */
 export const LIFE_PRESETS = [
@@ -161,10 +166,10 @@ export function findDisposalJournals(journals, assetId) {
  */
 export function registerByAccount(register) {
   const map = new Map();
-  for (const { asset, opening, row, closing } of register) {
+  for (const { asset, cost, opening, row, closing } of register) {
     const s = map.get(asset.accountId) || { accountId: asset.accountId, count: 0, cost: 0, opening: 0, amount: 0, business: 0, closing: 0 };
     s.count += 1;
-    s.cost += asset.cost;
+    s.cost += cost ?? asset.cost;
     s.opening += opening || 0;
     s.amount += row?.amount || 0;
     s.business += row?.business || 0;
@@ -172,4 +177,100 @@ export function registerByAccount(register) {
     map.set(asset.accountId, s);
   }
   return [...map.values()];
+}
+
+/** 資本的支出を追加できる資産か（定額法・定率法で、資本的支出・一部の売却除却で分けた資産でなく、全部を売却・除却していない） */
+export function canAddCapex(asset) {
+  return usesLife(asset.method) && !asset.parentId && !asset.splitFrom && !asset.disposalType;
+}
+
+/**
+ * 資本的支出の資産の初期値：元の資産と種類・耐用年数・科目を同じにする（No.2107）
+ * 平成19年3月31日以前の資産（旧定額法・旧定率法）への支出も、新たな資産として定額法・定率法で償却する（取得価額に加算する特例は使わない）
+ */
+export function capexDefaults(parent, date) {
+  return {
+    name: `${parent.name}（資本的支出）`.slice(0, 40),
+    category: parent.category,
+    accountId: parent.accountId,
+    acquiredOn: date,
+    startedOn: date,
+    method: parent.method,
+    usefulLife: parent.usefulLife,
+    businessRatio: parent.businessRatio ?? 100,
+    expenseAccountId: parent.expenseAccountId ?? null,
+    location: parent.location || '',
+    parentId: parent.id,
+  };
+}
+
+/** 資本的支出の資産の検証（元の資産と比べる）。誤りの文言の配列 */
+export function validateCapex(asset, parent) {
+  if (!asset.parentId) return [];
+  if (!parent) return ['資本的支出の元の資産が見つかりません'];
+  const errors = [];
+  if (parent.parentId || parent.splitFrom) errors.push('資本的支出・一部の売却除却で分けた資産には、資本的支出を追加できません');
+  if (!usesLife(parent.method)) errors.push('資本的支出は、定額法・定率法の資産に追加します');
+  if (asset.category !== parent.category || asset.usefulLife !== parent.usefulLife) errors.push('資本的支出は、元の資産と同じ種類・耐用年数にします（国税庁 No.2107）');
+  if (!usesLife(asset.method)) errors.push('資本的支出は、定額法・定率法で償却します');
+  if (isValidDate(asset.startedOn) && asset.startedOn < parent.startedOn) errors.push('資本的支出は、元の資産を使い始めた日以後にします');
+  if (isValidDate(asset.startedOn) && asset.startedOn < NEW_METHOD_FROM) errors.push('平成19年3月31日以前の資本的支出（元の資産の取得価額に加算するもの）には対応していません');
+  if (parent.disposedOn && isValidDate(asset.startedOn) && asset.startedOn > parent.disposedOn) errors.push('元の資産を売却・除却した日より後には追加できません');
+  return errors;
+}
+
+/** 一部の売却・除却ができる資産か */
+export function canSplit(asset) {
+  return canDispose(asset) && !asset.disposalType && !asset.splitFrom;
+}
+
+/**
+ * 一部の売却・除却：元の資産から、売却・除却する分を別の資産に分ける
+ * 分けた期間の期首に、取得価額・帳簿価額（定率法は改定取得価額も）を割合で分ける。それより前の期間は元の資産のまま
+ * 分けた資産は、期首の帳簿価額を引き継いで売却・除却した月まで償却する（使い始めた期間に分けるときは引き継がずに同じ日から）
+ * @param {object} asset 元の資産
+ * @param {Array} periods 会計期間
+ * @param {{ date: string, cost: number, quantity: number|null }} input cost：売却・除却する分の取得価額、quantity：その数量（数量で分けないなら null）
+ * @returns {{ original: object, part: object, errors: string[] }} part の disposedOn などは売却・除却の処理で入れる
+ */
+export function splitAsset(asset, periods, { date, cost, quantity = null }) {
+  const errors = [];
+  if (!canSplit(asset)) errors.push('この資産は一部の売却・除却ができません（定額法・定率法で、売却・除却していない資産だけ）');
+  if (!isValidDate(date)) errors.push('売却・除却した日を入れてください');
+  else if (date < asset.startedOn) errors.push('売却・除却した日は使い始めた日以後にしてください');
+  else if (hasCarryOver(asset) && date < asset.carryOn) errors.push('前の帳簿から引き継いだ日より前は分けられません');
+  if (!Number.isInteger(cost) || cost < 1 || cost >= asset.cost) errors.push('売却・除却する分の取得価額は、1円以上で今の取得価額より小さくしてください');
+  const total = asset.quantity ?? 1;
+  if (quantity !== null && (!Number.isInteger(quantity) || quantity < 1 || quantity >= total)) errors.push(`売却・除却する数量は1〜${total - 1}にしてください`);
+  const target = isValidDate(date) ? periods.find((p) => p.startDate <= date && date <= p.endDate) : null;
+  if (isValidDate(date) && !target) errors.push('その日を含む会計期間がありません');
+  if (errors.length) return { original: asset, part: null, errors };
+  const id = newId();
+  const original = { ...asset, cost: asset.cost - cost, quantity: quantity !== null ? total - quantity : asset.quantity, splits: [...(asset.splits || []), { id, date, periodStart: target.startDate, cost, quantity }] };
+  // 分けた期間の期首に、元の資産から減らした帳簿価額・改定取得価額（この額を分けた資産が引き継ぐ）
+  const row = depreciationSchedule(original, periods).find((r) => r.splits?.some((sp) => sp.id === id));
+  const removed = row?.splits.find((sp) => sp.id === id);
+  const carry = target.startDate > asset.startedOn;
+  const minBook = CATEGORY_BY_ID[asset.category]?.intangible ? 0 : 1;
+  if (carry && (!removed || removed.book < minBook)) return { original: asset, part: null, errors: ['帳簿価額が小さいため分けられません（償却が終わった資産は、全部を除却してください）'] };
+  const part = {
+    ...asset,
+    id,
+    name: `${asset.name}（一部）`.slice(0, 40),
+    cost,
+    quantity: quantity ?? 1,
+    splits: [],
+    splitFrom: asset.id,
+    parentId: null,
+    carryOn: carry ? target.startDate : null,
+    carryBook: carry ? removed.book : null,
+    carryRevisedBase: carry && asset.method === 'declining' ? removed.revisedBase : null,
+    // 特別償却は使い始めた期間だけ。引き継ぐときは元の資産で済んでいる
+    specialRate: carry ? null : (asset.specialRate ?? null),
+    specialName: carry ? null : (asset.specialName ?? null),
+    disposedOn: null,
+    disposalType: null,
+    salePrice: null,
+  };
+  return { original, part, errors: [] };
 }

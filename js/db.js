@@ -15,6 +15,7 @@ import { newId, createAccount, createBudget, createSubAccount } from './models.j
 import { validatePaymentTerms } from './receivables.js';
 import { validateBreakdownTargets } from './breakdown.js';
 import { validateAsset } from './depreciation.js';
+import { validateCapex } from './asset-tools.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 
@@ -210,7 +211,14 @@ async function putJournal(tx, journal) {
   return record;
 }
 
-async function putAsset(tx, asset) {
+/** 一部を売却・除却した資産（分けた元・分けた資産）で変えられない項目（償却の計算が変わり、分けた帳簿価額と合わなくなる） */
+const SPLIT_LOCKED = ['category', 'cost', 'acquiredOn', 'startedOn', 'method', 'usefulLife', 'carryOn', 'carryBook', 'carryRevisedBase', 'specialRate'];
+
+/**
+ * 固定資産の保存（トランザクションの中で呼ぶ）
+ * @param {{ split?: boolean }} opts split：一部の売却・除却の処理（splits・splitFrom を変えてよい）
+ */
+async function putAsset(tx, asset, { split = false } = {}) {
   const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
   const accounts = await req(tx.objectStore('accounts').getAll());
   const record = {
@@ -226,11 +234,26 @@ async function putAsset(tx, asset) {
     salePrice: asset.disposedOn && asset.disposalType === 'sell' ? asset.salePrice : null,
     specialRate: asset.specialRate ?? null,
     specialName: asset.specialName ? String(asset.specialName).trim() : null,
+    parentId: asset.parentId || null,
+    splitFrom: asset.splitFrom || null,
+    splits: Array.isArray(asset.splits) ? asset.splits : [],
   };
   const errors = validateAsset(record, { entityType: settings?.entityType, accounts });
   if (Object.keys(errors).length) throw new ValidationError(errors);
   const store = tx.objectStore('assets');
   const before = await req(store.get(record.id));
+  if (!split) {
+    const sameSplits = JSON.stringify(record.splits) === JSON.stringify(before?.splits || []) && record.splitFrom === (before?.splitFrom ?? null);
+    if (!sameSplits) throw new ValidationError({ cost: '一部の売却・除却は「売却・除却する」から処理してください' });
+    if (before && (before.splits?.length || before.splitFrom) && SPLIT_LOCKED.some((k) => (record[k] ?? null) !== (before[k] ?? null))) {
+      throw new ValidationError({ cost: '一部を売却・除却した資産は、種類・取得価額・日付・償却の方法・耐用年数・引き継ぎ・特別償却を変えられません（一部の売却・除却を取り消してから直してください）' });
+    }
+  }
+  // 資本的支出：元の資産と種類・耐用年数を同じにする
+  if (record.parentId) {
+    const capexErrors = validateCapex(record, await req(store.get(record.parentId)));
+    if (capexErrors.length) throw new ValidationError({ parentId: capexErrors.join(' ') });
+  }
   const next = { ...record, createdAt: before?.createdAt ?? record.createdAt, updatedAt: now() };
   store.put(next);
   return next;
@@ -907,7 +930,27 @@ export class Repository {
     });
   }
 
-  /** 売却・除却の取り消し：その資産の売却・除却の仕訳を削除し（tombstone を残す）、売却・除却の項目を空にする */
+  /**
+   * 固定資産の一部の売却・除却：元の資産（取得価額を減らし、分けた記録を足したもの）と、分けた資産（売却・除却の項目を入れたもの）と、
+   * 分けた資産の売却・除却の仕訳を1つのトランザクションで保存する（asset-tools の splitAsset で作る）
+   */
+  partialDisposeAsset(original, part, journal) {
+    return this.run(['meta', 'accounts', 'subAccounts', 'periods', 'journals', 'assets'], 'readwrite', async (tx) => {
+      const before = await req(tx.objectStore('assets').get(original.id));
+      if (!before) throw new Error('固定資産が見つかりません');
+      if (before.disposalType) throw new ValidationError(['売却・除却の処理済みの資産です']);
+      if (part.splitFrom !== original.id || !(original.splits || []).some((sp) => sp.id === part.id)) throw new ValidationError(['分けた資産のデータが正しくありません']);
+      const savedOriginal = await putAsset(tx, original, { split: true });
+      const savedPart = await putAsset(tx, part, { split: true });
+      const savedJournal = journal ? await putJournal(tx, { ...journal, source: 'asset_disposal', sourceId: savedPart.id }) : null;
+      return { original: savedOriginal, part: savedPart, journal: savedJournal };
+    });
+  }
+
+  /**
+   * 売却・除却の取り消し：その資産の売却・除却の仕訳を削除し（tombstone を残す）、売却・除却の項目を空にする
+   * 一部の売却・除却で分けた資産なら、分けた資産を削除し、元の資産に取得価額・数量を戻す
+   */
   undoDisposal(assetId) {
     return this.run(['meta', 'accounts', 'periods', 'journals', 'assets', 'tombstones'], 'readwrite', async (tx) => {
       const asset = await req(tx.objectStore('assets').get(assetId));
@@ -919,13 +962,28 @@ export class Repository {
         tx.objectStore('tombstones').put(tombstone('journals', j.id));
         tx.objectStore('journalHistory').put(historyEntry('delete', j, null, now()));
       }
+      if (asset.splitFrom) {
+        const original = await req(tx.objectStore('assets').get(asset.splitFrom));
+        const split = original?.splits?.find((sp) => sp.id === asset.id);
+        if (!original || !split) throw new ValidationError(['分けた元の資産が見つかりません']);
+        const quantity = Number.isInteger(split.quantity) ? (original.quantity ?? 1) + split.quantity : original.quantity;
+        const restored = await putAsset(tx, { ...original, cost: original.cost + split.cost, quantity, splits: original.splits.filter((sp) => sp.id !== asset.id) }, { split: true });
+        tx.objectStore('assets').delete(asset.id);
+        tx.objectStore('tombstones').put(tombstone('assets', asset.id));
+        return restored;
+      }
       return putAsset(tx, { ...asset, disposedOn: null, disposalType: null, salePrice: null });
     });
   }
 
   deleteAsset(id) {
     return this.run(['assets', 'tombstones'], 'readwrite', async (tx) => {
-      if (!(await req(tx.objectStore('assets').get(id)))) return;
+      const asset = await req(tx.objectStore('assets').get(id));
+      if (!asset) return;
+      if (asset.splits?.length) throw new ValidationError(['一部を売却・除却した資産は削除できません（先に一部の売却・除却を取り消してください）']);
+      if (asset.splitFrom) throw new ValidationError(['一部の売却・除却で分けた資産は、「売却・除却を取り消す」で元の資産に戻してください']);
+      const children = (await req(tx.objectStore('assets').getAll())).filter((a) => a.parentId === id);
+      if (children.length) throw new ValidationError([`資本的支出の資産（${children.length}件）があるため削除できません（先に資本的支出を削除してください）`]);
       tx.objectStore('assets').delete(id);
       tx.objectStore('tombstones').put(tombstone('assets', id));
     });
