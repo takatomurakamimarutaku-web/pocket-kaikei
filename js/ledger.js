@@ -152,7 +152,7 @@ export const NO_SUB = '__none__';
 
 /**
  * 総勘定元帳（subAccountId を渡すと補助元帳。NO_SUB なら補助科目の付いていない明細だけ）
- * @returns {{ account, carried, rows:[{journal, date, no, voucherNo, counterpart, memo, debit, credit, balance}], debit, credit, closing }}
+ * @returns {{ account, carried, rows:[{journal, date, no, voucherNo, counterpart, memo, taxCategory, debit, credit, balance}], debit, credit, closing }}
  *   carried：from 時点の繰越残高（残高側）
  */
 export function generalLedger({ accountId, subAccountId = null, accounts, subAccounts = [], period, journals, from = period.startDate, to = period.endDate }) {
@@ -186,6 +186,7 @@ export function generalLedger({ accountId, subAccountId = null, accounts, subAcc
         voucherNo: j.voucherNo ?? j.no,
         counterpart: counterpartName(j, l, accountById, subById),
         memo: l.memo || '',
+        taxCategory: l.taxCategory || 'none',
         debit: l.side === 'debit' ? l.amount : 0,
         credit: l.side === 'credit' ? l.amount : 0,
         balance: toNormal(dc, account),

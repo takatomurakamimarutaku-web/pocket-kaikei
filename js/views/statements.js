@@ -7,6 +7,8 @@ import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
 import { isWhite } from '../white-return.js';
 import { zeroToggle, openingWarning, statementRows, loadPrevious } from './report-common.js';
+import { statementDoc, docHead } from '../print-forms.js';
+import { warekiText } from '../print-layout.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 
@@ -68,6 +70,17 @@ export async function render({ app, outlet, route, query }) {
         ),
       ),
     );
+  };
+
+  // 印刷：報告式の決算書の様式（前期と比べる表は画面の表から作る）
+  app.printDoc = ({ printedAt }) => {
+    const head = docHead({ settings, period, printedAt });
+    if (!isPl) head.period = `${warekiText(period.endDate)} 現在`;
+    if (compare) return { title: route.title, ...head };
+    const right = individual ? '負債・資本の部' : '負債・純資産の部';
+    return isPl
+      ? statementDoc([{ caption: individual ? '損益計算書（青色申告決算書の並び）' : '', items: pl.items }], { head, title: route.title, showZero })
+      : statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero });
   };
 
   function paint() {

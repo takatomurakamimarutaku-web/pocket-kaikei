@@ -1,6 +1,7 @@
 // 残高試算表
 import { h, put, amountCell, saveFile } from '../ui.js';
-import { trialBalance } from '../ledger.js';
+import { trialBalance, carriedLabel } from '../ledger.js';
+import { trialBalanceDoc, docHead } from '../print-forms.js';
 import { groupLabel, GROUP_BY_ID } from '../accounts.js';
 import { trialBalanceCsv, csvFileName } from '../csv.js';
 import { monthRangePicker, zeroToggle, openingWarning } from './report-common.js';
@@ -17,6 +18,8 @@ export async function render({ app, outlet, query }) {
   function paint() {
     const { from, to } = picker.range();
     tb = trialBalance({ accounts, subAccounts, period, journals, from, to });
+    // 印刷：貸借対照表と損益計算書の科目に分けた残高試算表の様式
+    app.printDoc = ({ printedAt }) => trialBalanceDoc(tb, { head: docHead({ settings, period, from, to, printedAt }), entityType: settings.entityType, carriedLabel: carriedLabel(period, from), showZero });
     const rows = [];
     let group = null;
     let sub = null;

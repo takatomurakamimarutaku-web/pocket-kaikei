@@ -28,3 +28,12 @@ export function currentInstallState() {
 export function isDesktopApp(win = globalThis) {
   return Boolean(win && win.__TAURI_INTERNALS__);
 }
+
+/**
+ * ブラウザの印刷（window.print）が使えるか。iPhone・iPad のホーム画面に追加したアプリでは、
+ * iOS が window.print() を無視する（印刷画面が開かない）ため使えない。そのときは PDF を共有シートで開き、そこから印刷する
+ */
+export function browserPrintWorks({ standalone, displayModeStandalone, userAgent = '', maxTouchPoints = 0 } = {}) {
+  const ios = /iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
+  return !(ios && (standalone === true || displayModeStandalone));
+}

@@ -1222,3 +1222,28 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
   .ct-section + .ct-section { break-before: page; }
   .ct-check { border: 1px solid #999; }
 }
+
+/* 帳票の印刷プレビュー（A4 の用紙を並べる） */
+.print-preview { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: #5f6664; animation: fade-in 0.2s ease both; }
+html.pp-open, html.pp-open body { overflow: hidden; }
+.pp-bar { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; background: var(--surface); color: var(--text); border-bottom: 1px solid var(--separator); }
+.pp-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.pp-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-pages { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding: 16px 12px calc(env(safe-area-inset-bottom) + 24px); display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.pp-sheet { width: min(100%, 820px); aspect-ratio: 210 / 297; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); flex: none; }
+.pp-sheet.landscape { width: min(100%, 1100px); aspect-ratio: 297 / 210; }
+.pp-sheet svg { display: block; width: 100%; height: 100%; }
+@media print {
+  body.printing-preview > *:not(.print-preview) { display: none !important; }
+  body.printing-preview .print-preview { position: static; display: block; background: none; animation: none; }
+  body.printing-preview .pp-bar { display: none !important; }
+  body.printing-preview .pp-pages { display: block; padding: 0; overflow: visible; }
+  body.printing-preview .pp-sheet { width: 210mm; height: 297mm; aspect-ratio: auto; box-shadow: none; break-after: page; }
+  body.printing-preview .pp-sheet.landscape { width: 297mm; height: 210mm; }
+  body.printing-preview .pp-sheet:last-child { break-after: auto; }
+  /* 縦と横のページが混じる帳票（青色申告決算書の減価償却の表など）。名前付きページに対応しないブラウザは最初のページの向き */
+  body.printing-preview .pp-sheet.portrait { page: pp-portrait; }
+  body.printing-preview .pp-sheet.landscape { page: pp-landscape; }
+}
+@page pp-portrait { size: A4 portrait; margin: 0; }
+@page pp-landscape { size: A4 landscape; margin: 0; }

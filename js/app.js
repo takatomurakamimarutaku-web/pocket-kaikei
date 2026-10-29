@@ -7,7 +7,10 @@ import { h, showToast } from './ui.js';
 import { friendlyError } from './errors.js';
 import { APP_VERSION } from './version.js';
 import { isDesktopApp } from './install.js';
-import { formatPeriod, todayString } from './period.js';
+import { formatPeriod, todayString, monthRange } from './period.js';
+import { docHead } from './print-forms.js';
+import { captureBlocks, capturedRange } from './print-capture.js';
+import { openPrintPreview } from './views/print-preview.js';
 import * as setupView from './views/setup.js';
 import * as lockSettingsView from './views/lock-settings.js';
 import * as booksView from './views/books.js';
@@ -81,6 +84,7 @@ import * as employeesView from './views/employees.js';
 import * as employeeFormView from './views/employee-form.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
+// （true：帳票の様式の印刷プレビュー、'browser'：画面そのものが用紙の形なのでブラウザの印刷）
 const routes = [
   { path: '/setup', view: setupView, title: '初期設定', tab: null, setup: true },
   { path: '/home', view: homeView, title: 'ホーム', tab: 'home' },
@@ -98,7 +102,7 @@ const routes = [
   { path: '/invoices/settings', view: invoiceSettingsView, title: '請求書の設定', tab: 'entry', back: '#/invoices' },
   { path: '/invoices/new', view: invoiceFormView, title: '請求書・見積書の作成', tab: 'entry', back: '#/invoices' },
   { path: '/invoices/:id/edit', view: invoiceFormView, title: '請求書・見積書の編集', tab: 'entry', back: '#/invoices' },
-  { path: '/invoices/:id', view: invoiceView, title: '請求書・見積書', tab: 'entry', back: '#/invoices', print: true },
+  { path: '/invoices/:id', view: invoiceView, title: '請求書・見積書', tab: 'entry', back: '#/invoices', print: 'browser' },
   { path: '/payroll', view: payrollView, title: '給与計算', tab: 'entry', back: '#/entry' },
   { path: '/payroll/settings', view: payrollSettingsView, title: '給与の設定', tab: 'entry', back: '#/payroll' },
   { path: '/payroll/payments', view: payrollPaymentsView, title: '税・保険料の納付', tab: 'entry', back: '#/payroll' },
@@ -106,13 +110,13 @@ const routes = [
   { path: '/payroll/year-end/new', view: yearEndFormView, title: '年末調整の入力', tab: 'entry', back: '#/payroll/year-end' },
   { path: '/payroll/year-end/:id', view: yearEndFormView, title: '年末調整', tab: 'entry', back: '#/payroll/year-end' },
   { path: '/payroll/slips', view: withholdingSlipsView, title: '源泉徴収票・給与支払報告書', tab: 'entry', back: '#/payroll' },
-  { path: '/payroll/slips/:id', view: withholdingSlipView, title: '源泉徴収票', tab: 'entry', back: '#/payroll/slips', print: true },
+  { path: '/payroll/slips/:id', view: withholdingSlipView, title: '源泉徴収票', tab: 'entry', back: '#/payroll/slips', print: 'browser' },
   { path: '/payroll/employees', view: employeesView, title: '従業員', tab: 'entry', back: '#/payroll' },
   { path: '/payroll/employees/new', view: employeeFormView, title: '従業員の登録', tab: 'entry', back: '#/payroll/employees' },
   { path: '/payroll/employees/:id', view: employeeFormView, title: '従業員', tab: 'entry', back: '#/payroll/employees' },
   { path: '/payroll/new', view: payrollFormView, title: '給与・賞与の入力', tab: 'entry', back: '#/payroll' },
   { path: '/payroll/:id/edit', view: payrollFormView, title: '給与・賞与の編集', tab: 'entry', back: '#/payroll' },
-  { path: '/payroll/:id', view: payrollSlipView, title: '給与明細', tab: 'entry', back: '#/payroll', print: true },
+  { path: '/payroll/:id', view: payrollSlipView, title: '給与明細', tab: 'entry', back: '#/payroll', print: 'browser' },
   { path: '/templates', view: templatesView, title: '定型仕訳', tab: 'entry', back: '#/entry' },
   { path: '/template/new', view: journalFormView, kind: 'template', title: '定型仕訳の登録', tab: 'entry', back: '#/templates' },
   { path: '/template/:id', view: journalFormView, kind: 'template', title: '定型仕訳の編集', tab: 'entry', back: '#/templates' },
@@ -273,6 +277,7 @@ async function start() {
       }
       current = route;
       app.leaveGuard = null;
+      app.printDoc = null;
       app.setTitle(route.title);
       backBtn.hidden = !route.back;
       printBtn.hidden = !route.print;
@@ -304,7 +309,28 @@ async function start() {
   const onScroll = () => headerEl.classList.toggle('is-scrolled', window.scrollY > 4);
   window.addEventListener('scroll', onScroll, { passive: true });
 
-  printBtn.addEventListener('click', () => window.print());
+  // 印刷：帳票の様式で組んだ印刷プレビュー（PDF の保存・共有と印刷）を開く。
+  // 画面が app.printDoc を用意していればその様式（仕訳帳・元帳など）、無ければ画面の表から作る。
+  // 請求書・給与明細・源泉徴収票は画面そのものが用紙の形なので、ブラウザの印刷を使う（print: 'browser'）
+  printBtn.addEventListener('click', async () => {
+    const route = current;
+    if (!route) return;
+    if (route.print === 'browser') return window.print();
+    try {
+      const [settings, period] = await Promise.all([db.getSettings(), db.getCurrentPeriod()]);
+      const printedAt = todayString();
+      const range = period ? capturedRange(outlet) : null;
+      const { from, to } = range ? monthRange(period, range.fromMonth, range.toMonth) : period ? { from: period.startDate, to: period.endDate } : {};
+      const head = period ? docHead({ settings, period, from, to, printedAt }) : { company: settings?.businessName || '', printedAt };
+      const custom = app.printDoc ? await app.printDoc({ settings, period, printedAt, head }) : null;
+      const doc = { title: route.title, ...head, orientation: 'auto', ...(custom?.blocks ? {} : captureBlocks(outlet)), ...custom };
+      if (!doc.blocks.length) return showToast('印刷する内容がありません');
+      openPrintPreview(doc, { fileName: `${doc.title}_${printedAt}`.replace(/[\\/:*?"<>|\s]+/g, '') });
+    } catch (e) {
+      console.error(e);
+      showToast('印刷用の帳票を作れませんでした');
+    }
+  });
   // 印刷の見出し：事業者名・帳票名・会計期間・印刷日（画面には出さない）
   async function fillPrintHead(title) {
     const [settings, period] = await Promise.all([db.getSettings(), db.getCurrentPeriod()]);
