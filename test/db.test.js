@@ -257,3 +257,22 @@ test('消費税の申告設定：按分の方法を保存し（省略は一括�
   assert.equal((await repo.updateSettings({ taxUseSplit: true })).taxUseSplit, true);
   repo.close();
 });
+
+test('固定資産の売却：資産と仕訳を一緒に保存し、取り消すと仕訳を削除（tombstone）して項目を空にする', async () => {
+  const { repo, byName, period, line } = await setupRepo();
+  const a = await repo.saveAsset(createAsset({ name: '車', category: 'vehicle', accountId: byName['車両運搬具'].id, acquiredOn: '2026-01-01', startedOn: '2026-01-01', cost: 300000, usefulLife: 4 }));
+  const journal = createJournal({ periodId: period.id, date: '2026-06-30', lines: [line('debit', '普通預金', 110000), line('credit', '車両運搬具', 110000, { taxCategory: 'sales_10' })] });
+  const { asset, journal: j } = await repo.disposeAsset({ ...a, disposedOn: '2026-06-30', disposalType: 'sell', salePrice: 110000 }, journal);
+  assert.equal(asset.disposalType, 'sell');
+  assert.equal(j.source, 'asset_disposal');
+  assert.equal(j.sourceId, a.id);
+  assert.equal(j.no, 1);
+  // 不正な仕訳なら資産も保存しない
+  await assert.rejects(repo.disposeAsset({ ...a, disposedOn: '2026-07-31', disposalType: 'retire' }, { ...journal, id: 'x', lines: [line('debit', '雑費', 100)] }), ValidationError);
+  assert.equal((await repo.getAsset(a.id)).disposedOn, '2026-06-30');
+  const undone = await repo.undoDisposal(a.id);
+  assert.deepEqual([undone.disposedOn, undone.disposalType, undone.salePrice], [null, null, null]);
+  assert.equal(await repo.getJournal(j.id), undefined);
+  assert.ok((await repo.dumpAll()).tombstones.some((t) => t.store === 'journals' && t.id === j.id));
+  repo.close();
+});

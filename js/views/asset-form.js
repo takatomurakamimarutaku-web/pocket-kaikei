@@ -12,6 +12,7 @@ import {
   formatRate,
   defaultAssetAccount,
 } from '../depreciation.js';
+import { LIFE_PRESETS, usedAssetLife, canDispose, findDisposalJournals } from '../asset-tools.js';
 import { compareAccounts } from '../accounts.js';
 import { parseYen } from '../money.js';
 import { todayString } from '../period.js';
@@ -27,7 +28,7 @@ const toInt = (v) => {
 };
 
 export async function render({ app, outlet, params }) {
-  const { settings, period, accounts } = await app.load();
+  const { settings, period, accounts, journals } = await app.load();
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
   const individual = settings.entityType === 'individual';
   const original = params.id ? assets.find((a) => a.id === params.id) : null;
@@ -61,6 +62,24 @@ export async function render({ app, outlet, params }) {
   const carryBook = h('input', { id: 'f-carry-book', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.carryBook ?? '', placeholder: '空欄なら計算した額' });
   const carryRevised = h('input', { id: 'f-carry-revised', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.carryRevisedBase ?? '', placeholder: '切り替えていなければ空欄' });
   const memo = h('input', { id: 'f-memo', type: 'text', maxlength: 100, value: state.memo || '' });
+  const assetNo = h('input', { id: 'f-no', type: 'text', maxlength: 20, value: state.assetNo || '', placeholder: '例：A-001' });
+  const quantity = h('input', { id: 'f-qty', type: 'text', inputmode: 'numeric', maxlength: 5, value: state.quantity ?? 1 });
+  const location = h('input', { id: 'f-location', type: 'text', maxlength: 40, value: state.location || '', placeholder: '例：本店、倉庫' });
+  // 耐用年数表から選ぶ：種類と耐用年数を入れる
+  const preset = h(
+    'select',
+    { id: 'f-preset', 'aria-label': '耐用年数表から選ぶ' },
+    h('option', { value: '', text: '耐用年数表から選ぶ（任意）' }),
+    ASSET_CATEGORIES.map((c) => {
+      const items = LIFE_PRESETS.map((p, i) => [p, i]).filter(([p]) => p.category === c.id);
+      return items.length ? h('optgroup', { label: c.label }, items.map(([p, i]) => h('option', { value: String(i), text: `${p.label}　${p.life}年` }))) : null;
+    }),
+  );
+  // 中古資産の耐用年数（簡便法）
+  const usedLegal = h('input', { id: 'f-used-legal', type: 'text', inputmode: 'numeric', maxlength: 2, placeholder: '例：6' });
+  const usedYears = h('input', { id: 'f-used-years', type: 'text', inputmode: 'numeric', maxlength: 2, placeholder: '0' });
+  const usedMonths = h('input', { id: 'f-used-months', type: 'text', inputmode: 'numeric', maxlength: 2, placeholder: '0' });
+  const usedResult = h('p', { class: 'field-hint', 'aria-live': 'polite' });
   const methodHint = h('p', { class: 'field-hint' });
   const rateHint = h('p', { class: 'field-hint' });
   const preview = h('div');
@@ -89,6 +108,9 @@ export async function render({ app, outlet, params }) {
       disposedOn: disposedOn.value || null,
       ...readCarry(),
       memo: memo.value.trim(),
+      assetNo: assetNo.value.trim(),
+      quantity: toInt(quantity.value) ?? NaN,
+      location: location.value.trim(),
     };
   }
 
@@ -105,6 +127,7 @@ export async function render({ app, outlet, params }) {
     revisedWrap.hidden = method.value !== 'declining';
     const a = read();
     lifeWrap.hidden = !usesLife(a.method);
+    usedWrap.hidden = !usesLife(a.method);
     const limit = smeLimit(a.acquiredOn || today);
     const hints = {
       straight: '毎年同じ額を償却します。届出をしていない個人は定額法です。',
@@ -159,6 +182,50 @@ export async function render({ app, outlet, params }) {
   }
 
   const lifeWrap = h('div', {}, field('耐用年数（年）', life, { name: 'usefulLife' }), rateHint);
+  const usedWrap = h(
+    'details',
+    { class: 'used-box' },
+    h('summary', { text: '中古で買った資産の耐用年数を計算する' }),
+    h('div', { class: 'field-row' }, field('新品の耐用年数（年）', usedLegal), h('div', { class: 'field' }, h('span', { class: 'field-label', text: '経過した期間' }), h('div', { class: 'inline-inputs' }, usedYears, h('span', { text: '年' }), usedMonths, h('span', { text: 'か月' })))),
+    usedResult,
+    h('button', { type: 'button', class: 'btn btn-block', text: '計算して耐用年数に入れる', onclick: () => applyUsedLife() }),
+    h('p', { class: 'muted small', text: '簡便法：（新品の耐用年数−経過年数）＋経過年数×20%（全部経過していれば新品の耐用年数×20%）。1年未満は切り捨て、2年未満は2年。使い始めた年にだけ使えます。改良費が取得価額の50%を超えるときは使えません（国税庁 No.5404）。' }),
+  );
+  function usedLife() {
+    const y = toInt(usedYears.value || '0');
+    const m = toInt(usedMonths.value || '0');
+    return y === null || m === null || m > 11 ? null : usedAssetLife(toInt(usedLegal.value), y * 12 + m);
+  }
+  function applyUsedLife() {
+    const n = usedLife();
+    if (n === null) {
+      usedResult.textContent = '新品の耐用年数と経過した期間（年・0〜11か月）を数字で入れてください';
+      return;
+    }
+    life.value = String(n);
+    usedResult.textContent = `耐用年数を${n}年にしました`;
+    paint();
+  }
+  for (const el of [usedLegal, usedYears, usedMonths]) {
+    el.addEventListener('input', (e) => {
+      e.stopPropagation();
+      const n = usedLife();
+      usedResult.textContent = n === null ? '' : `計算した耐用年数：${n}年`;
+    });
+  }
+  // 売却・除却：仕訳も作る画面へ。売却・除却の処理済みなら内容と取り消し
+  const disposals = original ? findDisposalJournals(journals, original.id) : [];
+  const disposedField = field('除却・売却した日（任意）', disposedOn, { name: 'disposedOn', hint: 'その月までの月数で償却し、以後は償却しません。仕訳も作るときは「売却・除却する」から処理してください' });
+  const disposalBox = original?.disposalType
+    ? h(
+        'section',
+        { class: 'panel disposal-done' },
+        h('h3', { class: 'section-title', text: original.disposalType === 'sell' ? '売却済み' : '除却済み' }),
+        h('p', { class: 'small', text: `${slash(original.disposedOn)} に${original.disposalType === 'sell' ? `${(original.salePrice ?? 0).toLocaleString('ja-JP')}円で売却` : '除却'}しました。` }),
+        disposals.length ? h('p', { class: 'small' }, '仕訳：', disposals.map((j) => h('a', { class: 'link', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no} ` }))) : h('p', { class: 'muted small', text: '仕訳はありません（この期間に登録していない、または帳簿価額が0円）。' }),
+        h('button', { type: 'button', class: 'btn btn-danger-text', text: '売却・除却を取り消す', onclick: undoDisposal }),
+      )
+    : h('div', {}, disposedField, original && canDispose(original) ? h('a', { class: 'btn btn-block', href: `#/asset/${encodeURIComponent(original.id)}/dispose`, text: '売却・除却する（仕訳も作る）' }) : null);
   const revisedWrap = h('div', {}, field('改定取得価額（定率法で切り替え済みのとき）', carryRevised, { name: 'carryRevisedBase', hint: '前の帳簿で改定償却率に切り替えていれば、切り替えた年の期首帳簿価額。空欄なら、引き継いだ年に償却保証額を下回ったときにその年の期首帳簿価額で切り替えます' }));
   const carryWrap = h(
     'fieldset',
@@ -171,18 +238,33 @@ export async function render({ app, outlet, params }) {
     'form',
     { novalidate: true, onsubmit: (e) => (e.preventDefault(), save()), oninput: paint, onchange: paint },
     field('名前', name, { name: 'name' }),
+    h('div', { class: 'field' }, preset),
     h('div', { class: 'field-row' }, field('種類', category, { name: 'category' }), field('勘定科目', account, { name: 'accountId' })),
     h('div', { class: 'field-row' }, field('取得日', acquiredOn, { name: 'acquiredOn' }), field('使い始めた日', startedOn, { name: 'startedOn' })),
     field('取得価額（円）', cost, { name: 'cost', hint: 'このアプリは税込経理なので、消費税を含んだ金額で入力します（10万円・20万円などの判定も税込）' }),
     h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, h('p', { class: 'field-error', role: 'alert' })),
     lifeWrap,
+    usedWrap,
     individual ? field('事業で使う割合（%）', ratio, { name: 'businessRatio', hint: '車などを私用にも使うときは、事業で使う割合を入れます。残りは事業主貸になります' }) : null,
     carryWrap,
-    field('除却・売却した日（任意）', disposedOn, { name: 'disposedOn', hint: 'その月までの月数で償却し、以後は償却しません。売却・除却の仕訳は振替伝票で入力してください' }),
+    disposalBox,
+    h('div', { class: 'field-row' }, field('資産番号（任意）', assetNo, { name: 'assetNo' }), field('数量', quantity, { name: 'quantity' })),
+    field('設置場所（任意）', location, { name: 'location' }),
     field('メモ（任意）', memo, { name: 'memo' }),
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '登録する' }),
   );
   category.addEventListener('change', () => paintAccounts(true));
+  preset.addEventListener('change', () => {
+    const p = LIFE_PRESETS[Number(preset.value)];
+    if (!preset.value || !p) return;
+    category.value = p.category;
+    paintAccounts(true);
+    if (!usesLife(method.value)) method.value = individual ? 'straight' : CATEGORY_BY_ID[p.category].decliningUntil ? 'straight' : 'declining';
+    life.value = String(p.life);
+    usedLegal.value = String(p.life);
+    if (!name.value.trim()) name.value = p.label.replace(/（.*$/, '').slice(0, 40);
+    paint();
+  });
   account.addEventListener('change', () => (state.accountId = account.value));
   startedOn.addEventListener('input', () => (startedTouched = true));
   acquiredOn.addEventListener('input', () => {
@@ -210,10 +292,26 @@ export async function render({ app, outlet, params }) {
     }
   }
 
+  async function undoDisposal() {
+    const ok = await confirmDialog({
+      title: '売却・除却を取り消しますか？',
+      message: '売却・除却の仕訳を削除し、売却・除却した日を空にします。',
+      buttons: [{ label: 'キャンセル', value: false }, { label: '取り消す', value: true, variant: 'danger' }],
+    });
+    if (!ok) return;
+    try {
+      await app.db.undoDisposal(original.id);
+      showToast('取り消しました');
+      app.refresh();
+    } catch (e) {
+      showToast(e instanceof ValidationError && Array.isArray(e.errors) ? e.errors.join(' ') : errorText(e, '取り消し'));
+    }
+  }
+
   async function remove() {
     const ok = await confirmDialog({
       title: `「${original.name}」を削除しますか？`,
-      message: '台帳から削除します。登録済みの減価償却の仕訳は残ります（必要なら仕訳帳で直してください）。',
+      message: '台帳から削除します。登録済みの減価償却・売却・除却の仕訳は残ります（必要なら仕訳帳で直してください）。',
       buttons: [{ label: 'キャンセル', value: false }, { label: '削除する', value: true, variant: 'danger' }],
     });
     if (!ok) return;

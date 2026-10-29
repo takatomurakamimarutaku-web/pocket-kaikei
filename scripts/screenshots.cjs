@@ -246,7 +246,40 @@ mkdirSync(OUT, { recursive: true });
     if (!first.includes('2026') || !first.includes('300,000')) errors.push(`引き継いだ帳簿価額から償却していない：${first}`);
   }, '35a-asset-carry');
   if ((await page.locator('.asset-row').count()) !== 3) errors.push('固定資産を登録できない');
+  // 耐用年数表から選び、中古資産の耐用年数を計算する。資産番号・設置場所も入れる
+  await addAsset(async () => {
+    await page.selectOption('#f-preset', { label: '自動車（普通車など）　6年' });
+    if ((await page.inputValue('#f-life')) !== '6' || (await page.inputValue('#f-category')) !== 'vehicle') errors.push('耐用年数表から選んでも種類・年数が入らない');
+    await page.fill('#f-name', '中古の営業車');
+    await page.fill('#f-acquired', '2026-07-01');
+    await page.dispatchEvent('#f-acquired', 'input');
+    await page.fill('#f-cost', '880000');
+    await page.locator('.used-box summary').click();
+    await page.fill('#f-used-years', '2');
+    await page.fill('#f-used-months', '6');
+    await page.getByRole('button', { name: '計算して耐用年数に入れる' }).click();
+    if ((await page.inputValue('#f-life')) !== '4') errors.push('中古資産の耐用年数が4年にならない');
+    await page.fill('#f-no', 'V-002');
+    await page.fill('#f-location', '本店駐車場');
+  }, '35b-asset-used');
   await shot('35-assets-list', true);
+  // 売却：ノートパソコンを売り、仕訳を作る
+  await page.locator('.asset-row', { hasText: 'ノートパソコン' }).click();
+  await page.waitForTimeout(400);
+  await page.getByRole('link', { name: '売却・除却する（仕訳も作る）' }).click();
+  await page.waitForTimeout(400);
+  await page.fill('#d-date', '2026-12-31');
+  await page.dispatchEvent('#d-date', 'change');
+  await page.fill('#d-price', '110000');
+  await page.waitForTimeout(300);
+  await shot('35c-asset-dispose', true);
+  if (!(await page.getByText('課税売上10%').count())) errors.push('売却の仕訳に課税売上が付かない');
+  await page.getByRole('button', { name: '資産と仕訳を登録する' }).click();
+  await page.waitForTimeout(600);
+  if (!(await page.getByText('売却済み').count())) errors.push('売却後の編集画面に売却済みが出ない');
+  await go('#/assets');
+  if (!(await page.locator('.asset-row', { hasText: '売却 2026/12/31' }).count())) errors.push('売却した資産に印が付かない');
+  await shot('35d-assets-after-sale', true);
 
   // 振り分けルール（ひらがなで登録しても半角カナの摘要に当たる）
   await go('#/import/bank/rules');
