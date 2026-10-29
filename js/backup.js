@@ -5,15 +5,16 @@ import { isValidDate } from './period.js';
 import { isYen } from './money.js';
 import { missingRoles } from './db.js';
 import { openingDiff } from './ledger.js';
+import { validateAsset } from './depreciation.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'tombstones'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones'];
 
 /** バックアップの内容（JSON にする前のオブジェクト） */
 export function createBackup(data, { appVersion = '', exportedAt = new Date() } = {}) {
@@ -41,11 +42,14 @@ const isStr = (v) => typeof v === 'string';
 const hasBase = (r) => isObj(r) && isStr(r.id) && r.id && isStr(r.createdAt) && isStr(r.updatedAt);
 
 /** 旧形式からの変換。BACKUP_VERSION を上げたらここに追加する */
-const UPGRADES = {};
+const UPGRADES = {
+  // 1 → 2：固定資産台帳（assets）を追加
+  1: (obj) => ({ ...obj, version: 2, assets: [] }),
+};
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, tombstones, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -111,6 +115,10 @@ export function parseBackup(text) {
     if (errors.length) throw new BackupError(`仕訳 No.${j.no}（${j.date}）が不正です：${errors[0]}`);
     unique(j, '仕訳');
   });
+  for (const a of obj.assets) {
+    if (!hasBase(a) || Object.keys(validateAsset(a, { entityType: s.entityType, accounts: obj.accounts })).length) bad('固定資産');
+    unique(a, '固定資産');
+  }
   for (const t of obj.tombstones) if (!isObj(t) || !isStr(t.id) || !STORES.includes(t.store)) bad('削除履歴');
 
   return {

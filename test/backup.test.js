@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { openDB } from '../js/db.js';
 import { createBackup, parseBackup, BackupError, backupFileName, shouldRemindBackup, BACKUP_VERSION } from '../js/backup.js';
 import { templateAccounts } from '../js/accounts.js';
-import { createAccount, createPeriod, createSettings, createSubAccount, createJournal } from '../js/models.js';
+import { createAccount, createPeriod, createSettings, createSubAccount, createJournal, createAsset } from '../js/models.js';
 
 async function filled() {
   const repo = await openDB({ indexedDB: new IDBFactory() });
@@ -24,6 +24,7 @@ async function filled() {
       ],
     }),
   );
+  await repo.saveAsset(createAsset({ name: '複合機', accountId: byName['工具器具備品'].id, acquiredOn: '2026-05-01', startedOn: '2026-05-01', cost: 600000, usefulLife: 5 }));
   return { repo, byName };
 }
 
@@ -42,6 +43,8 @@ test('書き出し→検証→置き換えの往復でデータが一致する�
   assert.deepEqual(after.periods, dump.periods);
   assert.equal(after.accounts.length, dump.accounts.length);
   assert.equal(after.deviceId, 'other-device');
+  assert.deepEqual(after.assets, dump.assets);
+  assert.equal(after.assets.length, 1);
   repo.close();
   other.close();
 });
@@ -85,4 +88,17 @@ test('ファイル名とバックアップの催促', () => {
   assert.equal(shouldRemindBackup({ lastBackupAt: '2026-10-01T00:00:00Z', latestJournalUpdatedAt: '2026-09-30T00:00:00Z', now }), false);
   assert.equal(shouldRemindBackup({ lastBackupAt: '2026-10-20T00:00:00Z', latestJournalUpdatedAt: '2026-10-21T00:00:00Z', now }), false);
   assert.equal(shouldRemindBackup({ lastBackupAt: '2026-10-01T00:00:00Z', latestJournalUpdatedAt: '2026-10-21T00:00:00Z', now }), true);
+});
+
+test('バージョン1のバックアップ（固定資産なし）も読み込める', async () => {
+  const { repo } = await filled();
+  const v1 = createBackup(await repo.dumpAll());
+  v1.version = 1;
+  delete v1.assets;
+  const parsed = parseBackup(JSON.stringify(v1));
+  assert.deepEqual(parsed.assets, []);
+  const broken = createBackup(await repo.dumpAll());
+  broken.assets[0].cost = -1;
+  assert.throws(() => parseBackup(JSON.stringify(broken)), /固定資産/);
+  repo.close();
 });

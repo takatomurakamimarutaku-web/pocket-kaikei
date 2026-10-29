@@ -46,3 +46,22 @@ export function createPeriod(fields = {}, now = new Date()) {
 export function createJournal(fields = {}, now = new Date()) {
   return { id: newId(), periodId: '', no: 0, date: '', lines: [], ...stamp(now), ...fields };
 }
+
+export function createAsset(fields = {}, now = new Date()) {
+  return {
+    id: newId(),
+    name: '',
+    category: 'tools',
+    accountId: '',
+    acquiredOn: '',
+    startedOn: '',
+    cost: 0,
+    method: 'straight',
+    usefulLife: null,
+    businessRatio: 100,
+    disposedOn: null,
+    memo: '',
+    ...stamp(now),
+    ...fields,
+  };
+}

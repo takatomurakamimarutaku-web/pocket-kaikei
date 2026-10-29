@@ -187,12 +187,57 @@ mkdirSync(OUT, { recursive: true });
   await go('#/more');
   await shot('16-more');
 
+  // 固定資産台帳
+  await go('#/assets');
+  await shot('33-assets-empty');
+  const addAsset = async (fill, shotName) => {
+    await go('#/asset/new');
+    await fill();
+    await page.waitForTimeout(200);
+    if (shotName) await shot(shotName, true);
+    await page.getByRole('button', { name: '登録する' }).click();
+    await page.waitForTimeout(500);
+  };
+  await addAsset(async () => {
+    await page.fill('#f-name', 'ノートパソコン');
+    await page.fill('#f-acquired', '2026-04-15');
+    await page.dispatchEvent('#f-acquired', 'input');
+    await page.fill('#f-cost', '264000');
+    await page.fill('#f-life', '4');
+    if (entity === 'individual') {
+      await page.selectOption('#f-method', 'straight');
+      await page.fill('#f-ratio', '80');
+    }
+  }, '34-asset-form');
+  await addAsset(async () => {
+    await page.fill('#f-name', entity === 'individual' ? 'デスク' : '会計ソフト');
+    await page.fill('#f-acquired', '2026-05-20');
+    await page.dispatchEvent('#f-acquired', 'input');
+    if (entity === 'individual') {
+      await page.fill('#f-cost', '150000');
+      await page.selectOption('#f-method', 'lump3');
+    } else {
+      await page.selectOption('#f-category', 'intangible');
+      await page.fill('#f-cost', '300000');
+      await page.selectOption('#f-method', 'straight');
+      await page.fill('#f-life', '5');
+    }
+  });
+  if (!(await page.locator('.asset-row').count())) errors.push('固定資産を登録できない');
+  await shot('35-assets-list', true);
+
   // 決算・繰越
   await go('#/closing');
   await shot('26-closing', true);
   await page.fill('#inv-amount', '45000');
   await page.getByRole('button', { name: '棚卸の仕訳を登録する' }).click();
   await page.waitForTimeout(500);
+  await page.getByRole('button', { name: '減価償却の仕訳を登録する' }).click();
+  await page.waitForTimeout(500);
+  if (!(await page.getByText('減価償却の仕訳は登録済みです').count())) errors.push('減価償却の仕訳を登録できない');
+  await go('#/reports/bs');
+  if (!(await page.locator('.check-line').innerText()).includes('＝')) errors.push('減価償却後のBSが一致しない');
+  await go('#/closing');
   await page.getByRole('button', { name: '繰り越して次の期間を始める' }).scrollIntoViewIfNeeded();
   await shot('27-closing-after-inventory', true);
   await page.getByRole('button', { name: '繰り越して次の期間を始める' }).click();
