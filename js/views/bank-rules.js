@@ -1,8 +1,8 @@
 // 銀行明細の振り分けルール：摘要にこの言葉を含む明細は、この相手科目にする（取り込みのときに過去の仕訳より優先）
-import { h, put, field, segmented, showErrors, showToast, confirmDialog, emptyState } from '../ui.js';
+import { h, put, field, segmented, showErrors, showToast, confirmDialog, emptyState, taxSelect } from '../ui.js';
 import { RULE_DIRECTIONS, validateRule } from '../bank-import.js';
 import { isCashAccount } from '../quick.js';
-import { TAX_CATEGORIES, TAX_BY_CODE } from '../tax.js';
+import { TAX_BY_CODE } from '../tax.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
@@ -90,7 +90,7 @@ export async function render({ app, outlet }) {
           : null,
         field(
           '税区分',
-          h('select', { id: 'rule-tax', onchange: (e) => (draft.taxCategory = e.target.value) }, TAX_CATEGORIES.map((t) => h('option', { value: t.code, text: t.label, selected: t.code === draft.taxCategory }))),
+          taxSelect(draft.taxCategory, { split: Boolean(settings.taxUseSplit), id: 'rule-tax', onchange: (e) => (draft.taxCategory = e.target.value) }),
           { name: 'taxCategory' },
         ),
         h('div', { class: 'actions' }, draft.id ? h('button', { type: 'button', class: 'btn', text: 'やめる', onclick: () => ((draft = blank()), paintForm()) }) : null, h('button', { type: 'submit', class: 'btn btn-primary', text: draft.id ? '保存する' : '追加する' })),

@@ -1,6 +1,6 @@
 // 消費税の申告計算：計算の方法を選び、申告書の主な欄（課税標準額〜納付税額）と方法ごとの比較を表示する
 import { h, put, field, segmented, showToast, errorBox, amountCell } from '../ui.js';
-import { computeTaxReturn, TAX_METHODS, BUSINESS_TYPES, consumptionTaxLines } from '../tax-return.js';
+import { computeTaxReturn, TAX_METHODS, BUSINESS_TYPES, ALLOCATIONS, consumptionTaxLines } from '../tax-return.js';
 import { validateJournal } from '../journal.js';
 import { parseYen, formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
@@ -16,11 +16,13 @@ export async function render({ app, outlet }) {
   const state = {
     method: saved.method || 'general',
     businessType: saved.businessType || 5,
+    allocation: saved.allocation || 'proportional',
     interimNational: saved.interimNational || 0,
     interimLocal: saved.interimLocal || 0,
   };
   const body = h('div');
   const typeWrap = h('div');
+  const allocWrap = h('div');
   const errorsEl = h('div');
 
   const typeSelect = h(
@@ -50,12 +52,23 @@ export async function render({ app, outlet }) {
 
   function paint() {
     typeWrap.hidden = state.method !== 'simplified';
+    allocWrap.hidden = state.method !== 'general';
     const bad = !Number.isFinite(state.interimNational) || !Number.isFinite(state.interimLocal);
     if (bad) {
       put(body, errorBox(['中間納付税額は0以上の整数で入力してください']));
       return;
     }
     const r = computeTaxReturn({ journals, period, entityType, ...state });
+    const pct = (x) => `${(Math.floor(x * 10000) / 100).toFixed(2)}%`; // 課税売上割合は小数点以下2桁まで表示（切り捨て）
+    const purchaseNote = [
+      `仕入10% ${formatYen(r.purchaseTax10)}・8% ${formatYen(r.purchaseTax8)}`,
+      ...r.transitional.map((t) => `インボイスなし${t.pct}% ${formatYen(t.tax)}`),
+      r.importTax ? `輸入 ${formatYen(r.importTax)}` : '',
+      r.purchaseReturnTax ? `仕入の返品 △${formatYen(r.purchaseReturnTax)}` : '',
+      r.fullDeduction ? '' : `${ALLOCATIONS.find((a) => a.id === r.allocation).label}：課税売上割合 ${pct(r.taxableRatio)}`,
+    ]
+      .filter(Boolean)
+      .join('・');
     const deductionLabel = { general: '控除対象仕入税額', simplified: `控除対象仕入税額（みなし仕入率${r.businessType.rate}%）`, twenty: '特別控除税額（2割特例：売上の税額の80%）', thirty: '特別控除税額（3割特例：売上の税額の70%）' }[state.method];
     put(
       body,
@@ -73,12 +86,11 @@ export async function render({ app, outlet }) {
             row('課税標準額（10%）', r.base10, { note: `税込 ${formatYen(r.buckets.sales10)}円 × 100/110・千円未満切り捨て` }),
             r.base8 || r.buckets.sales8 ? row('課税標準額（8%軽減）', r.base8, { note: `税込 ${formatYen(r.buckets.sales8)}円 × 100/108・千円未満切り捨て` }) : null,
             row('消費税額', r.salesTax, { note: '課税標準額 × 7.8%（軽減 6.24%）' }),
-            row(deductionLabel, r.deduction, {
-              note:
-                state.method === 'general'
-                  ? `仕入10% ${formatYen(r.purchaseTax10)}・8% ${formatYen(r.purchaseTax8)}${r.transitional.map((t) => `・インボイスなし${t.pct}% ${formatYen(t.tax)}`).join('')}`
-                  : '',
-            }),
+            r.adjustment ? row('控除過大調整税額', r.adjustment, { note: [r.recoveredTax ? `貸倒れの回収 ${formatYen(r.recoveredTax)}` : '', r.adjustment - r.recoveredTax ? `控除しきれない仕入の返品 ${formatYen(r.adjustment - r.recoveredTax)}` : ''].filter(Boolean).join('・') }) : null,
+            row(deductionLabel, r.deduction, { note: state.method === 'general' ? purchaseNote : r.returnTax || r.recoveredTax ? '（消費税額＋貸倒れの回収−売上の返品の税額）に割合を掛けています' : '' }),
+            r.returnTax ? row('返還等対価に係る税額', r.returnTax, { note: '売上の返品・値引き（税込）× 7.8/110（軽減 6.24/108）' }) : null,
+            r.badDebtTax ? row('貸倒れに係る税額', r.badDebtTax, { note: '貸倒れ（税込）× 7.8/110（軽減 6.24/108）' }) : null,
+            r.returnTax || r.badDebtTax ? row('控除税額小計', r.deductionTotal) : null,
             row(r.net >= 0 ? '差引税額' : '控除不足還付税額', r.net, { strong: true, note: r.net >= 0 ? '百円未満切り捨て' : '' }),
           ),
         ),
@@ -100,6 +112,25 @@ export async function render({ app, outlet }) {
           ),
         ),
       ),
+      state.method === 'general' && r.taxableRatio !== null
+        ? h(
+            'div',
+            { class: 'table-wrap' },
+            h(
+              'table',
+              { class: 'report taxsum' },
+              h('caption', { text: '課税売上割合' }),
+              h(
+                'tbody',
+                {},
+                row('課税売上高（税抜）', r.taxableSales, { note: '返品・値引きを引く。輸出売上を含む' }),
+                row('総売上高（税抜）', r.totalSales, { note: '課税売上高＋非課税売上＋有価証券等の譲渡対価の5%' }),
+                h('tr', {}, h('th', { scope: 'row', text: '課税売上割合' }, h('span', { class: 'muted small block', text: r.fullDeduction ? '95%以上・課税売上高5億円以下なので全額控除' : '95%未満などのため按分' })), h('td', { class: 'num', text: pct(r.taxableRatio) })),
+                r.fullDeduction ? null : ALLOCATIONS.map((a) => row(`控除対象仕入税額（${a.short}）`, r.allocated[a.id], { strong: a.id === r.allocation })),
+              ),
+            ),
+          )
+        : null,
       h('h2', { class: 'section-title', text: '計算の方法ごとの比較' }),
       h(
         'div',
@@ -195,6 +226,7 @@ export async function render({ app, outlet }) {
         }),
       ),
       h('div', {}, typeWrap),
+      h('div', {}, allocWrap),
       h('div', { class: 'field-row' }, field('中間納付（国税）', interimN), field('中間納付（地方）', interimL)),
       h('p', { class: 'muted small', text: '選んだ方法と中間納付税額はこの期間に保存します。' }),
     ),
@@ -202,12 +234,30 @@ export async function render({ app, outlet }) {
     h(
       'div',
       { class: 'panel small muted' },
-      h('p', { text: '税込経理の帳簿から、売上・仕入とも割戻し計算で求めています。売上の返品・値引きは売上から差し引いて計算しています（申告書では「返還等対価に係る税額」として別に書きます）。' }),
-      h('p', { text: '対応していないもの：積上げ計算、課税売上割合が95%未満のときの按分、貸倒れ、簡易課税で複数の事業区分がある場合、令和9年4月からの飲食料品の税率の引き下げ。' }),
-      h('p', { text: '出典：国税庁 タックスアンサー No.6383・6391（割戻し計算）、No.6371（端数計算）、No.6505（簡易課税）、2割特例・3割特例とインボイス制度の見直しの案内（令和8年度改正）' }),
+      h('p', { text: '税込経理の帳簿から、売上・仕入とも割戻し計算で求めています。税区分「売上の返品・値引き」は返還等対価に係る税額、「課税売上」の借方に入れた返品は売上から差し引いて計算します。' }),
+      h('p', { text: '課税売上割合が95%未満（または課税売上高5億円超）のときは、選んだ方法（個別対応方式・一括比例配分方式）で控除額を按分します。個別対応方式は、設定で「仕入の用途区分」を使い、仕入を課税売上対応・共通対応・非課税売上対応に分けて記帳している場合に使えます。' }),
+      h('p', { text: '対応していないもの：積上げ計算、課税売上割合に準ずる割合、特定課税仕入れ（リバースチャージ）、課税期間が1年未満のときの5億円の年換算、インボイスのない仕入の返品の区分、簡易課税で複数の事業区分がある場合、令和9年4月からの飲食料品の税率の引き下げ。' }),
+      h('p', { text: '出典：国税庁 タックスアンサー No.6383・6391（割戻し計算）、No.6371（端数計算）、No.6359・6363（対価の返還等）、No.6367・6631（貸倒れ・貸倒回収）、No.6401・6405（按分・課税売上割合）、No.6505（簡易課税）、2割特例・3割特例とインボイス制度の見直しの案内（令和8年度改正）' }),
     ),
   );
   put(typeWrap, field('事業区分', typeSelect));
+  put(
+    allocWrap,
+    field(
+      '課税売上割合が95%未満のとき',
+      segmented({
+        name: '按分の方法',
+        options: ALLOCATIONS.map((a) => ({ value: a.id, label: a.short })),
+        value: state.allocation,
+        onChange: (v) => {
+          state.allocation = v;
+          paint();
+          saveSettings().catch(() => {});
+        },
+      }),
+      { hint: '課税売上割合が95%以上なら全額控除なので、どちらでも同じです' },
+    ),
+  );
   typeSelect.addEventListener('change', () => saveSettings().catch(() => {}));
   for (const el of [interimN, interimL]) el.addEventListener('change', () => saveSettings().catch(() => {}));
   paint();

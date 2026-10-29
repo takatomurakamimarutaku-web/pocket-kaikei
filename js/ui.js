@@ -1,6 +1,7 @@
 // 共通UI部品（ホップ手帖と共通の部品を流用）
 import { suggest } from './search.js';
 import { formatYen } from './money.js';
+import { TAX_CATEGORIES, TAX_GROUPS } from './tax.js';
 
 /** 要素を作る。attrs: class, text, html禁止, on*, dataset, その他の属性 */
 export function h(tag, attrs = {}, ...children) {
@@ -288,4 +289,17 @@ export function put(el, ...children) {
   el.replaceChildren();
   appendChildren(el, children);
   return el;
+}
+
+/**
+ * 税区分の選択（グループ見出し付き）
+ * split が偽のとき、仕入の用途区分（共通対応・非課税売上対応）は今の値の区分だけを出す（設定の taxUseSplit）
+ */
+export function taxSelect(value, { split = false, ...attrs } = {}) {
+  const groups = TAX_GROUPS.map((g) => [g, TAX_CATEGORIES.filter((c) => c.group === g.id && (split || !g.split || c.code === value))]).filter(([, cs]) => cs.length);
+  return h(
+    'select',
+    attrs,
+    groups.map(([g, cs]) => h('optgroup', { label: g.label }, cs.map((c) => h('option', { value: c.code, text: c.label, selected: c.code === value })))),
+  );
 }

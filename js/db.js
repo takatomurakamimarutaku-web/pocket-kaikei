@@ -326,7 +326,7 @@ export class Repository {
 
   /**
    * 消費税の申告計算の設定（計算の方法・事業区分・中間納付税額）を期間に保存する
-   * @param {{ method: string, businessType: number, interimNational: number, interimLocal: number }} taxReturn
+   * @param {{ method: string, businessType: number, allocation?: 'individual'|'proportional', interimNational: number, interimLocal: number }} taxReturn
    */
   saveTaxReturnSettings(periodId, taxReturn) {
     return this.run(['periods'], 'readwrite', async (tx) => {
@@ -337,10 +337,11 @@ export class Repository {
       const errors = [];
       if (!['general', 'simplified', 'twenty', 'thirty'].includes(taxReturn.method)) errors.push('計算の方法を選んでください');
       if (![1, 2, 3, 4, 5, 6].includes(taxReturn.businessType)) errors.push('事業区分を選んでください');
+      if (taxReturn.allocation !== undefined && !['individual', 'proportional'].includes(taxReturn.allocation)) errors.push('個別対応方式か一括比例配分方式を選んでください');
       for (const k of ['interimNational', 'interimLocal']) if (!isYen(taxReturn[k]) || taxReturn[k] < 0) errors.push('中間納付税額は0以上の整数で入力してください');
       if (errors.length) throw new ValidationError([...new Set(errors)]);
-      const { method, businessType, interimNational, interimLocal } = taxReturn;
-      const next = { ...period, taxReturn: { method, businessType, interimNational, interimLocal }, updatedAt: now() };
+      const { method, businessType, interimNational, interimLocal, allocation = 'proportional' } = taxReturn;
+      const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal }, updatedAt: now() };
       store.put(next);
       return next;
     });

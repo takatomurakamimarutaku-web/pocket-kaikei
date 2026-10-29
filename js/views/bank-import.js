@@ -1,6 +1,6 @@
 // 銀行明細CSVの取り込み：ファイルを選ぶ → 列の割り当てを確かめる → 明細ごとに相手科目を選んでまとめて登録
 // CSV は端末の中で読み込むだけで、外部へ送信しない
-import { h, put, field, showToast, errorBox } from '../ui.js';
+import { h, put, field, showToast, errorBox, taxSelect } from '../ui.js';
 import {
   decodeBytes,
   parseCsv,
@@ -18,7 +18,6 @@ import {
 import { compareAccounts } from '../accounts.js';
 import { isCashAccount } from '../quick.js';
 import { validateJournal } from '../journal.js';
-import { TAX_CATEGORIES } from '../tax.js';
 import { formatYen } from '../money.js';
 import { isInPeriod } from '../period.js';
 import { createJournal } from '../models.js';
@@ -211,11 +210,7 @@ export async function render({ app, outlet, query }) {
                   )
                 : null,
               acc
-                ? h(
-                    'select',
-                    { class: 'tax-select', 'aria-label': '税区分', onchange: (e) => (item.counter.taxCategory = e.target.value) },
-                    TAX_CATEGORIES.map((t) => h('option', { value: t.code, text: t.label, selected: t.code === item.counter.taxCategory })),
-                  )
+                ? taxSelect(item.counter.taxCategory, { split: Boolean(settings.taxUseSplit), class: 'tax-select', 'aria-label': '税区分', onchange: (e) => (item.counter.taxCategory = e.target.value) })
                 : null,
             ),
       ),

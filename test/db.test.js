@@ -246,3 +246,14 @@ test('振り分けルール：設定に保存し、不正なルールは保存�
   await assert.rejects(repo.saveBankRules([rule, { ...rule, accountId: byName['現金'].id }]), (e) => e instanceof ValidationError && /2件目/.test(e.errors[0]));
   assert.equal((await repo.getSettings()).bankRules.length, 1);
 });
+
+test('消費税の申告設定：按分の方法を保存し（省略は一括比例配分方式）、不正な値は拒否する', async () => {
+  const { repo, period } = await setupRepo();
+  const base = { method: 'general', businessType: 5, interimNational: 0, interimLocal: 0 };
+  assert.equal((await repo.saveTaxReturnSettings(period.id, base)).taxReturn.allocation, 'proportional');
+  assert.equal((await repo.saveTaxReturnSettings(period.id, { ...base, allocation: 'individual' })).taxReturn.allocation, 'individual');
+  await assert.rejects(repo.saveTaxReturnSettings(period.id, { ...base, allocation: 'x' }), ValidationError);
+  // 仕入の用途区分を使う設定
+  assert.equal((await repo.updateSettings({ taxUseSplit: true })).taxUseSplit, true);
+  repo.close();
+});

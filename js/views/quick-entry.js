@@ -1,8 +1,8 @@
 // かんたん取引入力：取引の種類ごとに、日付・金額・科目・摘要から2行の仕訳を作る
-import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox } from '../ui.js';
+import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox, taxSelect } from '../ui.js';
 import { QUICK_BY_ID, slotCandidates, quickDefaults, buildQuickLines, isFixedSlot, simplePair, isCashAccount } from '../quick.js';
 import { validateJournal, memoCandidates } from '../journal.js';
-import { TAX_CATEGORIES, TAX_BY_CODE } from '../tax.js';
+import { TAX_BY_CODE } from '../tax.js';
 import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
 import { createJournal } from '../models.js';
@@ -154,11 +154,7 @@ export async function render({ app, outlet, params, query }) {
           'label',
           { class: 'qtax' },
           h('span', { class: 'muted small', text: '税区分' }),
-          h(
-            'select',
-            { class: 'tax-select', onchange: (e) => ((s.taxCategory = e.target.value), touch()) },
-            TAX_CATEGORIES.map((t) => h('option', { value: t.code, text: t.label, selected: t.code === s.taxCategory })),
-          ),
+          taxSelect(s.taxCategory, { split: Boolean(settings.taxUseSplit), class: 'tax-select', onchange: (e) => ((s.taxCategory = e.target.value), touch()) }),
         ),
       );
     }
