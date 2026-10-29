@@ -32,6 +32,7 @@ const PAGES = [
   ['18-trial-monthly', '#/reports/trial-monthly'],
   ['19-tax-return', '#/reports/tax-return'],
   ['21-breakdown', '#/reports/breakdown'],
+  ['22-financial', '#/reports/financial'],
   ['20-tax-return-form', '#/reports/tax-return?view=form'],
 ].filter(([name]) => !process.env.ONLY || process.env.ONLY.split(',').some((p) => name.startsWith(p)));
 
