@@ -7,7 +7,7 @@ import { validateTemplate } from './templates.js';
 import { validateBudget } from './budget.js';
 import { validateAttachment, sha256Hex, toArrayBuffer, EDITABLE_FIELDS } from './attachments.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
-import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
+import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts, realEstateAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
@@ -18,6 +18,7 @@ import { validateAsset } from './depreciation.js';
 import { validateCapex } from './asset-tools.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
+import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js';
 
 export const DB_NAME = 'pocket-kaikei';
 export const DB_VERSION = 6;
@@ -385,6 +386,27 @@ export class Repository {
   }
 
   /**
+   * 不動産所得（個人だけ）：'none'（なし）・'both'（事業所得と両方）・'only'（不動産所得だけ）。
+   * あるにしたときは不動産所得の科目（賃貸料・不動産経費・専従者給与（不動産）・預り敷金・保証金）を追加する。なしにしても科目は残す
+   * @returns {Promise<{ settings, added: Array }>}
+   */
+  setRealEstate(mode) {
+    return this.run(['meta', 'accounts'], 'readwrite', async (tx) => {
+      const meta = tx.objectStore('meta');
+      const cur = (await req(meta.get('settings')))?.value;
+      if (!cur) throw new Error('初期設定がされていません');
+      if (!REAL_ESTATE_MODES.includes(mode)) throw new ValidationError(['不動産所得の設定を選んでください']);
+      if (mode !== 'none' && cur.entityType !== 'individual') throw new ValidationError(['不動産所得は個人だけで使えます']);
+      const at = now();
+      const added = mode !== 'none' ? realEstateAccounts(await req(tx.objectStore('accounts').getAll())).map((a) => createAccount(a)) : [];
+      for (const a of added) tx.objectStore('accounts').put(a);
+      const next = { ...cur, realEstate: mode, updatedAt: at };
+      meta.put({ key: 'settings', value: next });
+      return { settings: next, added };
+    });
+  }
+
+  /**
    * 銀行明細の振り分けルールを保存する（設定の bankRules。バックアップにも入る）
    * @param {Array<{ id, keyword, direction, accountId, subAccountId?, taxCategory }>} rules
    */
@@ -528,15 +550,17 @@ export class Repository {
     });
   }
 
-  /** 青色申告決算書の設定（青色申告特別控除額）を期間に保存する */
-  saveBlueReturnSettings(periodId, { deduction }) {
+  /** 青色申告決算書の設定（青色申告特別控除額・不動産の貸付けの規模・土地等を取得するための負債の利子）を期間に保存する */
+  saveBlueReturnSettings(periodId, patch) {
     return this.run(['periods'], 'readwrite', async (tx) => {
       const store = tx.objectStore('periods');
       const period = await req(store.get(periodId));
       if (!period) throw new Error('会計期間が見つかりません');
       if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
-      if (![0, 100000, 550000, 650000, 750000].includes(deduction)) throw new ValidationError(['青色申告特別控除額を選んでください']);
-      const next = { ...period, blueReturn: { deduction }, updatedAt: now() };
+      const value = { ...(period.blueReturn || {}), ...patch };
+      const errors = validateBlueReturnSettings(value);
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...period, blueReturn: value, updatedAt: now() };
       store.put(next);
       return next;
     });

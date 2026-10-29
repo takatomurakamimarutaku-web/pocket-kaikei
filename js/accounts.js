@@ -26,6 +26,10 @@ export const GROUPS = [
   { id: 'reserves_reversal', label: '引当金・準備金等の繰戻額', section: 'pl', side: 'credit', entity: 'individual' },
   { id: 'reserves_provision', label: '引当金・準備金等の繰入額', section: 'pl', side: 'debit', entity: 'individual' },
   { id: 'family_salary', label: '専従者給与', section: 'pl', side: 'debit', entity: 'individual' },
+  // 不動産所得（個人。設定で「不動産所得がある」にしたときに科目を追加する）。青色申告決算書（不動産所得用）に集計し、一般用には入れない
+  { id: 're_income', label: '不動産収入', section: 'pl', side: 'credit', entity: 'individual', re: true },
+  { id: 're_expenses', label: '不動産経費', section: 'pl', side: 'debit', entity: 'individual', re: true },
+  { id: 're_family_salary', label: '専従者給与（不動産）', section: 'pl', side: 'debit', entity: 'individual', re: true },
   // 製造原価（法人。設定で「製造原価を使う」にしたときに科目を追加する）。合計は損益計算書の売上原価の「当期製品製造原価」になる
   { id: 'mfg_materials', label: '材料費', section: 'pl', side: 'debit', entity: 'corporation', mfg: true },
   { id: 'mfg_labor', label: '労務費', section: 'pl', side: 'debit', entity: 'corporation', mfg: true },
@@ -38,6 +42,20 @@ export const MFG_GROUPS = ['mfg_materials', 'mfg_labor', 'mfg_overhead', 'mfg_wi
 
 export function isMfgGroup(groupId) {
   return MFG_GROUPS.includes(groupId);
+}
+
+/**
+ * 事業割合（家事按分）を設定できる科目か：個人の経費（事業所得・不動産所得）。減価償却費は固定資産台帳の事業専用割合で按分するので除く
+ */
+export function ratioAllowed(account) {
+  return ['sga', 're_expenses'].includes(account.group) && account.hint !== 'depreciation' && account.hint !== 're_depreciation';
+}
+
+/** 不動産所得の区分 */
+export const RE_GROUPS = ['re_income', 're_expenses', 're_family_salary'];
+
+export function isReGroup(groupId) {
+  return RE_GROUPS.includes(groupId);
 }
 
 export const GROUP_BY_ID = Object.fromEntries(GROUPS.map((g) => [g.id, g]));
@@ -137,6 +155,19 @@ export const HINTS = {
   closing_wip: '期末仕掛品棚卸高',
   opening_finished: '期首製品棚卸高',
   closing_finished: '期末製品棚卸高',
+  // 不動産所得（個人）。青色申告決算書（不動産所得用）の欄の割り当てに使う
+  re_rent_income: '賃貸料',
+  re_key_money: '礼金・権利金・更新料',
+  re_other_income: '名義書換料その他',
+  re_deposits: '預り敷金・保証金',
+  re_taxes: '租税公課（不動産）',
+  re_insurance: '損害保険料（不動産）',
+  re_repairs: '修繕費（不動産）',
+  re_depreciation: '減価償却費（不動産）',
+  re_interest: '借入金利子（不動産）',
+  re_rent: '地代家賃（不動産）',
+  re_wages: '給料賃金（不動産）',
+  re_misc: 'その他の経費（不動産）',
 };
 
 /**
@@ -349,6 +380,30 @@ const MANUFACTURING = [
   ['859', '期末仕掛品棚卸高', 'mfg_wip', N, { hint: 'closing_wip', contra: true }],
 ];
 
+// 不動産所得の科目（個人。設定で「不動産所得がある」にしたときに追加する。製造原価の科目と同じく、使っていなければ削除できる）
+// 欄の並びは国税庁「青色申告決算書（不動産所得用）」の損益計算書（①賃貸料 ②礼金・権利金・更新料 ③名義書換料その他、
+// ⑤租税公課 ⑥損害保険料 ⑦修繕費 ⑧減価償却費 ⑨借入金利子 ⑩地代家賃 ⑪給料賃金 ⑫〜⑯空欄 ⑰その他の経費、⑳専従者給与）。
+// 住宅の貸付けの家賃（返還しない敷金・保証金・一時金等と共益費を含む）は消費税が非課税なので、賃貸料・礼金等は非課税売上にする
+// （店舗・事務所の部分や、家賃と別に受け取る駐車場使用料は課税なので、仕訳で税区分を変える）
+//   国税庁 タックスアンサー No.6226 住宅の貸付け https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6226.htm
+const REAL_ESTATE = [
+  ['306', '預り敷金・保証金', 'current_liabilities', N, { hint: 're_deposits' }],
+  ['550', '賃貸料', 're_income', 'sales_exempt', { hint: 're_rent_income' }],
+  ['551', '礼金・権利金・更新料', 're_income', 'sales_exempt', { hint: 're_key_money' }],
+  ['552', '名義書換料その他', 're_income', 'sales_10', { hint: 're_other_income' }],
+  ['650', '租税公課（不動産）', 're_expenses', N, { hint: 're_taxes' }],
+  ['651', '損害保険料（不動産）', 're_expenses', 'purchase_exempt', { hint: 're_insurance' }],
+  ['652', '修繕費（不動産）', 're_expenses', T, { hint: 're_repairs' }],
+  ['653', '減価償却費（不動産）', 're_expenses', N, { hint: 're_depreciation' }],
+  ['654', '借入金利子（不動産）', 're_expenses', 'purchase_exempt', { hint: 're_interest' }],
+  ['655', '地代家賃（不動産）', 're_expenses', 'purchase_exempt', { hint: 're_rent' }],
+  ['656', '給料賃金（不動産）', 're_expenses', N, { hint: 're_wages' }],
+  ['657', '管理費（不動産）', 're_expenses', T],
+  ['658', '支払手数料（不動産）', 're_expenses', T],
+  ['669', 'その他の経費（不動産）', 're_expenses', T, { hint: 're_misc' }],
+  ['730', '専従者給与（不動産）', 're_family_salary', N],
+];
+
 const toAccount = ([code, name, group, tax, opt = {}], template) => ({
   code,
   name,
@@ -368,11 +423,23 @@ const toAccount = ([code, name, group, tax, opt = {}], template) => ({
  * @param {Array} existing 今ある科目
  */
 export function manufacturingAccounts(existing = []) {
+  return extraAccounts(MANUFACTURING, existing);
+}
+
+/**
+ * 不動産所得があるときに追加する科目の元（id・日時は呼び出し側で付ける）。追加の決まりは manufacturingAccounts と同じ
+ * @param {Array} existing 今ある科目
+ */
+export function realEstateAccounts(existing = []) {
+  return extraAccounts(REAL_ESTATE, existing);
+}
+
+function extraAccounts(list, existing) {
   const hints = new Set(existing.map((a) => a.hint).filter(Boolean));
   const names = new Set(existing.map((a) => a.name));
   const codes = new Set(existing.map((a) => String(a.code)));
   const out = [];
-  for (const row of MANUFACTURING) {
+  for (const row of list) {
     const hint = row[4]?.hint;
     if (hint ? hints.has(hint) : names.has(row[1])) continue;
     let code = Number(row[0]);
@@ -459,7 +526,7 @@ export function validateAccount(account, others, { used = false, entityType } = 
   if (account.normalSide !== 'debit' && account.normalSide !== 'credit') errors.normalSide = '残高の側を選んでください';
   // 家事按分の事業割合（%）。個人の経費だけ。未設定は null
   if (account.businessRatio != null) {
-    if (entityType !== 'individual' || account.group !== 'sga' || account.hint === 'depreciation') errors.businessRatio = '事業割合は個人の経費の科目（減価償却費を除く）だけに設定できます';
+    if (entityType !== 'individual' || !ratioAllowed(account)) errors.businessRatio = '事業割合は個人の経費の科目（減価償却費を除く）だけに設定できます';
     else if (!Number.isInteger(account.businessRatio) || account.businessRatio < 1 || account.businessRatio > 99) errors.businessRatio = '事業割合は1〜99の整数（%）で入力してください';
   }
   if (before) {

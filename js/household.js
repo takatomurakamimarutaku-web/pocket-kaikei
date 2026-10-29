@@ -5,7 +5,7 @@
 // 消費税：家事消費・家事使用の部分は課税仕入れに当たらない。使用率・使用面積の割合など合理的な基準で按分する
 //   消費税法基本通達 11-1-4 https://www.nta.go.jp/law/tsutatsu/kihon/shohi/11/01.htm
 //   → 振替の行は元の行と同じ税区分を付け、貸方にして課税仕入れから差し引く
-import { findByRole } from './accounts.js';
+import { findByRole, ratioAllowed } from './accounts.js';
 
 export const HOUSEHOLD_SOURCE = 'household';
 
@@ -19,7 +19,7 @@ export function isValidRatio(r) {
 
 /** 事業割合を設定できる科目（個人の経費。減価償却費は台帳の事業専用割合で按分するので除く） */
 export function householdEligible(account) {
-  return account.group === 'sga' && account.hint !== 'depreciation' && account.active !== false;
+  return ratioAllowed(account) && account.active !== false;
 }
 
 /** 登録済みの家事按分の仕訳 */

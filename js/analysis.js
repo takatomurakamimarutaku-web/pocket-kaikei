@@ -45,7 +45,8 @@ export function bsFigures(rows) {
  */
 export function plFigures(entityType, profits) {
   if (entityType === 'individual') {
-    return { sales: profits.sales, cogs: profits.cogs, gross: profits.diff1, operating: null, ordinary: null, income: profits.income, profit: profits.income };
+    // 不動産所得は売上に入らないので、利益率などは事業所得で計算する
+    return { sales: profits.sales, cogs: profits.cogs, gross: profits.diff1, operating: null, ordinary: null, income: profits.businessIncome, profit: profits.businessIncome };
   }
   return { sales: profits.sales, cogs: profits.cogs, gross: profits.gross, operating: profits.operating, ordinary: profits.ordinary, income: null, profit: profits.ordinary };
 }

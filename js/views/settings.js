@@ -4,12 +4,14 @@ import { ENTITY_LABELS, TAX_STATUS_LABELS } from '../models.js';
 import { validatePeriod, formatPeriod } from '../period.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { REAL_ESTATE_MODES } from '../real-estate.js';
 
 export async function render({ app, outlet }) {
   const { settings, period } = await app.load();
   let taxStatus = settings.taxStatus;
   let taxUseSplit = Boolean(settings.taxUseSplit);
   let manufacturing = Boolean(settings.manufacturing);
+  let realEstate = REAL_ESTATE_MODES.includes(settings.realEstate) ? settings.realEstate : 'none';
   const name = h('input', { id: 's-name', type: 'text', maxlength: 60, value: settings.businessName });
   const corp = settings.entityType === 'corporation';
   const start = h('input', { id: 's-start', type: 'date', value: period.startDate });
@@ -32,7 +34,20 @@ export async function render({ app, outlet }) {
           segmented({ name: '製造原価', options: [{ value: 'off', label: '使わない' }, { value: 'on', label: '使う' }], value: manufacturing ? 'on' : 'off', onChange: (v) => (manufacturing = v === 'on') }),
           { hint: '製品を作って売る会社向け。「使う」にすると材料費・労務費・製造経費・仕掛品と原材料・製品の科目を追加し、製造原価報告書を作れます。「使わない」に戻しても科目は残ります' },
         )
-      : null,
+      : field(
+          '不動産所得',
+          segmented({
+            name: '不動産所得',
+            options: [
+              { value: 'none', label: 'なし' },
+              { value: 'both', label: '事業と両方' },
+              { value: 'only', label: '不動産だけ' },
+            ],
+            value: realEstate,
+            onChange: (v) => (realEstate = v),
+          }),
+          { hint: 'アパート・駐車場などの貸付けがある人向け。「事業と両方」「不動産だけ」にすると賃貸料・不動産経費などの科目を追加し、青色申告決算書（不動産所得用）を作れます。「なし」に戻しても科目は残ります' },
+        ),
     corp
       ? h('div', { class: 'field-row' }, field('期首日', start, { name: 'startDate' }), field('期末日', end, { name: 'endDate' }))
       : field('会計期間', h('p', { class: 'readonly', text: formatPeriod(period) }), { hint: '個人事業主は暦年（1月1日〜12月31日）です' }),
@@ -64,6 +79,10 @@ export async function render({ app, outlet }) {
       if (corp && manufacturing !== Boolean(settings.manufacturing)) {
         const r = await app.db.setManufacturing(manufacturing);
         if (r.added.length) message = `保存しました（製造原価の科目を${r.added.length}件追加）`;
+      }
+      if (!corp && realEstate !== (settings.realEstate || 'none')) {
+        const r = await app.db.setRealEstate(realEstate);
+        if (r.added.length) message = `保存しました（不動産所得の科目を${r.added.length}件追加）`;
       }
       if (corp && (start.value !== period.startDate || end.value !== period.endDate)) await app.db.savePeriodDates(period.id, { startDate: start.value, endDate: end.value });
       showToast(message);
