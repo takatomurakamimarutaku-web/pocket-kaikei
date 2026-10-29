@@ -8,7 +8,7 @@ import { trialBalance } from './ledger.js';
 
 /** 科目の期末残高（dc）を区分の向きの金額にする */
 function groupAmount(row) {
-  return GROUP_BY_ID[row.account.group].side === 'debit' ? row.dc : -row.dc;
+  return GROUP_BY_ID[row.account.group].side === 'debit' ? row.dc : 0 - row.dc;
 }
 
 /** 区分ごとの科目の行と合計 */
