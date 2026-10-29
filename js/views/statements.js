@@ -83,13 +83,14 @@ export async function render({ app, outlet, route, query }) {
     return {
       options: [
         isPl ? null : { key: 'format', label: '様式', type: 'select', choices: [['account', '勘定式（左右に並べる）'], ['report', '報告式（上下に並べる）']], value: 'account' },
+        { key: 'orientation', label: '用紙の向き', type: 'select', choices: [['portrait', 'A4縦'], ['landscape', 'A4横']], value: 'portrait' },
         { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
         ...unitPrintOptions(unit.value()),
       ].filter(Boolean),
       build: (v) => {
-        if (isPl) return statementDoc([{ caption: '', items: pl.items }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v) });
-        if (v.format === 'account') return balanceSheetAccountDoc(bs, { head, title: route.title, showZero: v.zero, rightLabel: right, unit: normalizeUnit(v) });
-        return statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v) });
+        if (isPl) return statementDoc([{ caption: '', items: pl.items }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation });
+        if (v.format === 'account') return balanceSheetAccountDoc(bs, { head, title: route.title, showZero: v.zero, rightLabel: right, unit: normalizeUnit(v), orientation: v.orientation });
+        return statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation });
       },
     };
   };

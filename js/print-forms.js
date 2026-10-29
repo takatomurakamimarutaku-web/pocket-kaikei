@@ -335,7 +335,7 @@ function statementRows(items, showZero, fmt) {
  * @param {Array<{ caption: string, items: Array }>} parts statements.js の items
  * @param {{ head, title: string, showZero?: boolean, footer?: string }} opts
  */
-export function statementDoc(parts, { head, title, showZero = false, footer = '', unit = YEN_UNIT }) {
+export function statementDoc(parts, { head, title, showZero = false, footer = '', unit = YEN_UNIT, orientation = 'portrait' }) {
   const { f } = unitFormat(unit);
   const columns = [
     { label: '科　　目', grow: 1, min: 70 },
@@ -348,7 +348,7 @@ export function statementDoc(parts, { head, title, showZero = false, footer = ''
     blocks.push({ type: 'table', style: 'open', columns: columns.map((c, i) => (i === 2 ? { ...c, label: '金　　額' } : c)), rows: statementRows(part.items, showZero, f) });
   }
   if (footer) blocks.push({ type: 'text', text: footer });
-  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation: 'portrait', blocks };
+  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation, blocks };
 }
 
 /** 勘定式の片側：区分の見出し（区分の計を右に）・科目。最後の合計（strong）は別に返す */
@@ -382,7 +382,7 @@ function accountSide(items, showZero, fmt) {
  * @param {{ assets: Array, liabilities: Array }} bs statements.js の balanceSheet の結果
  * @param {{ head, title?: string, showZero?: boolean, rightLabel: string }} opts
  */
-export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', showZero = false, rightLabel = '負債・純資産の部', unit = YEN_UNIT }) {
+export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', showZero = false, rightLabel = '負債・純資産の部', unit = YEN_UNIT, orientation = 'portrait' }) {
   const { f: fmt } = unitFormat(unit);
   const L = accountSide(bs.assets, showZero, fmt);
   const R = accountSide(bs.liabilities, showZero, fmt);
@@ -401,7 +401,7 @@ export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', sh
     title: spaced(title),
     ...head,
     unit: unitCaption(unit),
-    orientation: 'portrait',
+    orientation,
     blocks: [
       {
         type: 'table',
@@ -488,4 +488,27 @@ export function formLayoutBlocks(blocks, { columns: nCols = 3 } = {}) {
     out.push(...seg);
   }
   return out;
+}
+
+/**
+ * 推移表（月次推移表・月次推移試算表）：A4横。勘定科目と月ごとの列（繰越・四半期計・半期計・決算整理・合計を含む）
+ * 区分の行は区分の計を出して太字、段階利益・合計の行は上に線
+ * @param {{ title, head, columns: string[] (金額の列の見出し), sections: Array<{ caption?: string, rows: Array<{ kind: 'group'|'line'|'subtotal'|'total', label, values: number[] }> }>,
+ *           unit?, orientation?, notes?: string[] }} p
+ */
+export function monthlyDoc({ title, head, columns, sections, unit = YEN_UNIT, orientation = 'landscape', notes = [] }) {
+  const { f, b } = unitFormat(unit);
+  const cols = [{ label: '勘定科目', grow: 1, min: 30, max: 46 }, ...columns.map((label) => ({ label, align: 'right' }))];
+  const blocks = [];
+  for (const sec of sections) {
+    if (sec.caption) blocks.push({ type: 'heading', text: sec.caption });
+    const rows = sec.rows.map((r) => {
+      if (r.kind === 'line') return { cells: [{ text: r.label, indent: 3 }, ...r.values.map((v) => b(v))] };
+      if (r.kind === 'group') return { kind: 'group', cells: [`【${r.label}】`, ...r.values.map((v) => f(v))] };
+      return { kind: r.kind === 'total' ? 'total' : 'subtotal', cells: [r.label, ...r.values.map((v) => f(v))] };
+    });
+    blocks.push({ type: 'table', columns: cols, rows });
+  }
+  for (const n of notes) blocks.push({ type: 'text', text: n });
+  return { title, ...head, unit: unitCaption(unit), orientation, blocks };
 }

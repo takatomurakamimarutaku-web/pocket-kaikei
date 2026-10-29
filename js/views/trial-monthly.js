@@ -4,7 +4,9 @@ import { h, put, amountCell, saveFile } from '../ui.js';
 import { monthlyTrialBalance } from '../monthly.js';
 import { groupLabel } from '../accounts.js';
 import { monthlyTrialCsv, csvFileName } from '../csv.js';
-import { monthRangePicker, openingWarning, unitPicker } from './report-common.js';
+import { monthRangePicker, openingWarning, unitPicker, monthRangeOptions, printRange, unitPrintOptions } from './report-common.js';
+import { monthlyDoc, docHead } from '../print-forms.js';
+import { normalizeUnit } from '../money.js';
 import { openingDiff } from '../ledger.js';
 
 const OPTIONS = [
@@ -38,6 +40,39 @@ export async function render({ app, outlet, query }) {
       return h('label', { class: 'check small' }, input, label);
     }),
   );
+
+  // 印刷：A4横の推移表。印刷条件：期間・四半期／半期の合計・決算整理の列・0円の科目・金額の単位
+  app.printDoc = ({ printedAt }) => {
+    const r0 = picker.range();
+    return {
+      options: [
+        ...monthRangeOptions(period, r0.fromMonth, r0.toMonth),
+        ...OPTIONS.map(([k, label]) => ({ key: k, label, type: 'check', value: opts[k] })),
+        ...unitPrintOptions(unit.value()),
+        { key: 'orientation', label: '用紙の向き', type: 'select', choices: [['landscape', 'A4横'], ['portrait', 'A4縦']], value: 'landscape' },
+      ],
+      build: (v) => {
+        const r = printRange(period, v);
+        const t = monthlyTrialBalance({ accounts, period, journals, fromMonth: r.fromMonth, toMonth: r.toMonth, quarters: v.q, halves: v.hy, separateAdjusting: v.adj });
+        const rows = [];
+        for (const g of t.groups) {
+          const lines = g.rows.filter((x) => v.zero || x.values.some((n) => n !== 0));
+          if (!lines.length) continue;
+          rows.push({ kind: 'group', label: groupLabel(g.group, entityType), values: g.values });
+          for (const x of lines) rows.push({ kind: 'line', label: x.account.name, values: x.values });
+        }
+        return monthlyDoc({
+          title: '月次推移試算表',
+          head: docHead({ settings, period, ...r, printedAt }),
+          columns: t.columns.map((c) => c.label),
+          sections: [{ rows }],
+          unit: normalizeUnit(v),
+          orientation: v.orientation,
+          notes: ['資産・負債・純資産の科目は各月末の残高、収益・費用の科目はその月の発生額です。'],
+        });
+      },
+    };
+  };
 
   function paint() {
     const { fromMonth, toMonth } = picker.range();
