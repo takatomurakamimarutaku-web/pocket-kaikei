@@ -100,6 +100,8 @@ export function parseBackup(text) {
   if (s.entityType === 'corporation') {
     for (const p of obj.periods) if (openingDiff(p, obj.accounts)) throw new BackupError('期首残高の借方と貸方が一致していません');
   }
+  const sortedPeriods = [...obj.periods].sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
+  if (sortedPeriods.some((p, i) => i > 0 && p.startDate <= sortedPeriods[i - 1].endDate)) throw new BackupError('会計期間が重なっています');
   const periodById = new Map(obj.periods.map((p) => [p.id, p]));
   if (!periodById.has(obj.currentPeriodId)) throw new BackupError('現在の会計期間が見つかりません');
   obj.journals.forEach((j) => {

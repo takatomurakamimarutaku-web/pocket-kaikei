@@ -23,6 +23,8 @@ import * as accountsView from './views/accounts.js';
 import * as accountEditView from './views/account-edit.js';
 import * as openingView from './views/opening.js';
 import * as backupView from './views/backup.js';
+import * as periodsView from './views/periods.js';
+import * as closingView from './views/closing.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先
 const routes = [
@@ -47,6 +49,8 @@ const routes = [
   { path: '/account/new', view: accountEditView, title: '科目の追加', tab: 'more', back: '#/accounts' },
   { path: '/account/:id', view: accountEditView, title: '科目の編集', tab: 'more', back: '#/accounts' },
   { path: '/opening', view: openingView, title: '期首残高', tab: 'more', back: '#/more' },
+  { path: '/periods', view: periodsView, title: '会計期間', tab: 'more', back: '#/more' },
+  { path: '/closing', view: closingView, title: '決算・繰越', tab: 'more', back: '#/more' },
   { path: '/backup', view: backupView, title: 'バックアップ', tab: 'more', back: '#/more' },
 ];
 

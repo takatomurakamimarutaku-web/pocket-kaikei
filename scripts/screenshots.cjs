@@ -187,6 +187,41 @@ mkdirSync(OUT, { recursive: true });
   await go('#/more');
   await shot('16-more');
 
+  // 決算・繰越
+  await go('#/closing');
+  await shot('26-closing', true);
+  await page.fill('#inv-amount', '45000');
+  await page.getByRole('button', { name: '棚卸の仕訳を登録する' }).click();
+  await page.waitForTimeout(500);
+  await page.getByRole('button', { name: '繰り越して次の期間を始める' }).scrollIntoViewIfNeeded();
+  await shot('27-closing-after-inventory', true);
+  await page.getByRole('button', { name: '繰り越して次の期間を始める' }).click();
+  await shot('28-closing-confirm');
+  await page.getByRole('button', { name: '繰り越す', exact: true }).click();
+  await page.waitForTimeout(600);
+  await shot('29-home-next-period', true);
+  await go('#/reports/bs');
+  if (!(await page.locator('.check-line').innerText()).includes('＝')) errors.push('繰越後の期首BSが一致しない');
+  // 前の期間に切り替えて仕訳を追加すると、次の期間で期首残高の更新を促す
+  await go('#/periods');
+  await page.getByRole('button', { name: '表示する' }).click();
+  await page.waitForTimeout(500);
+  await quick('expense', '2026-04-21', 500, '切手', async () => {
+    await slot('経費の科目').locator('.acc-btn').click();
+    await page.fill('.sheet input[type=search]', '通信');
+    await page.locator('.picker-item', { hasText: '通信費' }).first().click();
+  });
+  await register();
+  await go('#/periods');
+  await page.getByRole('button', { name: '表示する' }).click();
+  await page.waitForTimeout(500);
+  await go('#/periods');
+  await shot('30-periods-stale', true);
+  if (!(await page.locator('.notice').count())) errors.push('前期変更後に期首残高の更新を促さない');
+  await page.getByRole('button', { name: '前期末の残高で期首残高を更新' }).click();
+  await page.waitForTimeout(600);
+  if (await page.locator('.notice').count()) errors.push('期首残高の更新後も注意が残る');
+
   console.log(errors.length ? `NG\n${errors.join('\n')}` : 'OK: エラーなし');
   await browser.close();
   process.exit(errors.length ? 1 : 0);

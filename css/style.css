@@ -477,3 +477,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .ch-tip-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; }
 .ch-tip-row .num { font-weight: 700; color: var(--text); }
 .ch-tip-row .num.neg { color: var(--negative); }
+
+/* ---- 会計期間・決算 ---- */
+.period-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.period-row + .period-row { border-top: 1px solid var(--separator); }
+.notice .btn { justify-self: start; }
