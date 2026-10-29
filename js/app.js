@@ -18,6 +18,7 @@ import * as trialView from './views/trial.js';
 import * as monthlyView from './views/monthly.js';
 import * as statementsView from './views/statements.js';
 import * as taxView from './views/tax.js';
+import * as taxReturnView from './views/tax-return.js';
 import * as moreView from './views/more.js';
 import * as settingsView from './views/settings.js';
 import * as accountsView from './views/accounts.js';
@@ -47,6 +48,7 @@ const routes = [
   { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports' },
   { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports' },
   { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports' },
+  { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports' },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },

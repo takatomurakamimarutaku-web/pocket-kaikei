@@ -73,6 +73,8 @@ export const HINTS = {
   inventory: '商品',
   depreciation: '減価償却費',
   accumulated_depreciation: '減価償却累計額',
+  taxes_dues: '租税公課',
+  consumption_tax_payable: '未払消費税等',
 };
 
 /** 事業者ごとに必ず存在する役割 */
@@ -132,7 +134,7 @@ const CORPORATION = [
   ['306', '預り金', 'current_liabilities', N],
   ['307', '仮受金', 'current_liabilities', N],
   ['308', '未払法人税等', 'current_liabilities', N],
-  ['309', '未払消費税等', 'current_liabilities', N],
+  ['309', '未払消費税等', 'current_liabilities', N, { hint: 'consumption_tax_payable' }],
   ['350', '長期借入金', 'fixed_liabilities', N],
   ['351', '役員借入金', 'fixed_liabilities', N, { hint: 'officer_loan' }],
   ['400', '資本金', 'equity', N, { role: 'capital_stock' }],
@@ -167,7 +169,7 @@ const CORPORATION = [
   ['621', '地代家賃', 'sga', T],
   ['622', '賃借料', 'sga', T],
   ['623', '保険料', 'sga', 'purchase_exempt'],
-  ['624', '租税公課', 'sga', N],
+  ['624', '租税公課', 'sga', N, { hint: 'taxes_dues' }],
   ['625', '支払報酬料', 'sga', T],
   ['626', '減価償却費', 'sga', N, { hint: 'depreciation' }],
   ['699', '雑費', 'sga', T],
@@ -218,7 +220,7 @@ const INDIVIDUAL = [
   ['510', '期首商品棚卸高', 'cost_of_sales', N, { role: 'opening_inventory' }],
   ['511', '仕入高', 'cost_of_sales', T, { hint: 'purchases' }],
   ['519', '期末商品棚卸高', 'cost_of_sales', N, { role: 'closing_inventory', contra: true }],
-  ['600', '租税公課', 'sga', N],
+  ['600', '租税公課', 'sga', N, { hint: 'taxes_dues' }],
   ['601', '荷造運賃', 'sga', T],
   ['602', '水道光熱費', 'sga', T],
   ['603', '旅費交通費', 'sga', T],

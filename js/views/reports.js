@@ -9,6 +9,7 @@ const ITEMS = [
   ['#/reports/pl', '損益計算書', '売上から利益（所得）まで'],
   ['#/reports/bs', '貸借対照表', '期末の資産・負債・純資産'],
   ['#/reports/tax', '消費税集計', '税区分別の集計と割り戻しの参考値'],
+  ['#/reports/tax-return', '消費税の申告計算', '一般・簡易・2割特例・3割特例で納める税額'],
 ];
 
 export async function render({ outlet }) {
