@@ -1,0 +1,26 @@
+[package]
+name = "pocket-kaikei"
+version = "0.0.0"
+description = "Pocket会計"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+# 保存ダイアログ（Windows はシステム標準のダイアログ。Linux は手元での動作確認用）
+[target.'cfg(windows)'.dependencies]
+rfd = { version = "0.17", default-features = false, features = ["common-controls-v6"] }
+
+[target.'cfg(not(windows))'.dependencies]
+rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
