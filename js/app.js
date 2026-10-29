@@ -28,6 +28,7 @@ import * as breakdownView from './views/breakdown.js';
 import * as financialView from './views/financial.js';
 import * as propertyTaxView from './views/property-tax.js';
 import * as enterpriseTaxView from './views/enterprise-tax.js';
+import * as incomeTaxView from './views/income-tax.js';
 import * as moreView from './views/more.js';
 import * as settingsView from './views/settings.js';
 import * as accountsView from './views/accounts.js';
@@ -64,6 +65,7 @@ const routes = [
   { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/financial', view: financialView, title: '決算書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/income-tax', view: incomeTaxView, title: '所得税の確定申告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/enterprise-tax', view: enterpriseTaxView, title: '事業税', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/property-tax', view: propertyTaxView, title: '償却資産申告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/breakdown', view: breakdownView, title: '勘定科目内訳明細書', tab: 'reports', back: '#/reports', print: true },
