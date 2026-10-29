@@ -60,7 +60,7 @@ test('不正なファイルは BackupError（貸借不一致・参照切れ・�
     assert.throws(() => parseBackup(JSON.stringify(obj)), (e) => e instanceof BackupError && re.test(e.message));
   };
   assert.throws(() => parseBackup('{'), BackupError);
-  bad((o) => (o.format = 'craft-beer-log-backup'), /ポケット会計/);
+  bad((o) => (o.format = 'craft-beer-log-backup'), /Pocket会計/);
   bad((o) => (o.version = BACKUP_VERSION + 1), /新しいバージョン/);
   bad((o) => (o.journals[0].lines[0].amount = 1000), /一致しません/);
   bad((o) => (o.journals[0].lines[0].amount = 1100.5), /仕訳/);

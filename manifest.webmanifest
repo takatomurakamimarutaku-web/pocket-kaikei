@@ -1,13 +1,13 @@
 {
-  "name": "ポケット会計",
-  "short_name": "ポケット会計",
+  "name": "Pocket会計",
+  "short_name": "Pocket会計",
   "description": "スマホで使う複式簿記の会計アプリ（個人事業主・法人）",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#1f7a63",
+  "theme_color": "#00b386",
   "background_color": "#f4f6f5",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

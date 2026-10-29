@@ -1,4 +1,4 @@
-# ポケット会計（pocket-kaikei）開発メモ
+# Pocket会計（pocket-kaikei）開発メモ
 
 スマートフォンで使う複式簿記の会計PWA。個人事業主（青色申告）と法人の両方に対応する。
 開発はスマホから Claude Code（クラウド環境）で行う。仕様の詳細は `docs/spec-phase1.md`。
