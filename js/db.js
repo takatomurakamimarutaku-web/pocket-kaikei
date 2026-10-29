@@ -3,6 +3,7 @@ import { validateRule } from './bank-import.js';
 import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
 import { historyEntry, journalChanged } from './journal-history.js';
+import { validateTemplate } from './templates.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
@@ -14,8 +15,8 @@ import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 3;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory'];
+export const DB_VERSION = 4;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates'];
 const ALL_STORES = ['meta', ...DATA_STORES];
 
 /** 締めた会計期間を変更しようとしたときのメッセージ */
@@ -54,6 +55,10 @@ export function migrate(db, oldVersion, tx) {
     const history = db.createObjectStore('journalHistory', { keyPath: 'id' });
     history.createIndex('journalId', 'journalId');
     history.createIndex('periodId', 'periodId');
+  }
+  if (oldVersion < 4) {
+    // 定型仕訳・毎月の繰り返し仕訳
+    db.createObjectStore('templates', { keyPath: 'id' });
   }
 }
 
@@ -569,6 +574,32 @@ export class Repository {
     });
   }
 
+  /**
+   * 家事按分の事業割合をまとめて保存する
+   * @param {Object<string, number|null>} ratios 科目の id → 事業割合（%）。null で設定を外す
+   */
+  saveBusinessRatios(ratios) {
+    return this.run(['meta', 'accounts'], 'readwrite', async (tx) => {
+      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+      const store = tx.objectStore('accounts');
+      const all = await req(store.getAll());
+      const ts = now();
+      const errors = [];
+      const saved = [];
+      for (const [id, ratio] of Object.entries(ratios)) {
+        const before = all.find((a) => a.id === id);
+        if (!before) throw new Error('科目が見つかりません');
+        const next = { ...before, businessRatio: ratio ?? null };
+        const e = validateAccount(next, all, { entityType: settings?.entityType });
+        if (e.businessRatio) errors.push(`${before.name}：${e.businessRatio}`);
+        else if ((before.businessRatio ?? null) !== next.businessRatio) saved.push({ ...next, updatedAt: ts });
+      }
+      if (errors.length) throw new ValidationError(errors);
+      for (const a of saved) store.put(a);
+      return saved;
+    });
+  }
+
   /** 目印（hint）の導入前に作った科目に目印を補う。起動時に呼ぶ（変更が無ければ何もしない） */
   fillAccountHints() {
     return this.run(['meta', 'accounts'], 'readwrite', async (tx) => {
@@ -583,12 +614,13 @@ export class Repository {
 
   /** 科目の削除：自分で追加し、どこにも使っていない科目だけ。補助科目も削除する */
   deleteAccount(id) {
-    return this.run(['accounts', 'subAccounts', 'journals', 'periods', 'assets', 'tombstones'], 'readwrite', async (tx) => {
+    return this.run(['accounts', 'subAccounts', 'journals', 'periods', 'assets', 'tombstones', 'templates'], 'readwrite', async (tx) => {
       const acc = await req(tx.objectStore('accounts').get(id));
       if (!acc) return;
       if (acc.template || acc.role) throw new ValidationError(['テンプレートの科目は削除できません。使わない場合は無効にしてください']);
       const { accounts: used } = usedAccountIds(await req(tx.objectStore('journals').getAll()), await req(tx.objectStore('periods').getAll()));
       if (used.has(id)) throw new ValidationError(['仕訳か期首残高で使われているため削除できません。無効にしてください']);
+      if (usedAccountIds(await req(tx.objectStore('templates').getAll()), []).accounts.has(id)) throw new ValidationError(['定型仕訳で使われているため削除できません。定型仕訳を直すか、科目を無効にしてください']);
       if (await req(tx.objectStore('assets').index('accountId').count(id))) throw new ValidationError(['固定資産台帳で使われているため削除できません。無効にしてください']);
       const subs = await req(tx.objectStore('subAccounts').index('accountId').getAll(id));
       for (const s of subs) {
@@ -615,11 +647,36 @@ export class Repository {
   }
 
   deleteSubAccount(id) {
-    return this.run(['subAccounts', 'journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
+    return this.run(['subAccounts', 'journals', 'periods', 'tombstones', 'templates'], 'readwrite', async (tx) => {
       const { subs } = usedAccountIds(await req(tx.objectStore('journals').getAll()), await req(tx.objectStore('periods').getAll()));
       if (subs.has(id)) throw new ValidationError(['仕訳か期首残高で使われているため削除できません。無効にしてください']);
+      if (usedAccountIds(await req(tx.objectStore('templates').getAll()), []).subs.has(id)) throw new ValidationError(['定型仕訳で使われているため削除できません。定型仕訳を直すか、補助科目を無効にしてください']);
       tx.objectStore('subAccounts').delete(id);
       tx.objectStore('tombstones').put(tombstone('subAccounts', id));
+    });
+  }
+
+  // ---- 定型仕訳 ----
+
+  listTemplates() {
+    return this.run(['templates'], 'readonly', async (tx) => (await req(tx.objectStore('templates').getAll())).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja')));
+  }
+
+  saveTemplate(template) {
+    return this.run(['accounts', 'subAccounts', 'templates'], 'readwrite', async (tx) => {
+      const record = { ...template, name: String(template.name ?? '').trim() };
+      const errors = validateTemplate(record, { accounts: await req(tx.objectStore('accounts').getAll()), subAccounts: await req(tx.objectStore('subAccounts').getAll()) });
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...record, updatedAt: now() };
+      tx.objectStore('templates').put(next);
+      return next;
+    });
+  }
+
+  deleteTemplate(id) {
+    return this.run(['templates', 'tombstones'], 'readwrite', async (tx) => {
+      tx.objectStore('templates').delete(id);
+      tx.objectStore('tombstones').put(tombstone('templates', id));
     });
   }
 

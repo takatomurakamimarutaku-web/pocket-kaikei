@@ -11,6 +11,7 @@ import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { periodContext, closedNotice } from './period-common.js';
 import { assetRegister, depreciationLines, findDepreciationJournals, smeUsage } from '../depreciation.js';
+import { householdPlan, householdBases, householdEligible, findHouseholdJournals, isValidRatio, HOUSEHOLD_SOURCE } from '../household.js';
 
 export async function render({ app, outlet }) {
   const data = await app.load();
@@ -149,14 +150,117 @@ export async function render({ app, outlet }) {
     );
   }
 
-  // ---- 3. そのほかの決算整理 ----
+  // ---- 3. 家事按分（個人） ----
+  function householdSection() {
+    const title = h('h2', { class: 'section-title', text: '3. 家事按分' });
+    const done = findHouseholdJournals(journals);
+    if (done.length) {
+      return h(
+        'section',
+        { class: 'panel' },
+        title,
+        h('p', { text: '家事按分の仕訳は登録済みです。' }),
+        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `No.${j.no}（${j.date.replaceAll('-', '/')}）` })))),
+        h('p', { class: 'muted small', text: '経費を追加・修正したときや事業割合を変えたときは、この仕訳を削除してから登録し直してください。' }),
+      );
+    }
+    const bases = householdBases({ accounts, journals, period });
+    const candidates = accounts
+      .filter((a) => householdEligible(a) && (bases.get(a.id) > 0 || a.businessRatio != null))
+      .sort(compareAccounts);
+    if (!candidates.length) return h('section', { class: 'panel' }, title, h('p', { class: 'small', text: 'この期間の経費はまだありません。' }));
+    const ratios = new Map(candidates.map((a) => [a.id, a.businessRatio ?? null]));
+    const errorsEl = h('div');
+    const totalEl = h('span', { class: 'num' });
+    const privCells = new Map();
+    const parseRatio = (v) => {
+      const t = String(v).trim().replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[%％]$/, '');
+      if (t === '') return { ok: true, value: null };
+      const n = Number(t);
+      return isValidRatio(n) ? { ok: true, value: n } : { ok: false };
+    };
+    const planNow = () => householdPlan({ accounts: accounts.map((a) => (ratios.has(a.id) ? { ...a, businessRatio: ratios.get(a.id) } : a)), journals, period });
+    const repaint = () => {
+      const plan = planNow();
+      for (const [id, cell] of privCells) {
+        const r = plan.rows.find((x) => x.account.id === id);
+        put(cell, r ? `${formatYen(r.private)}` : '−');
+      }
+      totalEl.textContent = `${formatYen(plan.total)}円`;
+    };
+    const rows = candidates.map((a) => {
+      const input = h('input', {
+        id: `hh-${a.id}`,
+        type: 'text',
+        inputmode: 'numeric',
+        class: 'ratio-input',
+        placeholder: '−',
+        value: a.businessRatio ?? '',
+        'aria-label': `${a.name}の事業割合（%）`,
+        oninput: (e) => {
+          const p = parseRatio(e.target.value);
+          e.target.classList.toggle('is-invalid', !p.ok);
+          if (p.ok) ratios.set(a.id, p.value);
+          repaint();
+        },
+      });
+      const cell = h('td', { class: 'num' });
+      privCells.set(a.id, cell);
+      return h('tr', {}, h('th', { scope: 'row', text: a.name }), amountCell('td', bases.get(a.id) || 0), h('td', { class: 'ratio-cell' }, input, h('span', { class: 'muted small', text: '%' })), cell);
+    });
+    const save = async () => {
+      const bad = candidates.filter((a) => !parseRatio(document.getElementById(`hh-${a.id}`).value).ok);
+      if (bad.length) return put(errorsEl, errorBox(bad.map((a) => `${a.name}：事業割合は1〜99の整数（%）で入力してください。按分しない科目は空欄にします`)));
+      try {
+        await app.db.saveBusinessRatios(Object.fromEntries(ratios));
+        const plan = planNow();
+        if (!plan.drawings) return put(errorsEl, errorBox(['事業主貸の科目が見つかりません']));
+        if (!plan.lines.length) {
+          showToast('事業割合を保存しました（家事の分が無いため、仕訳は登録していません）');
+          return app.refresh();
+        }
+        const journal = createJournal({ periodId: period.id, date: period.endDate, lines: plan.lines, source: HOUSEHOLD_SOURCE, adjusting: true });
+        const v = validateJournal(journal, { accounts, subAccounts, period });
+        if (v.length) return put(errorsEl, errorBox(v));
+        const saved = await app.db.saveJournal(journal);
+        showToast(`家事按分の仕訳（No.${saved.no}）を登録しました`);
+        app.refresh();
+      } catch (e) {
+        put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));
+      }
+    };
+    const section = h(
+      'section',
+      { class: 'panel' },
+      title,
+      h('p', { class: 'small', text: `地代家賃・水道光熱費・通信費など、事業と家事の両方に使う経費に事業割合を入れると、家事の分を事業主貸へ振り替える仕訳を期末日（${period.endDate.replaceAll('-', '/')}）で登録します。按分しない科目は空欄のままにします。` }),
+      h(
+        'div',
+        { class: 'table-wrap' },
+        h(
+          'table',
+          { class: 'report household' },
+          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: '科目' }), h('th', { scope: 'col', text: '経費の額' }), h('th', { scope: 'col', text: '事業割合' }), h('th', { scope: 'col', text: '家事の分' }))),
+          h('tbody', {}, rows),
+        ),
+      ),
+      h('div', { class: 'kv' }, h('span', { class: 'muted', text: '事業主貸へ振り替える額' }), totalEl),
+      h('p', { class: 'muted small', text: '事業の分は1円未満を切り捨てます。消費税の税区分ごとに分けて振り替えるので、家事の分は課税仕入れから除かれます。割合は使用面積・使用時間など合理的な基準で決め、根拠のメモを残してください（国税庁 No.2210、消費税法基本通達11-1-4）。減価償却費は固定資産台帳の事業専用割合で按分します。' }),
+      errorsEl,
+      h('button', { type: 'button', class: 'btn btn-primary btn-block', text: '事業割合を保存して仕訳を登録する', onclick: save }),
+    );
+    repaint();
+    return section;
+  }
+
+  // ---- そのほかの決算整理 ----
   const others = individual
-    ? ['家事関連費の按分（私用分を事業主貸へ）', '未払・前払の費用、売上の計上漏れ', '貸倒引当金の繰入・繰戻（使う場合）', '消費税等（課税事業者は「帳票 › 消費税の申告計算」から登録できます）']
+    ? ['未払・前払の費用、売上の計上漏れ', '貸倒引当金の繰入・繰戻（使う場合）', '消費税等（課税事業者は「帳票 › 消費税の申告計算」から登録できます）']
     : ['未払費用・前払費用、売上・仕入の計上漏れ', '法人税、住民税及び事業税／未払法人税等', '未払消費税等（課税事業者は「帳票 › 消費税の申告計算」から登録できます）'];
   const othersSection = h(
     'section',
     { class: 'panel' },
-    h('h2', { class: 'section-title', text: '3. そのほかの決算整理' }),
+    h('h2', { class: 'section-title', text: `${individual ? 4 : 3}. そのほかの決算整理` }),
     h('p', { class: 'small', text: '必要なものを振替伝票で、期末日の日付で入力してください。' }),
     h('ul', { class: 'plain-list small' }, others.map((t) => h('li', { text: t }))),
     h('a', { href: '#/journal/new', class: 'btn btn-block', text: '振替伝票で入力する' }),
@@ -164,7 +268,7 @@ export async function render({ app, outlet }) {
 
   // ---- 4. 次の期間へ繰越 ----
   function carrySection() {
-    const title = h('h2', { class: 'section-title', text: '4. 次の期間へ繰り越す' });
+    const title = h('h2', { class: 'section-title', text: `${individual ? 5 : 4}. 次の期間へ繰り越す` });
     if (ctx.next) {
       return h(
         'section',
@@ -242,6 +346,7 @@ export async function render({ app, outlet }) {
     closedNotice(period),
     period.closed ? null : inventorySection(),
     period.closed ? null : depreciationSection(),
+    period.closed || !individual ? null : householdSection(),
     period.closed ? null : othersSection,
     carrySection(),
     h('p', { class: 'center small' }, h('a', { href: '#/backup', class: 'link', text: 'バックアップを取る' })),

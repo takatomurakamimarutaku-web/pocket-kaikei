@@ -6,15 +6,16 @@ import { isYen } from './money.js';
 import { missingRoles } from './db.js';
 import { openingDiff } from './ledger.js';
 import { validateAsset } from './depreciation.js';
+import { validateTemplate } from './templates.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 3;
+export const BACKUP_VERSION = 4;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates'];
 
 /** バックアップの内容（JSON にする前のオブジェクト） */
 export function createBackup(data, { appVersion = '', exportedAt = new Date() } = {}) {
@@ -47,11 +48,13 @@ const UPGRADES = {
   1: (obj) => ({ ...obj, version: 2, assets: [] }),
   // 2 → 3：仕訳の訂正・削除の履歴（journalHistory）を追加
   2: (obj) => ({ ...obj, version: 3, journalHistory: [] }),
+  // 3 → 4：定型仕訳（templates）を追加
+  3: (obj) => ({ ...obj, version: 4, templates: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -132,6 +135,10 @@ export function parseBackup(text) {
   for (const e of obj.journalHistory) {
     if (!hasBase(e) || !isStr(e.journalId) || !isStr(e.at) || !['create', 'update', 'delete', 'restore'].includes(e.action) || !(isObj(e.before) || isObj(e.after))) bad('仕訳の変更履歴');
     unique(e, '仕訳の変更履歴');
+  }
+  for (const t of obj.templates) {
+    if (!hasBase(t) || validateTemplate(t, { accounts: obj.accounts, subAccounts: obj.subAccounts }).length) bad('定型仕訳');
+    unique(t, '定型仕訳');
   }
 
   return {

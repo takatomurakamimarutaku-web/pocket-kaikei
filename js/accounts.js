@@ -453,6 +453,11 @@ export function validateAccount(account, others, { used = false, entityType } = 
   const g = GROUP_BY_ID[account.group];
   if (!g || (g.entity !== 'both' && g.entity !== entityType)) errors.group = '区分を選んでください';
   if (account.normalSide !== 'debit' && account.normalSide !== 'credit') errors.normalSide = '残高の側を選んでください';
+  // 家事按分の事業割合（%）。個人の経費だけ。未設定は null
+  if (account.businessRatio != null) {
+    if (entityType !== 'individual' || account.group !== 'sga' || account.hint === 'depreciation') errors.businessRatio = '事業割合は個人の経費の科目（減価償却費を除く）だけに設定できます';
+    else if (!Number.isInteger(account.businessRatio) || account.businessRatio < 1 || account.businessRatio > 99) errors.businessRatio = '事業割合は1〜99の整数（%）で入力してください';
+  }
   if (before) {
     if (before.role && account.group !== before.group) errors.group = 'この科目は区分を変更できません';
     if (before.role && account.active === false) errors.active = 'この科目は無効にできません';

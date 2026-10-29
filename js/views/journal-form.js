@@ -4,25 +4,36 @@ import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox, taxSe
 import { emptyRow, emptySide, rowsToLines, linesToRows, rowsTotals, validateJournal, memoCandidates, copyForNew } from '../journal.js';
 import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
-import { createJournal } from '../models.js';
+import { createJournal, createTemplate } from '../models.js';
 import { isAdjusting } from '../monthly.js';
 import { normalize } from '../search.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
 import { closedNotice } from './period-common.js';
+import { linesForTemplate, repeatLabel, TEMPLATE_SOURCE } from '../templates.js';
 
 const SIDE_LABEL = { debit: '借方', credit: '貸方' };
 
-export async function render({ app, outlet, params, query }) {
+export async function render({ app, outlet, params, query, route }) {
   const data = await app.load();
   const { settings, period, accounts, subAccounts, journals, accountById } = data;
-  const editing = params.id ? await app.db.getJournal(params.id) : null;
-  if (params.id && !editing) {
+  // 定型仕訳の登録・編集も同じ伝票の画面で行う（日付の代わりに名前と毎月作る日を入れる）
+  const templateMode = route?.kind === 'template';
+  const templates = await app.db.listTemplates();
+  const editingTemplate = templateMode && params.id ? templates.find((t) => t.id === params.id) : null;
+  if (templateMode && params.id && !editingTemplate) {
+    put(outlet, h('p', { class: 'empty', text: 'この定型仕訳は見つかりません' }));
+    return;
+  }
+  const editing = !templateMode && params.id ? await app.db.getJournal(params.id) : null;
+  if (!templateMode && params.id && !editing) {
     put(outlet, h('p', { class: 'empty', text: 'この仕訳は見つかりません（削除された可能性があります）' }));
     return;
   }
-  const source = !editing && query.copy ? journals.find((j) => j.id === query.copy) : null;
+  const source = !editing && (query.copy || query.from) ? journals.find((j) => j.id === (query.copy || query.from)) : null;
+  // 定型仕訳を呼び出した新規入力
+  const fromTemplate = !templateMode && !editing && query.template ? templates.find((t) => t.id === query.template) : null;
 
   // 日付の初期値：編集中はその日付、新規は前回入力した日付（期間外なら今日か期首）
   const lastDate = await app.db.getMeta('lastEntryDate');
@@ -31,8 +42,17 @@ export async function render({ app, outlet, params, query }) {
     return todayString() > period.endDate ? period.endDate : period.startDate;
   };
   let date = editing ? editing.date : defaultDate();
-  let rows = editing ? linesToRows(editing.lines) : source ? linesToRows(copyForNew(source).lines) : [emptyRow()];
-  let dirty = Boolean(source);
+  // 金額0の行（呼び出したときに入れる金額）は空欄にする
+  const templateRows = (t) => linesToRows(t.lines).map((r) => ({ ...r, debit: { ...r.debit, amount: r.debit.amount === '0' ? '' : r.debit.amount }, credit: { ...r.credit, amount: r.credit.amount === '0' ? '' : r.credit.amount } }));
+  let rows = editing ? linesToRows(editing.lines) : editingTemplate ? templateRows(editingTemplate) : fromTemplate ? templateRows(fromTemplate) : source ? linesToRows(copyForNew(source).lines) : [emptyRow()];
+  let dirty = Boolean(source || fromTemplate);
+  const nameInput = h('input', { id: 't-name', type: 'text', maxlength: 30, value: editingTemplate?.name ?? '', placeholder: '例：家賃の支払い' });
+  const repeatSelect = h(
+    'select',
+    { id: 't-repeat' },
+    h('option', { value: '', text: '作らない（呼び出して使う）' }),
+    Array.from({ length: 31 }, (_, i) => i + 1).map((d) => h('option', { value: d, text: repeatLabel(d), selected: editingTemplate?.repeatDay === d })),
+  );
 
   const candidates = memoCandidates(journals).map((c) => ({ ...c, label: c.memo, sub: `${c.count}回`, key: normalize(c.memo), value: c.memo }));
   // 最近使った科目（新しい仕訳から順に）
@@ -59,7 +79,7 @@ export async function render({ app, outlet, params, query }) {
   const rowsEl = h('div', { class: 'jrows' });
   const totalsEl = h('div', { class: 'jtotals', 'aria-live': 'polite' });
   const errorsEl = h('div', { class: 'errors-wrap' });
-  const saveBtn = h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: editing ? '保存する' : '登録する' });
+  const saveBtn = h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: templateMode ? '定型仕訳を保存する' : editing ? '保存する' : '登録する' });
 
   function sideBlock(row, side, index) {
     const s = row[side];
@@ -240,11 +260,12 @@ export async function render({ app, outlet, params, query }) {
         h('span', { class: 'num', text: t.diff ? formatYen(Math.abs(t.diff)) : '0' }),
       ),
     );
-    saveBtn.disabled = t.diff !== 0 || t.debit === 0;
+    // 定型仕訳は金額を空欄（呼び出したときに入れる）にできる
+    saveBtn.disabled = t.diff !== 0 || (!templateMode && t.debit === 0);
   }
 
   // 締めた期間の仕訳は表示のみ（編集中の仕訳はその仕訳の期間、新規は表示中の期間で判定）
-  const locked = editing ? (await app.db.listPeriods()).find((p) => p.id === editing.periodId)?.closed : period.closed;
+  const locked = templateMode ? false : editing ? (await app.db.listPeriods()).find((p) => p.id === editing.periodId)?.closed : period.closed;
   if (locked) {
     app.setTitle(editing ? '仕訳の表示' : '仕訳の入力');
     put(outlet, closedNotice({ closed: true }), editing ? journalCardLike(editing) : null);
@@ -269,12 +290,20 @@ export async function render({ app, outlet, params, query }) {
 
   const form = h(
     'form',
-    { class: 'journal-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), save()) },
+    { class: 'journal-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), templateMode ? saveTemplate() : save()) },
     editing ? h('p', { class: 'muted small', text: `No.${editing.no}` }) : null,
-    source ? h('p', { class: 'notice', text: `No.${source.no} を複製しました。日付を確認して登録してください。` }) : null,
-    field('日付', dateInput, { name: 'date' }),
+    source && !templateMode ? h('p', { class: 'notice', text: `No.${source.no} を複製しました。日付を確認して登録してください。` }) : null,
+    fromTemplate ? h('p', { class: 'notice', text: `定型仕訳「${fromTemplate.name}」を呼び出しました。日付と金額を確認して登録してください。` }) : null,
+    templateMode
+      ? [
+          source ? h('p', { class: 'notice', text: `No.${source.no} の内容から定型仕訳を作ります。名前を付けて保存してください。` }) : null,
+          field('名前', nameInput, { name: 'name' }),
+          field('毎月作る', repeatSelect, { name: 'repeatDay', hint: '日を選ぶと「定型仕訳」画面の「毎月の仕訳を作る」でまとめて登録できます。毎月作るものはすべての金額を入れてください。31日を超える月は月末日になります' }),
+          h('p', { class: 'muted small', text: '金額を空欄にすると、呼び出したときに入力します。' }),
+        ]
+      : field('日付', dateInput, { name: 'date' }),
     rowsEl,
-    h('label', { class: 'check small adjusting-check' }, adjustingInput, '決算整理仕訳（月次推移の試算表で「決算整理」の列に分けて表示）'),
+    templateMode ? null : h('label', { class: 'check small adjusting-check' }, adjustingInput, '決算整理仕訳（月次推移の試算表で「決算整理」の列に分けて表示）'),
     errorsEl,
     h('div', { class: 'form-footer' }, totalsEl, saveBtn),
     editing
@@ -282,9 +311,11 @@ export async function render({ app, outlet, params, query }) {
           'div',
           { class: 'actions' },
           h('a', { href: `#/journal/new?copy=${encodeURIComponent(editing.id)}`, class: 'btn', text: '複製して新規入力' }),
+          h('a', { href: `#/template/new?from=${encodeURIComponent(editing.id)}`, class: 'btn', text: '定型仕訳に登録' }),
           h('button', { type: 'button', class: 'btn btn-danger-text', text: '削除', onclick: remove }),
         )
       : null,
+    editingTemplate ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn btn-danger-text', text: '定型仕訳を削除', onclick: removeTemplate })) : null,
   );
   paintRows();
   put(outlet, form);
@@ -308,7 +339,9 @@ export async function render({ app, outlet, params, query }) {
 
   async function save() {
     const { lines, errors } = rowsToLines(rows);
-    const journal = editing ? { ...editing, date, lines, adjusting: adjustingInput.checked } : createJournal({ periodId: period.id, date, lines, adjusting: adjustingInput.checked });
+    const journal = editing
+      ? { ...editing, date, lines, adjusting: adjustingInput.checked }
+      : createJournal({ periodId: period.id, date, lines, adjusting: adjustingInput.checked, ...(fromTemplate ? { source: TEMPLATE_SOURCE, sourceId: fromTemplate.id } : {}) });
     const all = [...errors, ...validateJournal(journal, { accounts, subAccounts, period, original: editing })];
     if (all.length) {
       showErrorList([...new Set(all)]);
@@ -327,7 +360,7 @@ export async function render({ app, outlet, params, query }) {
       }
       // 続けて入力できるよう、日付を残して伝票を空にする
       showToast(`No.${saved.no} を登録しました`, { actionLabel: '仕訳帳へ', onAction: () => app.navigate(`#/journals?month=${date.slice(0, 7)}`), duration: 5000 });
-      if (source) {
+      if (source || fromTemplate) {
         app.navigate('#/journal/new', { replace: true });
         return;
       }
@@ -342,6 +375,51 @@ export async function render({ app, outlet, params, query }) {
       else showToast(errorText(e, '保存'));
       paintTotals();
     }
+  }
+
+  // 定型仕訳の保存（金額の空欄は0＝呼び出したときに入れる）
+  async function saveTemplate() {
+    const lines = [];
+    const errors = [];
+    rows.forEach((row, i) => {
+      for (const side of ['debit', 'credit']) {
+        const sd = row[side];
+        if (!sd.accountId && String(sd.amount ?? '').trim() === '') continue;
+        const p = String(sd.amount ?? '').trim() === '' ? { ok: true, value: 0 } : parseYen(sd.amount, { allowZero: true });
+        if (!p.ok) errors.push(`${i + 1}行目（${SIDE_LABEL[side]}）：${p.error}`);
+        lines.push({ side, accountId: sd.accountId, subAccountId: sd.subAccountId || null, amount: p.ok ? p.value : NaN, taxCategory: sd.taxCategory || 'none', memo: String(row.memo ?? '').trim() });
+      }
+    });
+    if (errors.length) return showErrorList(errors);
+    const base = editingTemplate || createTemplate();
+    const record = { ...base, name: nameInput.value, repeatDay: repeatSelect.value ? Number(repeatSelect.value) : null, lines: linesForTemplate(lines) };
+    try {
+      await app.db.saveTemplate(record);
+      dirty = false;
+      app.leaveGuard = null;
+      showToast(`定型仕訳「${record.name.trim()}」を保存しました`);
+      app.navigate('#/templates', { replace: true });
+    } catch (e) {
+      if (e instanceof ValidationError) showErrorList(Array.isArray(e.errors) ? e.errors : Object.values(e.errors));
+      else showToast(errorText(e, '保存'));
+    }
+  }
+
+  async function removeTemplate() {
+    const ok = await confirmDialog({
+      title: `定型仕訳「${editingTemplate.name}」を削除しますか？`,
+      message: 'この定型仕訳から作った仕訳は残ります。',
+      buttons: [
+        { label: 'キャンセル', value: false },
+        { label: '削除する', value: true, variant: 'danger' },
+      ],
+    });
+    if (!ok) return;
+    await app.db.deleteTemplate(editingTemplate.id);
+    dirty = false;
+    app.leaveGuard = null;
+    showToast('削除しました');
+    app.navigate('#/templates', { replace: true });
   }
 
   async function remove() {
