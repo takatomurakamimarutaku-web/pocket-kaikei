@@ -1,4 +1,4 @@
-# 所得税の確定申告書（個人・v0.24.0）
+# 所得税の確定申告書（個人・v0.25.0）
 
 `js/income-tax.js`（純粋関数）・`#/reports/income-tax`。入力は `period.incomeTaxReturn`（`saveIncomeTaxReturn`）。
 
