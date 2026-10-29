@@ -3,6 +3,7 @@ import { linesToRows } from './journal.js';
 import { TAX_BY_CODE } from './tax.js';
 import { groupLabel } from './accounts.js';
 import { METHOD_BY_ID, CATEGORY_BY_ID, usesLife } from './depreciation.js';
+import { eraOf } from './property-tax.js';
 
 export const BOM = '﻿';
 
@@ -185,5 +186,23 @@ export function breakdownCsv(forms) {
     out.push(f.columns.map((c, i) => (i === 0 ? '計' : i < first ? '' : c.num ? (c.key === 'amount' ? f.total : f.rows.reduce((s, r) => s + (r[c.key] || 0), 0)) : '')));
     out.push([]);
   }
+  return toCsv(out);
+}
+
+/** 償却資産申告書：申告書（種類別の集計）・種類別明細書（全資産用・減少資産用） */
+export function propertyTaxCsv(r) {
+  const era = (d) => {
+    const e = eraOf(d);
+    return `${e.era}${e.year}年${e.month}月`;
+  };
+  const out = [[`償却資産申告書（${r.label}　${r.year}年1月1日現在）`], ['資産の種類', '前年前に取得したもの(イ)', '前年中に減少したもの(ロ)', '前年中に取得したもの(ハ)', '計(ニ)', '評価額(参考)']];
+  for (const k of r.kinds) out.push([`${k.id} ${k.label}`, k.before, k.decrease, k.increase, k.total, k.value]);
+  out.push(['合計', ...['before', 'decrease', 'increase', 'total', 'value'].map((key) => r.kinds.reduce((s, k) => s + k[key], 0))]);
+  out.push(['課税標準額（参考）', r.taxBase], ['税額（参考・1.4%）', r.tax], []);
+  out.push(['種類別明細書（全資産用）'], ['資産の種類', '資産番号', '資産の名称等', '数量', '取得年月', '取得価額', '耐用年数', '減価残存率', '評価額', '増加資産']);
+  for (const it of r.items) out.push([it.kind, it.asset.assetNo || '', it.asset.name, it.asset.quantity ?? 1, era(it.asset.acquiredOn), it.asset.cost, it.life ?? '', it.residual ? (it.residual / 1000).toFixed(3) : '', it.value, it.increase ? '増' : '']);
+  out.push([]);
+  out.push(['種類別明細書（減少資産用）'], ['資産の種類', '資産番号', '資産の名称等', '数量', '取得年月', '取得価額', '耐用年数', '減少の事由']);
+  for (const d of r.decreases) out.push([d.kind, d.asset.assetNo || '', d.asset.name, d.asset.quantity ?? 1, era(d.asset.acquiredOn), d.asset.cost, d.life ?? '', d.reason]);
   return toCsv(out);
 }
