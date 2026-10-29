@@ -111,7 +111,7 @@ export async function render({ app, outlet, query }) {
     );
     rows.push(h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '計' }), h('td', { colspan: 7 }), amountCell('td', t.total.amount), h('td'), amountCell('td', t.total.business), amountCell('td', t.total.closing), h('td')));
     return [
-      t.rows.length ? h('p', { class: 'muted small', text: '表は横にスクロールできます（償却方法・耐用年数・償却率・本年分の償却費・事業専用割合・未償却残高）。' }) : null,
+      t.rows.length ? h('p', { class: 'muted small no-print', text: '表は横にスクロールできます（償却方法・耐用年数・償却率・本年分の償却費・事業専用割合・未償却残高）。' }) : null,
       t.rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'report blue-return br-wide' }, h('caption', { text: '減価償却費の計算' }), head, h('tbody', {}, rows))) : h('p', { class: 'muted small' }, '固定資産台帳に資産がありません。', h('a', { class: 'link', href: '#/assets', text: '固定資産台帳' })),
       t.total.business !== is.lines[18] ? h('p', { class: 'notice', text: `必要経費算入額の計（${formatYen(t.total.business)}円）と損益計算書の⑱減価償却費（${formatYen(is.lines[18])}円）が違います。決算・繰越の画面で減価償却の仕訳を確かめてください。` }) : null,
       h('p', { class: 'muted small', text: '利子割引料・税理士等の報酬の内訳、本年中における特殊事情は、確定申告書等作成コーナーで入力してください。' }),
@@ -149,7 +149,15 @@ export async function render({ app, outlet, query }) {
   function paint() {
     history.replaceState(history.state, '', `#/reports/blue-return?page=${page}`);
     const is = blueIncomeStatement({ accounts, period, journals, deduction });
-    put(body, ...{ 1: page1, 2: page2, 3: page3, 4: page4 }[page](is));
+    // 4ページとも作り、画面では選んだページだけ見せる（印刷では全ページを1ページずつ出す）
+    const pages = [page1, page2, page3, page4];
+    const titles = ['損益計算書', '月別売上（収入）金額及び仕入金額', '減価償却費の計算', '貸借対照表（資産負債調）'];
+    put(
+      body,
+      pages.map((fn, i) =>
+        h('section', { class: `br-page${String(i + 1) === page ? '' : ' is-off'}` }, h('h2', { class: 'print-only br-page-title', text: `青色申告決算書（一般用）${i + 1}ページ　${titles[i]}` }), fn(is)),
+      ),
+    );
   }
 
   const deductionSelect = h(
@@ -167,10 +175,10 @@ export async function render({ app, outlet, query }) {
 
   put(
     outlet,
-    h('p', { class: 'muted small', text: `${formatPeriod(period)}・${settings.businessName}` }),
+    h('p', { class: 'muted small no-print', text: `${formatPeriod(period)}・${settings.businessName}` }),
     h(
       'section',
-      { class: 'panel' },
+      { class: 'panel no-print' },
       field('青色申告特別控除額', deductionSelect, { hint: '65万円・55万円は複式簿記で、貸借対照表を添付して期限内に申告する場合。令和9年分以後は75万円が加わり、55万円・10万円の扱いが変わります（国税庁の案内で確認してください）' }),
       segmented({
         name: 'ページ',
@@ -190,7 +198,7 @@ export async function render({ app, outlet, query }) {
     body,
     h(
       'div',
-      { class: 'panel small muted' },
+      { class: 'panel small muted no-print' },
       h('p', { text: '国税庁の青色申告決算書（一般用）の欄の並びで集計しています。確定申告書等作成コーナーや e-Tax に転記するときの数字としてお使いください。' }),
       h('p', { text: '科目と欄の対応は勘定科目のテンプレートのコードで決めています。自分で追加した科目は空欄の行（経費は㉕〜㉚）に入ります。' }),
       h('p', { text: '出典：国税庁「令和7年分 青色申告決算書（一般用）の書き方」、「青色申告特別控除の見直し（令和9年分以後）」' }),

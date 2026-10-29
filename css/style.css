@@ -132,6 +132,17 @@ p { margin: 0.25em 0; }
 }
 .back-btn:active { background: var(--surface-2); }
 .back-btn svg { width: 24px; height: 24px; }
+.print-btn {
+  grid-column: 3; grid-row: 1;
+  display: grid; place-items: center; width: 44px; height: 44px;
+  border: 0; background: none; color: var(--primary-strong); border-radius: 50%;
+}
+.print-btn[hidden] { display: none; }
+.print-btn:active { background: var(--surface-2); }
+.print-btn svg { width: 24px; height: 24px; }
+.app-header.is-root:has(.print-btn:not([hidden])) { grid-template-columns: 1fr 44px; }
+.app-header.is-root .print-btn { grid-column: 2; }
+.print-head, .print-only { display: none; }
 
 /* ---- 本体 ---- */
 .view {
@@ -392,6 +403,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .blue-return .br-no { width: 1.8em; padding-right: 0; color: var(--muted); text-align: center; }
 .blue-return.br-wide { min-width: 640px; }
 .blue-return.br-wide th, .blue-return.br-wide td { white-space: nowrap; }
+.br-page.is-off { display: none; }
 
 /* 科目・期首残高 */
 .acc-row { display: grid; grid-template-columns: 3em 1fr; gap: 10px; align-items: center; padding: 10px 16px; color: inherit; text-decoration: none; min-height: 52px; }
@@ -509,3 +521,47 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .bi-counter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .bi-counter .acc-btn.is-empty { border-style: dashed; color: var(--muted); }
 details.panel > summary { cursor: pointer; list-style: revert; }
+
+/* ---- 印刷（iPhone は共有 →「プリント」でPDFにも保存できる） ----
+ * 帳票だけを白地・黒字で出す。操作部品・タブ・ヘッダーは消し、印刷の見出し（事業者名・期間・印刷日）を出す。 */
+@media print {
+  :root {
+    --bg: #fff; --surface: #fff; --surface-2: #eef1f0; --text: #000; --muted: #444;
+    --border: #bbb; --separator: #ccc; --card-border: #ccc; --shadow: none; --shadow-sm: none;
+    --primary: #1f7a63; --primary-strong: #17614f; --negative: #b3261e;
+    --warn-bg: #fff; --warn-text: #000; --ok-bg: #fff; --ok-text: #000;
+    color-scheme: light;
+  }
+  @page { size: A4; margin: 10mm; }
+  body { background: #fff; color: #000; font-size: 10pt; }
+  .app-header, .tabbar, .update-banner, .toast-root, .no-print,
+  button, input[type="checkbox"], input[type="search"], label.check, .segmented { display: none !important; }
+  .jcard { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+  select { appearance: none; -webkit-appearance: none; width: auto; min-height: 0; border: 0; background: none; padding: 0; font-weight: 700; color: #000; }
+  .print-head { display: flex; flex-wrap: wrap; gap: 2px 16px; align-items: baseline; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1.5px solid #000; }
+  .print-head p { margin: 0; font-size: 9pt; }
+  .print-head .print-title { font-size: 14pt; font-weight: 800; margin-right: auto; }
+  .print-only { display: block; }
+  .view { max-width: none; margin: 0; padding: 0; }
+  .view.view-enter { animation: none; }
+  .panel { box-shadow: none; border: 1px solid #ccc; border-radius: 6px; }
+  .table-wrap { overflow: visible; margin: 0 0 8px; padding: 0; }
+  .report { box-shadow: none; border-radius: 0; font-size: 9pt; }
+  .report thead { display: table-header-group; }
+  .report tr { break-inside: avoid; }
+  .report th, .report td { padding: 3px 4px; border-bottom-color: #ccc; }
+  .report a, a { color: inherit; text-decoration: none; border: 0; }
+  .blue-return { font-size: 8pt; line-height: 1.3; }
+  .blue-return th, .blue-return td { padding: 1px 4px; }
+  .blue-return.br-wide { min-width: 0; font-size: 7pt; }
+  .blue-return.br-wide th, .blue-return.br-wide td { white-space: normal; }
+  .blue-return.br-wide td.num { white-space: nowrap; width: auto; }
+  .blue-return.br-wide tbody th { min-width: 7em; }
+  .blue-return.br-wide td:not(.num) { min-width: 3.5em; }
+  .br-page.is-off { display: block; }
+  .br-page + .br-page { break-before: page; }
+  .br-page-title { font-size: 11pt; margin: 0 0 4px; }
+  .br-page h2:not(.br-page-title), .blue-return caption { font-size: 10pt; margin: 6px 0 2px; padding: 0; }
+  .blue-return th .block { display: inline; margin-left: 6px; }
+  .notice { border-color: #999; }
+}

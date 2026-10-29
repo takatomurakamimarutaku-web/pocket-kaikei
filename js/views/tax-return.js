@@ -136,7 +136,7 @@ export async function render({ app, outlet }) {
       const booked = done.reduce((s, j) => s + j.lines.filter((l) => l.side === 'debit').reduce((t, l) => t + l.amount, 0), 0);
       return h(
         'section',
-        { class: 'panel' },
+        { class: 'panel no-print' },
         title,
         h('p', {}, '消費税等の仕訳は登録済みです（', h('a', { class: 'link', href: `#/journal/${encodeURIComponent(done[0].id)}/edit`, text: `No.${done[0].no}` }), '）。'),
         booked !== r.payable ? h('p', { class: 'notice', text: `いまの計算の納付税額（${formatYen(r.payable)}円）と仕訳の金額（${formatYen(booked)}円）が違います。仕訳を直してください。` }) : null,
@@ -144,7 +144,7 @@ export async function render({ app, outlet }) {
     }
     return h(
       'section',
-      { class: 'panel' },
+      { class: 'panel no-print' },
       title,
       h('p', { class: 'small', text: `税込経理なので、納める消費税等を期末日（${period.endDate.replaceAll('-', '/')}）の仕訳で租税公課にします（中間納付は支払ったときに租税公課にしている前提で、残りの${formatYen(Math.max(0, r.payable))}円）。` }),
       errorsEl,
@@ -180,7 +180,7 @@ export async function render({ app, outlet }) {
     settings.taxStatus === 'exempt' ? h('div', { class: 'notice', text: '免税事業者として設定されています。申告は不要です（参考の計算です）。' }) : null,
     h(
       'section',
-      { class: 'panel' },
+      { class: 'panel no-print' },
       field(
         '計算の方法',
         segmented({
