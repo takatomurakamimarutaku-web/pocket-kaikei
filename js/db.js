@@ -8,7 +8,7 @@ import { validateBudget } from './budget.js';
 import { validateAttachment, sha256Hex, toArrayBuffer, EDITABLE_FIELDS } from './attachments.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts, realEstateAccounts } from './accounts.js';
-import { validatePeriod, addDays } from './period.js';
+import { validatePeriod, addDays, isValidDate } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId, createAccount, createBudget, createSubAccount } from './models.js';
@@ -23,10 +23,11 @@ import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js'
 import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
 import { validateInvoice, validateInvoiceSettings, normalizeRegistrationNo, isDuplicateNumber, invoiceJournal, postingDate, compareInvoices, INVOICE_KINDS } from './invoices.js';
+import { validateEmployee, validatePayroll, validatePayrollSettings, payrollJournal, paymentJournal, compareEmployees, comparePayrolls, PayrollSetupError, PAYMENT_KINDS, DEPOSIT_KINDS, PAYROLL_ACCOUNT_FIELDS } from './payroll.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 9;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices'];
+export const DB_VERSION = 10;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices', 'employees', 'payrolls'];
 /** 証憑の添付（バックアップで画像を含めないときは書き出し・置き換えの対象から外す） */
 export const ATTACHMENT_STORES = ['attachments', 'attachmentData'];
 const ALL_STORES = ['meta', ...DATA_STORES];
@@ -103,6 +104,11 @@ export function migrate(db, oldVersion, tx) {
   if (oldVersion < 9) {
     // 請求書・見積書
     db.createObjectStore('invoices', { keyPath: 'id' });
+  }
+  if (oldVersion < 10) {
+    // 給与計算：従業員と、給与・賞与の支給
+    db.createObjectStore('employees', { keyPath: 'id' });
+    db.createObjectStore('payrolls', { keyPath: 'id' }).createIndex('employeeId', 'employeeId');
   }
 }
 
@@ -268,6 +274,74 @@ function cleanInvoice(inv, stamps) {
     return { ...base, deliveryFrom: inv.deliveryFrom, deliveryTo: inv.deliveryTo || '', dueDate: inv.dueDate || '', revenueAccountId: inv.revenueAccountId, estimateId: inv.estimateId || null, journalId: inv.journalId ?? null, issuedAt: inv.issuedAt ?? null, voidedAt: inv.voidedAt ?? null };
   }
   return { ...base, validUntil: inv.validUntil || '', invoiceId: inv.invoiceId ?? null };
+}
+
+const cleanText = (v) => String(v ?? '').trim();
+/** 支給・控除の明細（名前も金額も空の行は捨てる） */
+const cleanItems = (items) => (Array.isArray(items) ? items : []).map((x) => ({ name: cleanText(x?.name), amount: x?.amount ?? 0 })).filter((x) => x.name || x.amount);
+
+/** 従業員の保存する形 */
+function cleanEmployee(e, stamps) {
+  return {
+    id: e.id || newId(),
+    name: cleanText(e.name),
+    kana: cleanText(e.kana),
+    kind: e.kind,
+    taxColumn: e.taxColumn,
+    dependents: e.taxColumn === 'kou' ? e.dependents : 0,
+    earnings: cleanItems(e.earnings),
+    commute: e.commute ?? 0,
+    health: e.health ?? 0,
+    pension: e.pension ?? 0,
+    employmentRate: e.employmentRate ?? null,
+    residentTax: e.residentTax ?? 0,
+    deductions: cleanItems(e.deductions),
+    note: cleanText(e.note),
+    active: e.active !== false,
+    sortOrder: e.sortOrder ?? 0,
+    ...stamps,
+  };
+}
+
+/** 給与（賞与）の保存する形 */
+function cleanPayroll(p, stamps) {
+  return {
+    id: p.id || newId(),
+    employeeId: p.employeeId,
+    kind: p.kind,
+    payDate: p.payDate,
+    title: cleanText(p.title),
+    name: cleanText(p.name),
+    employeeKind: p.employeeKind,
+    taxColumn: p.taxColumn,
+    dependents: p.taxColumn === 'kou' ? p.dependents : 0,
+    employmentRate: p.employmentRate ?? null,
+    earnings: cleanItems(p.earnings),
+    commute: p.commute ?? 0,
+    health: p.health ?? 0,
+    pension: p.pension ?? 0,
+    employment: p.employment ?? 0,
+    employmentAuto: !!p.employmentAuto && p.employmentRate != null,
+    incomeTax: p.incomeTax ?? 0,
+    incomeTaxAuto: !!p.incomeTaxAuto,
+    residentTax: p.residentTax ?? 0,
+    deductions: cleanItems(p.deductions),
+    ...(p.kind === 'bonus' ? { prevAfterSocial: p.prevAfterSocial ?? 0, longPeriod: !!p.longPeriod } : {}),
+    note: cleanText(p.note),
+    journalId: p.journalId ?? null,
+    postedAt: p.postedAt ?? null,
+    ...stamps,
+  };
+}
+
+/** 給与の仕訳・納付の仕訳の科目が決まっていないときは、画面に出せる ValidationError にする */
+function payrollBuild(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof PayrollSetupError) throw new ValidationError([e.message]);
+    throw e;
+  }
 }
 
 /** 一部を売却・除却した資産（分けた元・分けた資産）で変えられない項目（償却の計算が変わり、分けた帳簿価額と合わなくなる） */
@@ -962,6 +1036,11 @@ export class Repository {
     return this.run(['journals'], 'readonly', (tx) => req(tx.objectStore('journals').get(id)));
   }
 
+  /** すべての会計期間から、作った機能（source）が同じ仕訳を探す（給与の納付の仕訳など） */
+  listJournalsBySource(source) {
+    return this.run(['journals'], 'readonly', async (tx) => (await req(tx.objectStore('journals').getAll())).filter((j) => j.source === source));
+  }
+
   /**
    * 仕訳の保存。同じトランザクションで科目・期間を読み、貸借一致などを再検証する。
    * 新規のときは期間の通し番号を採番する（削除しても番号は詰めない）
@@ -1193,6 +1272,199 @@ export class Repository {
       const next = { ...inv, status: 'void', voidedAt: at, updatedAt: at };
       store.put(next);
       return { invoice: next, journal };
+    });
+  }
+
+  // ---- 給与計算 ----
+
+  listEmployees() {
+    return this.run(['employees'], 'readonly', async (tx) => (await req(tx.objectStore('employees').getAll())).sort(compareEmployees));
+  }
+
+  getEmployee(id) {
+    return this.run(['employees'], 'readonly', (tx) => req(tx.objectStore('employees').get(id)));
+  }
+
+  /** 従業員の追加・更新。新しい人は並びの最後にする */
+  saveEmployee(e) {
+    return this.run(['meta', 'employees'], 'readwrite', async (tx) => {
+      const settings = (await req(tx.objectStore('meta').get('settings')))?.value;
+      const store = tx.objectStore('employees');
+      const original = e.id ? (await req(store.get(e.id))) || null : null;
+      const all = await req(store.getAll());
+      const at = now();
+      const record = cleanEmployee({ ...e, sortOrder: original?.sortOrder ?? all.reduce((m, x) => Math.max(m, x.sortOrder ?? 0), 0) + 1 }, { createdAt: original?.createdAt ?? at, updatedAt: at });
+      const errors = validateEmployee(record, { entityType: settings?.entityType });
+      if (Object.keys(errors).length) throw new ValidationError(errors);
+      store.put(record);
+      return record;
+    });
+  }
+
+  /** 従業員の削除：給与の記録が無い人だけ（記録がある人は「在籍していない」にする） */
+  deleteEmployee(id) {
+    return this.run(['employees', 'payrolls', 'tombstones'], 'readwrite', async (tx) => {
+      if (await req(tx.objectStore('payrolls').index('employeeId').count(id))) throw new ValidationError(['給与の記録があるため削除できません。辞めた人は「在籍」を外してください']);
+      tx.objectStore('employees').delete(id);
+      tx.objectStore('tombstones').put(tombstone('employees', id));
+    });
+  }
+
+  listPayrolls() {
+    return this.run(['payrolls', 'employees'], 'readonly', async (tx) => {
+      const employees = (await req(tx.objectStore('employees').getAll())).sort(compareEmployees);
+      const order = new Map(employees.map((e, i) => [e.id, i]));
+      return (await req(tx.objectStore('payrolls').getAll())).sort(comparePayrolls(order));
+    });
+  }
+
+  getPayroll(id) {
+    return this.run(['payrolls'], 'readonly', (tx) => req(tx.objectStore('payrolls').get(id)));
+  }
+
+  /** 給与（賞与）の保存。仕訳を登録した給与は変えられない（計上を取り消してから直す） */
+  savePayroll(p) {
+    return this.createPayrolls([p]).then((list) => list[0]);
+  }
+
+  /** 給与（賞与）をまとめて保存する（すべて検証してから書く） */
+  createPayrolls(list) {
+    return this.run(['payrolls', 'employees'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('payrolls');
+      const employees = await req(tx.objectStore('employees').getAll());
+      const at = now();
+      const records = [];
+      const errors = [];
+      for (const p of list) {
+        const original = p.id ? (await req(store.get(p.id))) || null : null;
+        if (original?.journalId) throw new ValidationError(['仕訳を登録した給与は変更できません。直すときは「計上を取り消す」を押してください']);
+        const record = cleanPayroll({ ...p, journalId: null, postedAt: null }, { createdAt: original?.createdAt ?? at, updatedAt: at });
+        const e = validatePayroll(record, { employees });
+        errors.push(...e.map((m) => (list.length > 1 ? `${record.name}：${m}` : m)));
+        records.push(record);
+      }
+      if (errors.length) throw new ValidationError(errors);
+      for (const r of records) store.put(r);
+      return records;
+    });
+  }
+
+  /** 削除：仕訳を登録していない給与だけ */
+  deletePayroll(id) {
+    return this.run(['payrolls', 'tombstones'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('payrolls');
+      const p = await req(store.get(id));
+      if (!p) return null;
+      if (p.journalId) throw new ValidationError(['仕訳を登録した給与は削除できません。先に「計上を取り消す」を押してください']);
+      store.delete(id);
+      tx.objectStore('tombstones').put(tombstone('payrolls', id));
+      return p;
+    });
+  }
+
+  /**
+   * 給与の仕訳を登録する（支給日を含む会計期間）。まとめて登録するときも1つのトランザクションで、1件でも登録できなければ何もしない
+   * 仕訳を登録した給与でも、仕訳が消されていればもう一度登録できる
+   * @returns {Promise<Array<{ payroll, journal }>>}
+   */
+  postPayrolls(ids) {
+    return this.run(['meta', 'payrolls', 'employees', 'accounts', 'subAccounts', 'periods', 'journals'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('payrolls');
+      const [settings, employees, accounts, periods] = await Promise.all([
+        req(tx.objectStore('meta').get('settings')).then((m) => m?.value),
+        req(tx.objectStore('employees').getAll()),
+        req(tx.objectStore('accounts').getAll()),
+        req(tx.objectStore('periods').getAll()),
+      ]);
+      const out = [];
+      for (const id of ids) {
+        const p = await req(store.get(id));
+        if (!p) throw new ValidationError(['給与が見つかりません']);
+        const who = ids.length > 1 ? `${p.name}（${p.payDate.replaceAll('-', '/')}）：` : '';
+        if (p.journalId && (await req(tx.objectStore('journals').get(p.journalId)))) throw new ValidationError([`${who}この給与の仕訳はもう登録してあります`]);
+        const errors = validatePayroll(p, { employees });
+        if (errors.length) throw new ValidationError(errors.map((m) => who + m));
+        const period = periods.find((x) => x.startDate <= p.payDate && p.payDate <= x.endDate);
+        if (!period) throw new ValidationError([`${who}支給日（${p.payDate.replaceAll('-', '/')}）を含む会計期間がありません。会計期間の画面で期間を作ってから登録してください`]);
+        if (period.closed) throw new ValidationError([who + CLOSED_PERIOD_MESSAGE]);
+        let journal;
+        try {
+          journal = await putJournal(tx, payrollBuild(() => payrollJournal(p, { accounts, settings, periodId: period.id })));
+        } catch (e) {
+          if (e instanceof ValidationError && who) throw new ValidationError([].concat(e.errors).map((m) => who + m));
+          throw e;
+        }
+        const at = now();
+        const next = { ...p, journalId: journal.id, postedAt: at, updatedAt: at };
+        store.put(next);
+        out.push({ payroll: next, journal });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * 計上の取消：給与の仕訳を削除して（訂正・削除の履歴に残る）、給与を直せるようにする
+   * 仕訳の会計期間を締めてあるときは取り消せない
+   * @returns {Promise<{ payroll, journal: object|null }>}
+   */
+  unpostPayroll(id) {
+    return this.run(['payrolls', 'periods', 'journals', 'tombstones'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('payrolls');
+      const p = await req(store.get(id));
+      if (!p) throw new ValidationError(['給与が見つかりません']);
+      if (!p.journalId) throw new ValidationError(['この給与の仕訳はまだ登録していません']);
+      const journal = (await req(tx.objectStore('journals').get(p.journalId))) || null;
+      if (journal) {
+        if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+        tx.objectStore('journals').delete(journal.id);
+        tx.objectStore('tombstones').put(tombstone('journals', journal.id));
+        tx.objectStore('journalHistory').put(historyEntry('delete', journal, null, now()));
+      }
+      const at = now();
+      const next = { ...p, journalId: null, postedAt: null, updatedAt: at };
+      store.put(next);
+      return { payroll: next, journal };
+    });
+  }
+
+  /** 給与の設定（科目・預り金の補助科目・納期の特例）。設定の payroll に持つ（バックアップに入る） */
+  savePayrollSettings(patch) {
+    return this.run(['meta', 'accounts', 'subAccounts'], 'readwrite', async (tx) => {
+      const meta = tx.objectStore('meta');
+      const cur = (await req(meta.get('settings')))?.value;
+      if (!cur) throw new Error('初期設定がされていません');
+      const payroll = {
+        accounts: Object.fromEntries(PAYROLL_ACCOUNT_FIELDS.map((f) => [f.key, patch.accounts?.[f.key] || ''])),
+        subs: Object.fromEntries(DEPOSIT_KINDS.map((k) => [k.key, patch.subs?.[k.key] || null])),
+        special: patch.special === true,
+      };
+      const errors = validatePayrollSettings(payroll, { accounts: await req(tx.objectStore('accounts').getAll()), subAccounts: await req(tx.objectStore('subAccounts').getAll()) });
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...cur, payroll, updatedAt: now() };
+      meta.put({ key: 'settings', value: next });
+      return next;
+    });
+  }
+
+  /**
+   * 天引きした税・保険料の納付の仕訳（源泉所得税・住民税・社会保険料）。納付した日を含む会計期間に登録する
+   * @param {{ kind, key, label, date, amount, companyShare, paymentAccountId }} o
+   */
+  savePayrollPayment(o) {
+    return this.run(['meta', 'accounts', 'subAccounts', 'periods', 'journals'], 'readwrite', async (tx) => {
+      const errors = [];
+      if (!PAYMENT_KINDS[o.kind]) errors.push('納付の種類が不正です');
+      if (!isValidDate(o.date)) errors.push('納付した日を入力してください');
+      if (!isYen(o.amount) || o.amount < 0) errors.push('納付した金額は0以上の整数で入力してください');
+      if (!isYen(o.companyShare ?? 0) || (o.companyShare ?? 0) < 0) errors.push('会社負担分は0以上の整数で入力してください');
+      if (!errors.length && o.amount + (o.companyShare ?? 0) <= 0) errors.push('納付した金額を入力してください');
+      if (errors.length) throw new ValidationError(errors);
+      const [settings, accounts, periods] = await Promise.all([req(tx.objectStore('meta').get('settings')).then((m) => m?.value), req(tx.objectStore('accounts').getAll()), req(tx.objectStore('periods').getAll())]);
+      const period = periods.find((x) => x.startDate <= o.date && o.date <= x.endDate);
+      if (!period) throw new ValidationError([`納付した日（${o.date.replaceAll('-', '/')}）を含む会計期間がありません`]);
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+      return putJournal(tx, payrollBuild(() => paymentJournal(o, { accounts, settings, periodId: period.id })));
     });
   }
 

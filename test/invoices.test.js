@@ -346,7 +346,7 @@ test('バックアップ：請求書と請求書の設定が往復し、8 から
   await repo.issueInvoice(inv.id);
   const backup = createBackup(await repo.dumpAll());
   assert.equal(backup.version, BACKUP_VERSION);
-  assert.equal(BACKUP_VERSION, 9);
+  assert.ok(BACKUP_VERSION >= 9);
   const parsed = parseBackup(JSON.stringify(backup));
   assert.equal(parsed.invoices.length, 1);
   assert.equal(parsed.invoices[0].status, 'issued');
@@ -373,6 +373,8 @@ test('スキーマ移行：バージョン8のデータを残したまま請求�
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('invoices'); // バージョン8の構成にする
+      open.result.deleteObjectStore('employees');
+      open.result.deleteObjectStore('payrolls');
       open.transaction.objectStore('departments').put({ id: 'd1', name: '本店', active: true, sortOrder: 0, createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {
@@ -383,7 +385,7 @@ test('スキーマ移行：バージョン8のデータを残したまま請求�
   });
   const repo = await openDB({ indexedDB: idb });
   assert.equal(repo.db.version, DB_VERSION);
-  assert.equal(DB_VERSION, 9);
+  assert.ok(DB_VERSION >= 9);
   assert.equal((await repo.listDepartments())[0].id, 'd1');
   assert.deepEqual(await repo.listInvoices(), []);
   repo.close();

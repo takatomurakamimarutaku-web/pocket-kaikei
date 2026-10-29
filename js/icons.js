@@ -40,6 +40,7 @@ const P = {
   books: '<path d="M4 5.5h5v14H4z"/><path d="M9 5.5h5v14H9z"/><path d="M14.5 6.2l4.2-1.1 3.4 13.2-4.2 1.1z"/>',
   dept: '<rect x="9" y="3.5" width="6" height="5" rx="1"/><rect x="3" y="15.5" width="6" height="5" rx="1"/><rect x="15" y="15.5" width="6" height="5" rx="1"/><path d="M12 8.5v3.5M6 15.5V12h12v3.5"/>',
   invoice: '<path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6"/><path d="M9 16h3"/>',
+  payroll: '<circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16.5 8.5l2.25 3 2.25-3M18.75 11.5V18M16.5 13.5h4.5M16.5 16h4.5"/>',
   history: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4v3.5h3.5"/><path d="M12 8v4.2l2.8 1.8"/>',
 };
 

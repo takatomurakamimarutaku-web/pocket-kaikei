@@ -153,6 +153,8 @@ test('スキーマ移行：バージョン7の仕訳に入力No と同じ伝票N
       // バージョン7の構成（ストアは同じ。伝票No の無いデータを入れる）
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('invoices'); // バージョン9で追加
+      open.result.deleteObjectStore('employees'); // バージョン10で追加
+      open.result.deleteObjectStore('payrolls');
       open.transaction.objectStore('periods').put({ id: 'p1', startDate: '2026-01-01', endDate: '2026-12-31', openingBalances: [], nextJournalNo: 4, createdAt: 'x', updatedAt: 'x' });
       for (const no of [1, 2, 3]) open.transaction.objectStore('journals').put({ id: `j${no}`, periodId: 'p1', no, date: '2026-01-0' + no, lines: [], createdAt: 'x', updatedAt: 'x' });
     };

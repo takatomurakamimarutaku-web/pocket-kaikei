@@ -343,6 +343,8 @@ export async function render({ app, outlet, params, query, route }) {
     { class: 'journal-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), templateMode ? saveTemplate() : save()) },
     editing ? h('p', { class: 'muted small', text: `入力No.${editing.no}（登録した順に付く番号で、変わりません）` }) : null,
     editing?.source === 'invoice' ? h('p', { class: 'notice small' }, '請求書を発行したときに作った売掛金の仕訳です。', h('a', { href: `#/invoices/${editing.sourceId}`, text: '請求書を見る' })) : null,
+    editing?.source === 'payroll' ? h('p', { class: 'notice small' }, '給与計算で登録した仕訳です。金額を直すときは、給与明細の画面で「計上を取り消す」を押して給与を直してください。', h('a', { href: `#/payroll/${editing.sourceId}`, text: '給与明細を見る' })) : null,
+    editing?.source === 'payroll_payment' ? h('p', { class: 'notice small' }, '給与計算の「税・保険料の納付」で登録した仕訳です。', h('a', { href: '#/payroll/payments', text: '納付の画面へ' })) : null,
     source && !templateMode ? h('p', { class: 'notice', text: `${journalLabel(source)} を複製しました。日付を確認して登録してください。` }) : null,
     fromTemplate ? h('p', { class: 'notice', text: `定型仕訳「${fromTemplate.name}」を呼び出しました。日付と金額を確認して登録してください。` }) : null,
     templateMode

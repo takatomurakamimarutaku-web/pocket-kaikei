@@ -66,6 +66,13 @@ import * as invoicesView from './views/invoices.js';
 import * as invoiceFormView from './views/invoice-form.js';
 import * as invoiceView from './views/invoice-view.js';
 import * as invoiceSettingsView from './views/invoice-settings.js';
+import * as payrollView from './views/payroll.js';
+import * as payrollFormView from './views/payroll-form.js';
+import * as payrollSlipView from './views/payroll-view.js';
+import * as payrollSettingsView from './views/payroll-settings.js';
+import * as payrollPaymentsView from './views/payroll-payments.js';
+import * as employeesView from './views/employees.js';
+import * as employeeFormView from './views/employee-form.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
 const routes = [
@@ -86,6 +93,15 @@ const routes = [
   { path: '/invoices/new', view: invoiceFormView, title: '請求書・見積書の作成', tab: 'entry', back: '#/invoices' },
   { path: '/invoices/:id/edit', view: invoiceFormView, title: '請求書・見積書の編集', tab: 'entry', back: '#/invoices' },
   { path: '/invoices/:id', view: invoiceView, title: '請求書・見積書', tab: 'entry', back: '#/invoices', print: true },
+  { path: '/payroll', view: payrollView, title: '給与計算', tab: 'entry', back: '#/entry' },
+  { path: '/payroll/settings', view: payrollSettingsView, title: '給与の設定', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/payments', view: payrollPaymentsView, title: '税・保険料の納付', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/employees', view: employeesView, title: '従業員', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/employees/new', view: employeeFormView, title: '従業員の登録', tab: 'entry', back: '#/payroll/employees' },
+  { path: '/payroll/employees/:id', view: employeeFormView, title: '従業員', tab: 'entry', back: '#/payroll/employees' },
+  { path: '/payroll/new', view: payrollFormView, title: '給与・賞与の入力', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/:id/edit', view: payrollFormView, title: '給与・賞与の編集', tab: 'entry', back: '#/payroll' },
+  { path: '/payroll/:id', view: payrollSlipView, title: '給与明細', tab: 'entry', back: '#/payroll', print: true },
   { path: '/templates', view: templatesView, title: '定型仕訳', tab: 'entry', back: '#/entry' },
   { path: '/template/new', view: journalFormView, kind: 'template', title: '定型仕訳の登録', tab: 'entry', back: '#/templates' },
   { path: '/template/:id', view: journalFormView, kind: 'template', title: '定型仕訳の編集', tab: 'entry', back: '#/templates' },
