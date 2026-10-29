@@ -4,7 +4,7 @@ import { trialBalance, carriedLabel } from '../ledger.js';
 import { trialBalanceDoc, docHead } from '../print-forms.js';
 import { groupLabel, GROUP_BY_ID } from '../accounts.js';
 import { trialBalanceCsv, csvFileName } from '../csv.js';
-import { monthRangePicker, zeroToggle, openingWarning } from './report-common.js';
+import { monthRangePicker, zeroToggle, openingWarning, monthRangeOptions, printRange } from './report-common.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -19,7 +19,22 @@ export async function render({ app, outlet, query }) {
     const { from, to } = picker.range();
     tb = trialBalance({ accounts, subAccounts, period, journals, from, to });
     // 印刷：貸借対照表と損益計算書の科目に分けた残高試算表の様式
-    app.printDoc = ({ printedAt }) => trialBalanceDoc(tb, { head: docHead({ settings, period, from, to, printedAt }), entityType: settings.entityType, carriedLabel: carriedLabel(period, from), showZero });
+    // 印刷条件：様式（合計残高試算表・残高試算表）・期間・補助科目の内訳・0円の科目・構成比
+    const range = picker.range();
+    app.printDoc = ({ printedAt }) => ({
+      options: [
+        { key: 'format', label: '様式', type: 'select', choices: [['total', '合計残高試算表'], ['balance', '残高試算表（繰越・借方・貸方・残高）']], value: 'total' },
+        ...monthRangeOptions(period, range.fromMonth, range.toMonth),
+        { key: 'subs', label: '補助科目の内訳を出す', type: 'check', value: false },
+        { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
+        { key: 'ratio', label: '構成比（残高試算表）', type: 'check', value: true },
+      ],
+      build: (v) => {
+        const r = printRange(period, v);
+        const t = trialBalance({ accounts, subAccounts, period, journals, from: r.from, to: r.to });
+        return trialBalanceDoc(t, { head: docHead({ settings, period, ...r, printedAt }), entityType: settings.entityType, carriedLabel: carriedLabel(period, r.from), showZero: v.zero, subs: v.subs, format: v.format, ratio: v.ratio });
+      },
+    });
     const rows = [];
     let group = null;
     let sub = null;

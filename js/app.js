@@ -9,7 +9,7 @@ import { APP_VERSION } from './version.js';
 import { isDesktopApp } from './install.js';
 import { renderSidebar } from './sidebar.js';
 import { formatPeriod, todayString, monthRange } from './period.js';
-import { docHead } from './print-forms.js';
+import { docHead, formLayoutBlocks } from './print-forms.js';
 import { captureBlocks, capturedRange } from './print-capture.js';
 import { openPrintPreview } from './views/print-preview.js';
 import * as setupView from './views/setup.js';
@@ -85,7 +85,7 @@ import * as employeesView from './views/employees.js';
 import * as employeeFormView from './views/employee-form.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
-// （true：帳票の様式の印刷プレビュー、'browser'：画面そのものが用紙の形なのでブラウザの印刷）
+// （true：帳票の様式の印刷プレビュー、'browser'：画面そのものが用紙の形なのでブラウザの印刷）。form：申告書の様式に組み替える
 const routes = [
   { path: '/setup', view: setupView, title: '初期設定', tab: null, setup: true },
   { path: '/home', view: homeView, title: 'ホーム', tab: 'home' },
@@ -141,9 +141,9 @@ const routes = [
   { path: '/reports/bs', view: statementsView, kind: 'bs', title: '貸借対照表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax', view: taxView, title: '消費税集計', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports', print: true },
-  { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports', print: true },
-  { path: '/reports/blue-return-re', view: realEstateView, title: '青色申告決算書（不動産所得用）', tab: 'reports', back: '#/reports', print: true },
-  { path: '/reports/white-return', view: whiteReturnView, title: '収支内訳書', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports', print: true, form: true },
+  { path: '/reports/blue-return-re', view: realEstateView, title: '青色申告決算書（不動産所得用）', tab: 'reports', back: '#/reports', print: true, form: true },
+  { path: '/reports/white-return', view: whiteReturnView, title: '収支内訳書', tab: 'reports', back: '#/reports', print: true, form: true },
   { path: '/reports/financial', view: financialView, title: '決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/income-tax', view: incomeTaxView, title: '所得税の確定申告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/corporate-tax', view: corporateTaxView, title: '法人税の申告', tab: 'reports', back: '#/reports', print: true },
@@ -333,9 +333,18 @@ async function start() {
       const { from, to } = range ? monthRange(period, range.fromMonth, range.toMonth) : period ? { from: period.startDate, to: period.endDate } : {};
       const head = period ? docHead({ settings, period, from, to, printedAt }) : { company: settings?.businessName || '', printedAt };
       const custom = app.printDoc ? await app.printDoc({ settings, period, printedAt, head }) : null;
+      const fileName = `${route.title}_${printedAt}`.replace(/[\\/:*?"<>|\s]+/g, '');
+      // 印刷条件を選べる帳票（仕訳帳・元帳・試算表・決算書など）
+      if (custom?.build) return openPrintPreview(custom, { fileName });
+      // そのほか：画面の表から作る（用紙の向きを選べる）
       const doc = { title: route.title, ...head, orientation: 'auto', ...(custom?.blocks ? {} : captureBlocks(outlet)), ...custom };
+      // 申告書の様式（青色申告決算書・収支内訳書）：欄を3列のマス目に、貸借対照表を勘定式に組み替える
+      if (route.form) doc.blocks = formLayoutBlocks(doc.blocks);
       if (!doc.blocks.length) return showToast('印刷する内容がありません');
-      openPrintPreview(doc, { fileName: `${doc.title}_${printedAt}`.replace(/[\\/:*?"<>|\s]+/g, '') });
+      openPrintPreview(
+        { options: [{ key: 'orientation', label: '用紙の向き', type: 'select', choices: [['auto', '自動（表の幅で決める）'], ['portrait', 'A4縦'], ['landscape', 'A4横']], value: 'auto' }], build: (v) => ({ ...doc, orientation: v.orientation }) },
+        { fileName },
+      );
     } catch (e) {
       console.error(e);
       showToast('印刷用の帳票を作れませんでした');

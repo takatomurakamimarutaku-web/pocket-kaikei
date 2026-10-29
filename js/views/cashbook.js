@@ -7,6 +7,7 @@ import { isCashAccount } from '../quick.js';
 import { monthsInPeriod, monthRange, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { ledgerBookDoc, docHead } from '../print-forms.js';
+import { monthRangeOptions, printRange } from './report-common.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -74,16 +75,37 @@ export async function render({ app, outlet, query }) {
     const ctx = { accountId, subAccountId: subId || null, accounts, subAccounts, period, journals };
     const lg = generalLedger({ ...ctx, from, to });
     const negative = lg.account.role === 'cash' ? firstNegativeDate(ctx) : null;
-    // 印刷：出納帳の様式（入金・出金・残高）
-    const subName = subId ? subAccounts.find((x) => x.id === subId)?.name ?? '' : '';
-    app.printDoc = ({ printedAt }) =>
-      ledgerBookDoc([{ ...lg, subName }], {
-        head: docHead({ settings, period, from, to, printedAt }),
-        carriedLabel: carriedLabel(period, from),
-        title: lg.account.role === 'cash' ? '現金出納帳' : '預金出納帳',
-        debitLabel: '入金',
-        creditLabel: '出金',
-      });
+    // 印刷条件：口座（表示中・すべての口座）・期間・月計・累計・口座ごとの改ページ
+    app.printDoc = ({ printedAt }) => ({
+      options: [
+        { key: 'target', label: '印刷する口座', type: 'select', choices: [['current', `表示中の口座（${options.find((o) => o.accountId === accountId && o.subId === subId)?.label ?? ''}）`], ['all', 'すべての現金・預金の口座']], value: 'current' },
+        ...monthRangeOptions(period, isAll ? undefined : month, isAll ? undefined : month),
+        { key: 'monthly', label: '月計を出す', type: 'check', value: true },
+        { key: 'cumulative', label: '累計を出す', type: 'check', value: false },
+        { key: 'pageBreak', label: '口座ごとに改ページ', type: 'check', value: true },
+      ],
+      build: (v) => {
+        const r = printRange(period, v);
+        const targets = v.target === 'all' ? options : [options.find((o) => o.accountId === accountId && o.subId === subId)];
+        // すべての口座：補助科目のある科目は補助科目ごと（科目全体の行は出さない）
+        const list = (v.target === 'all' ? targets.filter((o) => o.subId || !subAccounts.some((x) => x.accountId === o.accountId)) : targets).map((o) => ({
+          ...generalLedger({ accountId: o.accountId, subAccountId: o.subId || null, accounts, subAccounts, period, journals, from: r.from, to: r.to }),
+          subName: o.subId ? subAccounts.find((x) => x.id === o.subId)?.name ?? '' : '',
+        }));
+        const roles = new Set(list.map((x) => x.account.role));
+        return ledgerBookDoc(list, {
+          head: docHead({ settings, period, ...r, printedAt }),
+          carriedLabel: carriedLabel(period, r.from),
+          title: roles.size > 1 ? '現金預金出納帳' : roles.has('cash') ? '現金出納帳' : '預金出納帳',
+          debitLabel: '入金',
+          creditLabel: '出金',
+          monthly: v.monthly,
+          cumulative: v.cumulative,
+          pageBreak: v.pageBreak,
+          taxColumn: false,
+        });
+      },
+    });
     const add = (kind, label, cls) => h('a', { class: `btn ${cls}`, href: `#/quick/${kind}?${params()}`, text: label });
     put(
       body,
