@@ -27,6 +27,9 @@
   --fs-large: 1.75rem;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --primary: #1f7a63;
+  /* グラフの系列色（validate_palette.js でライト・ダークとも検証済み） */
+  --chart-1: #2a8f74;
+  --chart-2: #c0692a;
   --primary-strong: #17614f;
   --on-primary: #ffffff;
   --danger: #c23b2e;
@@ -45,6 +48,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --chart-1: #2f9e7e;
+    --chart-2: #cc7a3e;
     --bg: #121715;
     --surface: #1b2220;
     --surface-2: #252e2b;
@@ -440,3 +445,35 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .cb-actions .btn-primary { flex: 1 1 0; }
 .tap-row { cursor: pointer; }
 .tap-row:active { background: var(--surface-2); }
+
+/* ---- 月次推移表・グラフ ---- */
+.report-tools { display: grid; gap: 8px; margin-bottom: var(--sp-3); }
+.monthly th, .monthly td { white-space: nowrap; }
+.monthly th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 7.5em; max-width: 9em; overflow: hidden; text-overflow: ellipsis; box-shadow: 1px 0 0 var(--separator); }
+.monthly thead th:first-child { background: var(--surface-2); }
+.monthly .tb-group td, .monthly .tb-group th:first-child { background: color-mix(in srgb, var(--primary) 8%, var(--surface)); }
+.monthly .mt-acc { font-weight: 500; padding-left: 12px; }
+.mt-strong th, .mt-strong td { font-weight: 800; background: var(--surface-2); }
+.monthly .mt-strong th:first-child { background: var(--surface-2); }
+.chart { margin: 0 0 var(--sp-3); padding: 12px 10px 8px; }
+.chart-title { font-weight: 800; margin: 0 4px 6px; }
+.ch-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 4px 6px; font-size: var(--fs-footnote); color: var(--muted); }
+.ch-key { display: inline-flex; align-items: center; gap: 6px; }
+.ch-sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.ch-sw-bar { background: var(--chart-1); }
+.ch-sw-line { background: var(--chart-2); height: 3px; border-radius: 2px; }
+.chart-area { position: relative; }
+.chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ch-grid { stroke: var(--separator); stroke-width: 1; }
+.ch-zero { stroke: var(--muted); stroke-width: 1; }
+.ch-tick { fill: var(--muted); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+.ch-bar { fill: var(--chart-1); }
+.ch-line { fill: none; stroke: var(--chart-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ch-dot { fill: var(--chart-2); stroke: var(--surface); stroke-width: 2; }
+.ch-hilite { fill: var(--surface-2); }
+.ch-hit { fill: transparent; cursor: pointer; outline: none; }
+.ch-readout { margin: 6px 4px 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: var(--fs-footnote); }
+.ch-tip-head { font-weight: 800; margin-bottom: 4px; }
+.ch-tip-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; }
+.ch-tip-row .num { font-weight: 700; color: var(--text); }
+.ch-tip-row .num.neg { color: var(--negative); }

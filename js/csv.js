@@ -52,3 +52,24 @@ export function csvFileName(kind, date = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
   return `pocket-kaikei-${kind}-${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}.csv`;
 }
+
+/**
+ * 月次推移表（monthly.js の items）。区分の行・科目の行（「　科目名」）・段階利益の行
+ * @param {{ total?: boolean, includeZero?: boolean }} opts total：期間合計の列を付ける（損益のみ）
+ */
+export function monthlyCsv(items, months, { total = false, includeZero = false } = {}) {
+  const head = ['項目', ...months.map((m) => `${m.slice(0, 4)}/${m.slice(5)}`)];
+  if (total) head.push('合計');
+  const row = (label, values, t) => [label, ...values, ...(total ? [t ?? values.reduce((s, v) => s + v, 0)] : [])];
+  const rows = [head];
+  for (const item of items) {
+    if (item.type === 'group') {
+      if (!includeZero && !item.lines.some((l) => l.values.some((v) => v))) continue;
+      rows.push(row(`【${item.label}】`, item.values, item.total));
+      for (const l of item.lines) if (includeZero || l.values.some((v) => v)) rows.push(row(`　${l.account.name}`, l.values, l.total));
+    } else {
+      rows.push(row(item.label, item.values, item.total));
+    }
+  }
+  return toCsv(rows);
+}
