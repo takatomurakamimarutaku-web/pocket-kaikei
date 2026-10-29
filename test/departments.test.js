@@ -266,6 +266,8 @@ test('スキーマ移行：バージョン6のデータを残したまま部門�
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('departments'); // バージョン6の構成にする
       open.result.deleteObjectStore('invoices'); // バージョン9で追加
+      open.result.deleteObjectStore('employees'); // バージョン10で追加
+      open.result.deleteObjectStore('payrolls');
       open.transaction.objectStore('templates').put({ id: 't1', name: '家賃', lines: [], repeatDay: null, createdAt: 'x', updatedAt: 'x' });
     };
     open.onsuccess = () => {

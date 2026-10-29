@@ -1034,3 +1034,76 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .inv-line-caps { color: var(--muted); margin-bottom: -4px; }
 .inv-line-caps span { font-size: 0.7rem; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inv-line-caps span:nth-child(1), .inv-line-caps span:nth-child(3) { text-align: right; }
+
+/* 給与計算 */
+.month-bar.month-bar-plain { grid-template-columns: 44px 1fr 44px; margin-bottom: var(--sp-3); }
+.pay-actions { display: grid; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.pay-actions .btn.is-disabled { opacity: 0.5; }
+.pay-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0 0 var(--sp-3); }
+.pay-summary > div { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--card-border); min-width: 0; }
+.pay-summary dt { font-size: var(--fs-footnote); color: var(--muted); font-weight: 700; }
+.pay-summary dd { margin: 2px 0 0; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pay-list { list-style: none; margin: var(--sp-3) 0; padding: 0; display: grid; gap: var(--sp-2); }
+.pay-card { display: block; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); box-shadow: var(--shadow); color: inherit; text-decoration: none; }
+.pay-card:active { background: var(--surface-2); }
+.pay-card.is-void { opacity: 0.7; }
+.pay-card p { margin: 2px 0 0; }
+.pay-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-footnote); color: var(--muted); font-weight: 700; }
+.pay-card-head .badge { margin-left: auto; }
+.pay-card-body { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.pay-name { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.pay-net { font-weight: 800; white-space: nowrap; }
+.pay-menu { margin-top: var(--sp-4); }
+.pay-form .section-title { margin-top: var(--sp-4); }
+.pay-items { display: grid; gap: 6px; margin-bottom: 6px; }
+.pay-item { display: grid; grid-template-columns: minmax(0, 1fr) 7.5em 40px; gap: 6px; align-items: center; }
+.pay-item > * { min-width: 0; }
+.pay-items-wrap > .btn { justify-self: start; }
+.pay-form input.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pay-form input[readonly] { background: var(--surface-2); color: var(--muted); }
+.pay-form .check.small { min-height: 36px; margin: 4px 0 0; font-size: var(--fs-footnote); }
+.pay-column { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.pay-column .segmented { flex: 1 1 auto; }
+.pay-dep { display: inline-flex; align-items: center; gap: 4px; }
+.pay-dep input { width: 4.5em; text-align: right; }
+.pay-tax-note { margin-top: 6px; }
+.pay-totals { margin: 0 0 var(--sp-3); padding: 8px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); }
+.pay-totals > div { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+.pay-totals dt { color: var(--muted); }
+.pay-totals dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 700; }
+.pay-totals .pay-net-row { border-top: 1px solid var(--card-border); margin-top: 4px; padding-top: 6px; font-size: 1.05rem; }
+.pay-totals .pay-net-row dt { color: var(--text); font-weight: 800; }
+.pay-totals .pay-net-row dd { font-weight: 800; }
+.pp-card { margin: 0 0 var(--sp-3); padding: 10px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); box-shadow: var(--shadow); }
+.pp-card p { margin: 4px 0; }
+.pp-card .btn { margin-top: 6px; }
+.pp-title { margin: 0; font-size: 1rem; }
+.pp-due strong { font-variant-numeric: tabular-nums; }
+.pp-table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: var(--fs-footnote); font-variant-numeric: tabular-nums; }
+.pp-table th, .pp-table td { padding: 4px 4px; border-bottom: 1px solid var(--card-border); text-align: left; font-weight: 400; }
+.pp-table thead th { color: var(--muted); font-weight: 700; }
+.pp-table .num { text-align: right; white-space: nowrap; }
+.pp-table tfoot th, .pp-table tfoot td { font-weight: 800; border-bottom: 0; }
+.payslip { min-width: 300px; font-size: 0.82rem; line-height: 1.5; color: var(--text); }
+.payslip p { margin: 0; }
+.ps-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; padding-bottom: 6px; border-bottom: 2px solid var(--text); margin-bottom: 10px; }
+.ps-head h1 { margin: 0; font-size: 1.25rem; letter-spacing: 0.3em; font-weight: 800; }
+.ps-title { font-weight: 700; }
+.ps-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 6px 12px; margin-bottom: 10px; }
+.ps-name { font-size: 1.05rem; font-weight: 800; border-bottom: 1px solid var(--text); padding-bottom: 2px; overflow-wrap: anywhere; }
+.ps-issuer { text-align: right; font-size: 0.76rem; }
+.ps-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.ps-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.ps-table caption { text-align: left; font-weight: 800; padding: 2px 4px; border-bottom: 1.5px solid var(--text); }
+.ps-table th, .ps-table td { padding: 3px 4px; border-bottom: 1px solid var(--card-border); text-align: left; font-weight: 400; overflow-wrap: anywhere; }
+.ps-table .num { text-align: right; white-space: nowrap; }
+.ps-table .ps-sum th, .ps-table .ps-sum td { font-weight: 800; border-top: 1.5px solid var(--text); border-bottom: 0; }
+.ps-net { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding: 6px 8px; border: 1.5px solid var(--text); font-weight: 800; }
+.ps-net .num { font-size: 1.15rem; }
+.ps-foot { margin-top: 6px !important; font-size: 0.72rem; color: var(--muted); }
+.ps-note { margin-top: 6px !important; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media print {
+  body:has(.payslip) .print-head { display: none !important; }
+  .payslip { font-size: 10pt; min-width: 0; }
+  .ps-head h1 { font-size: 18pt; }
+}

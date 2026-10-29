@@ -15,15 +15,16 @@ import { REAL_ESTATE_MODES } from './real-estate.js';
 import { FILING_TYPES } from './white-return.js';
 import { validateDepartment } from './departments.js';
 import { validateInvoice, validateInvoiceSettings } from './invoices.js';
+import { validateEmployee, validatePayroll, validatePayrollSettings } from './payroll.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 9;
+export const BACKUP_VERSION = 10;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices', 'employees', 'payrolls'];
 
 /**
  * バックアップの内容（JSON にする前のオブジェクト）
@@ -83,12 +84,14 @@ const UPGRADES = {
   }),
   // 8 → 9：請求書・見積書（invoices）を追加
   8: (obj) => ({ ...obj, version: 9, invoices: [] }),
+  // 9 → 10：給与計算（employees・payrolls）を追加
+  9: (obj) => ({ ...obj, version: 10, employees: [], payrolls: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
  * 証憑の中身は base64 から ArrayBuffer に戻す（ハッシュ値の照合は非同期のため verifyAttachments で行う）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, invoices, attachmentsOmitted, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, invoices, employees, payrolls, attachmentsOmitted, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -147,6 +150,8 @@ export function parseBackup(text) {
     unique(sa, '補助科目');
   }
   const subById = new Map(obj.subAccounts.map((x) => [x.id, x]));
+  // 給与の設定（v0.46.0 で追加）。消えた科目・補助科目は使うときに初期値に戻す
+  if (validatePayrollSettings(s.payroll).length) throw new BackupError('給与の設定が不正です');
   for (const d of obj.departments) {
     if (!hasBase(d) || Object.keys(validateDepartment(d, obj.departments)).length) bad('部門');
     unique(d, '部門');
@@ -195,6 +200,15 @@ export function parseBackup(text) {
     if (!hasBase(inv) || validateInvoice(inv, { accounts: obj.accounts, subAccounts: obj.subAccounts, original: inv }).length) bad('請求書・見積書');
     if (inv.journalId != null && !isStr(inv.journalId)) bad('請求書・見積書');
     unique(inv, '請求書・見積書');
+  }
+  for (const e of obj.employees) {
+    if (!hasBase(e) || Object.keys(validateEmployee(e, { entityType: s.entityType })).length) bad('従業員');
+    unique(e, '従業員');
+  }
+  for (const p of obj.payrolls) {
+    if (!hasBase(p) || validatePayroll(p, { employees: obj.employees }).length) bad('給与');
+    if ((p.journalId != null && !isStr(p.journalId)) || (p.postedAt != null && !isStr(p.postedAt))) bad('給与');
+    unique(p, '給与');
   }
   if (obj.attachmentsOmitted !== undefined && typeof obj.attachmentsOmitted !== 'boolean') bad('証憑');
   const omitted = obj.attachmentsOmitted === true;

@@ -20,6 +20,7 @@ export async function render({ app, outlet }) {
       { class: 'menu-group' },
       row('#/journal/new', '振替伝票で入力', '借方・貸方を自由に。複合仕訳もこちら', 'journal', 'report'),
       row('#/invoices', '請求書・見積書', '適格請求書（インボイス）の作成と印刷・PDF。発行すると売掛金を計上', 'invoice', 'entry'),
+      row('#/payroll', '給与計算', '給与・賞与の計算と給与明細、源泉所得税の納付書の金額。仕訳もまとめて登録', 'payroll', 'entry'),
       row('#/templates', '定型仕訳・毎月の仕訳', 'よく使う仕訳の呼び出し。家賃・給与などを毎月まとめて登録', 'list', 'report'),
       row('#/cashbook', '現金出納帳・預金出納帳', '口座ごとの入金・出金と残高', 'cashbook', 'report'),
       row('#/import/bank', '銀行明細の取り込み', 'ネットバンキングのCSVから仕訳をまとめて作る', 'bank', 'data'),
