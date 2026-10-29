@@ -1,0 +1,54 @@
+// CSV の作成（純粋関数）。UTF-8・BOM 付き（Excel で文字化けしないように）。金額は -1000 形式
+import { linesToRows } from './journal.js';
+import { TAX_BY_CODE } from './tax.js';
+import { groupLabel } from './accounts.js';
+
+export const BOM = '﻿';
+
+/** 1つの値をエスケープする（カンマ・ダブルクォート・改行を含むときは囲む） */
+export function csvCell(v) {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+}
+
+export function toCsv(rows) {
+  return BOM + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+/**
+ * 仕訳帳。振替伝票の行単位（複合仕訳は同じ No. で複数行）
+ */
+export function journalsCsv(journals, { accountById, subById }) {
+  const header = ['No.', '日付', '借方科目', '借方補助', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方税区分', '貸方金額', '摘要'];
+  const side = (s) => {
+    if (!s.accountId) return ['', '', '', ''];
+    const cat = TAX_BY_CODE[s.taxCategory];
+    return [accountById.get(s.accountId)?.name ?? '', subById.get(s.subAccountId)?.name ?? '', cat && cat.kind !== 'none' ? cat.label : '', s.amount];
+  };
+  const rows = [header];
+  for (const j of journals) {
+    for (const r of linesToRows(j.lines)) rows.push([j.no, j.date.replaceAll('-', '/'), ...side(r.debit), ...side(r.credit), r.memo]);
+  }
+  return toCsv(rows);
+}
+
+/** 残高試算表（ledger.trialBalance の結果）。補助科目は科目の下に「　補助名」で出す */
+export function trialBalanceCsv(tb, entityType, { includeSubs = true } = {}) {
+  const rows = [['コード', '勘定科目', '区分', '繰越残高', '借方', '貸方', '残高']];
+  for (const r of tb.rows) {
+    if (!r.opening && !r.debit && !r.credit && !r.closing) continue;
+    rows.push([r.account.code, r.account.name, groupLabel(r.account.group, entityType), r.opening, r.debit, r.credit, r.closing]);
+    if (!includeSubs) continue;
+    for (const s of r.subs) {
+      if (!s.opening && !s.debit && !s.credit) continue;
+      rows.push(['', `　${s.subAccount ? s.subAccount.name : '補助なし'}`, '', s.opening, s.debit, s.credit, s.closing]);
+    }
+  }
+  rows.push(['', '合計', '', '', tb.totals.debit, tb.totals.credit, '']);
+  return toCsv(rows);
+}
+
+export function csvFileName(kind, date = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `pocket-kaikei-${kind}-${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}.csv`;
+}
