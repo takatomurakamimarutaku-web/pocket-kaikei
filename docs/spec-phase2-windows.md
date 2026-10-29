@@ -1,4 +1,4 @@
-# Windows 版（exe）仕様（v0.23.0）
+# Windows 版（exe）仕様（v0.24.0）
 
 2026-10-29 たかとさんの選択で、PWA を Tauri v2 で包んだ Windows 用インストーラーを配布する（比較した案：PWA を PC にインストール／Tauri／Electron）。
 

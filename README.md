@@ -24,7 +24,7 @@ PC では Windows 用のアプリ（exe）でも使えます。中身はこの P
 3. データはこの PC の中（`%LOCALAPPDATA%\io.github.takatomurakamimarutaku-web.pocket-kaikei`）だけに保存されます。ブラウザ版やスマホとはバックアップファイル（JSON）で受け渡してください
 4. 新しい版は Releases から入れ直すと上書きされ、データは引き継がれます
 
-ビルドは GitHub Actions（`.github/workflows/desktop.yml`）で行います。`v0.23.0` のようなタグを push すると Releases に下書きができるので、確認してから公開します。詳細は `docs/spec-phase2-windows.md`。
+ビルドは GitHub Actions（`.github/workflows/desktop.yml`）で行います。`v0.24.0` のようなタグを push すると Releases に下書きができるので、確認してから公開します。詳細は `docs/spec-phase2-windows.md`。
 
 ## 画面
 
