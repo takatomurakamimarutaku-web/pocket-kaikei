@@ -292,6 +292,45 @@ mkdirSync(OUT, { recursive: true });
   await page.waitForTimeout(500);
   if ((await page.getByText('登録済みかも').count()) !== 5) errors.push('取り込み済みの明細を重複として示さない');
 
+  // 詳しい税区分（法人）：仕入の用途区分を使い、非課税売上・共通対応の仕入・売上の返品を入力する
+  if (entity === 'corporation') {
+    await go('#/settings');
+    await page.getByRole('radio', { name: '使う' }).click();
+    await page.getByRole('button', { name: '保存する' }).click();
+    await page.waitForTimeout(400);
+    const taxEntry = async (date, [dn, dt], [cn, ct], v, memo) => {
+      await go('#/journal/new');
+      await page.fill('#j-date', date);
+      await page.dispatchEvent('#j-date', 'change');
+      await pick(0, 'debit', dn);
+      await amount(0, 'debit', v);
+      await pick(0, 'credit', cn);
+      await amount(0, 'credit', v);
+      if (dt) await page.selectOption('[aria-label="1行目の借方税区分"]', dt);
+      if (ct) await page.selectOption('[aria-label="1行目の貸方税区分"]', ct);
+      await page.getByLabel('1行目の摘要').fill(memo);
+      if (memo === '共用部分の家賃') {
+        const groups = await page.locator('[aria-label="1行目の借方税区分"] optgroup').count();
+        if (groups !== 7) errors.push(`税区分のグループが${groups}個（7個のはず）`);
+        await shot('46-entry-tax-detail', true);
+      }
+      await page.getByRole('button', { name: '登録する' }).click();
+      await page.waitForTimeout(300);
+    };
+    await taxEntry('2026-05-01', ['普通預金'], ['売上高', 'sales_exempt'], 3000000, '住宅の家賃収入');
+    await taxEntry('2026-05-02', ['地代家賃', 'purchase_10_c'], ['普通預金'], 110000, '共用部分の家賃');
+    await taxEntry('2026-05-03', ['売上高', 'sales_return_10'], ['売掛金'], 11000, '返品');
+    await go('#/reports/tax?from=2026-04&to=2027-03');
+    await shot('47-tax-detail', true);
+    if (!(await page.getByText('売上の返品・値引き・貸倒れ').count())) errors.push('集計に売上の返品のグループが出ない');
+    await go('#/reports/tax-return');
+    await page.getByRole('radio', { name: '個別対応' }).click();
+    await page.waitForTimeout(200);
+    await shot('48-tax-return-individual', true);
+    if (!(await page.getByText('返還等対価に係る税額').count())) errors.push('申告計算に返還等対価に係る税額が出ない');
+    if (!(await page.getByText(/個別対応方式で仕入の税額の一部/).count())) errors.push('95%未満の按分の注意が出ない');
+  }
+
   // 消費税の申告計算
   await go('#/reports/tax-return');
   await shot('39-tax-return', true);

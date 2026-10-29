@@ -1,7 +1,6 @@
 // 仕訳の入力・編集（振替伝票形式）
-import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox } from '../ui.js';
+import { h, put, field, attachSuggest, confirmDialog, showToast, errorBox, taxSelect } from '../ui.js';
 import { emptyRow, emptySide, rowsToLines, linesToRows, rowsTotals, validateJournal, memoCandidates, copyForNew } from '../journal.js';
-import { TAX_CATEGORIES } from '../tax.js';
 import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
 import { createJournal } from '../models.js';
@@ -119,18 +118,15 @@ export async function render({ app, outlet, params, query }) {
         if (p.ok) e.target.value = String(p.value);
       },
     });
-    const tax = h(
-      'select',
-      {
-        class: 'tax-select',
-        'aria-label': `${index + 1}行目の${SIDE_LABEL[side]}税区分`,
-        onchange: (e) => {
-          s.taxCategory = e.target.value;
-          dirty = true;
-        },
+    const tax = taxSelect(s.taxCategory, {
+      split: Boolean(settings.taxUseSplit),
+      class: 'tax-select',
+      'aria-label': `${index + 1}行目の${SIDE_LABEL[side]}税区分`,
+      onchange: (e) => {
+        s.taxCategory = e.target.value;
+        dirty = true;
       },
-      TAX_CATEGORIES.map((t) => h('option', { value: t.code, text: t.label, selected: t.code === s.taxCategory })),
-    );
+    });
     // 反対側の金額を差額で埋めるボタン（複合仕訳で便利）
     const fill = h('button', {
       type: 'button',

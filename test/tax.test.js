@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { backCalc, summarizeTax, TAX_BY_CODE, signedTaxAmount } from '../js/tax.js';
+import { backCalc, summarizeTax, TAX_BY_CODE, TAX_CATEGORIES, TAX_GROUPS, signedTaxAmount } from '../js/tax.js';
 import { makeBook } from './helpers.js';
 
 test('割り戻し：10%は100/110、うち国税7.8/110。8%は100/108、6.24/108。1円未満切り捨て', () => {
@@ -44,8 +44,43 @@ test('税区分別集計：売上・返品・仕入・軽減・非課税、期�
   assert.equal(row('purchase_10').gross, 3300);
   assert.equal(row('purchase_exempt').gross, 20000);
   assert.equal(row('purchase_exempt').tax, 0);
-  assert.equal(all.sales.tax, 11000);
-  assert.equal(all.purchase.tax, 4300);
+  const group = (id) => all.groups.find((g) => g.id === id);
+  assert.equal(group('sales').total.tax, 11000);
+  assert.equal(group('purchase').total.tax, 4300);
+  assert.equal(group('other').total.gross, 20000); // 非課税仕入
+  assert.equal(all.netTax, 11000 - 4300);
   const jan = summarizeTax(js, { from: '2026-01-01', to: '2026-01-31' });
   assert.equal(jan.rows.find((r) => r.code === 'sales_10').gross, 99000);
+});
+
+test('詳しい税区分：返品・貸倒れは借方、仕入の返品は貸方がプラス。輸入の消費税は金額がそのまま税額', () => {
+  assert.equal(signedTaxAmount({ side: 'debit', amount: 100, taxCategory: 'sales_return_10' }), 100);
+  assert.equal(signedTaxAmount({ side: 'credit', amount: 100, taxCategory: 'sales_return_10' }), -100);
+  assert.equal(signedTaxAmount({ side: 'debit', amount: 100, taxCategory: 'sales_baddebt_8r' }), 100);
+  assert.equal(signedTaxAmount({ side: 'credit', amount: 100, taxCategory: 'sales_recovered_10' }), 100);
+  assert.equal(signedTaxAmount({ side: 'credit', amount: 100, taxCategory: 'purchase_return_10_c' }), 100);
+  assert.deepEqual(backCalc(50000, TAX_BY_CODE.import_tax), { gross: 50000, net: 0, tax: 50000, national: 50000, local: 0 });
+  assert.deepEqual(backCalc(12000, TAX_BY_CODE.import_local), { gross: 12000, net: 0, tax: 12000, national: 0, local: 12000 });
+  // どの税区分にもグループ・役割・プラスの側がある。コードは重複しない
+  for (const c of TAX_CATEGORIES) {
+    assert.ok(TAX_GROUPS.some((g) => g.id === c.group), c.code);
+    assert.ok(['debit', 'credit'].includes(c.plus), c.code);
+    assert.ok(c.role, c.code);
+  }
+  assert.equal(new Set(TAX_CATEGORIES.map((c) => c.code)).size, TAX_CATEGORIES.length);
+  // 既存のコードはそのまま使える（保存済みの仕訳・バックアップの互換）
+  for (const code of ['none', 'sales_10', 'sales_8r', 'sales_export', 'sales_exempt', 'purchase_10', 'purchase_8r', 'purchase_10_ni', 'purchase_8r_ni', 'purchase_exempt']) assert.ok(TAX_BY_CODE[code], code);
+});
+
+test('集計：売上の返品は「売上の返品・値引き・貸倒れ」にプラスで出し、参考の差引税額から引く', () => {
+  const b = makeBook('individual');
+  const js = [
+    b.j('2026-01-10', [['売掛金', 110000]], [['売上高', 110000, 'sales_10']]),
+    b.j('2026-01-20', [['売上高', 11000, 'sales_return_10']], [['売掛金', 11000]]),
+  ];
+  const s = summarizeTax(js);
+  const adj = s.groups.find((g) => g.id === 'sales_adj');
+  assert.equal(adj.total.gross, 11000);
+  assert.equal(adj.total.tax, 1000);
+  assert.equal(s.netTax, 10000 - 1000);
 });

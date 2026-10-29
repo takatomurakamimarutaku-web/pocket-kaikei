@@ -76,6 +76,7 @@ export function parseBackup(text) {
   if (s.bankRules !== undefined && (!Array.isArray(s.bankRules) || s.bankRules.some((r) => !isObj(r) || !isStr(r.id) || !isStr(r.keyword) || !isStr(r.accountId)))) {
     throw new BackupError('振り分けルールのデータが不正です');
   }
+  if (s.taxUseSplit !== undefined && typeof s.taxUseSplit !== 'boolean') throw new BackupError('事業者の設定が不正です');
   const bad = (what) => {
     throw new BackupError(`${what}のデータが不正です`);
   };

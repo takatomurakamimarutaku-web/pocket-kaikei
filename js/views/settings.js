@@ -8,6 +8,7 @@ import { errorText } from '../errors.js';
 export async function render({ app, outlet }) {
   const { settings, period } = await app.load();
   let taxStatus = settings.taxStatus;
+  let taxUseSplit = Boolean(settings.taxUseSplit);
   const name = h('input', { id: 's-name', type: 'text', maxlength: 60, value: settings.businessName });
   const corp = settings.entityType === 'corporation';
   const start = h('input', { id: 's-start', type: 'date', value: period.startDate });
@@ -19,6 +20,11 @@ export async function render({ app, outlet }) {
     field('事業者名', name, { name: 'businessName' }),
     field('事業の形態', h('p', { class: 'readonly', text: ENTITY_LABELS[settings.entityType] }), { hint: '個人/法人は変更できません。変える場合はデータを初期化してください' }),
     field('消費税', segmented({ name: '消費税', options: Object.entries(TAX_STATUS_LABELS).map(([value, label]) => ({ value, label })), value: taxStatus, onChange: (v) => (taxStatus = v) })),
+    field(
+      '仕入の用途区分',
+      segmented({ name: '仕入の用途区分', options: [{ value: 'off', label: '使わない' }, { value: 'on', label: '使う' }], value: taxUseSplit ? 'on' : 'off', onChange: (v) => (taxUseSplit = v === 'on') }),
+      { hint: '「使う」にすると、税区分に共通対応・非課税売上対応の仕入が出ます。非課税売上（家賃・利息など）が多く、課税売上割合が95%未満になるときに個別対応方式で使います' },
+    ),
     corp
       ? h('div', { class: 'field-row' }, field('期首日', start, { name: 'startDate' }), field('期末日', end, { name: 'endDate' }))
       : field('会計期間', h('p', { class: 'readonly', text: formatPeriod(period) }), { hint: '個人事業主は暦年（1月1日〜12月31日）です' }),
@@ -45,7 +51,7 @@ export async function render({ app, outlet }) {
     if (corp) Object.assign(errors, validatePeriod({ startDate: start.value, endDate: end.value }, 'corporation'));
     if (!showErrors(form, errors)) return;
     try {
-      await app.db.updateSettings({ businessName: name.value.trim(), taxStatus });
+      await app.db.updateSettings({ businessName: name.value.trim(), taxStatus, taxUseSplit });
       if (corp && (start.value !== period.startDate || end.value !== period.endDate)) await app.db.savePeriodDates(period.id, { startDate: start.value, endDate: end.value });
       showToast('保存しました');
       app.goBack('#/more');
