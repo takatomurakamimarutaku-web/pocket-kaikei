@@ -1,5 +1,6 @@
 // 主な画面を一通り撮る（サンプルデータを読み込んで）。デザイン確認用
 // 使い方：python3 -m http.server 8123 & node scripts/ui-tour.cjs [individual|corporation] [light|dark]
+// FULL=1 でページ全体、ONLY=19,20 で番号を絞る
 const { chromium } = require('playwright');
 const { mkdirSync } = require('node:fs');
 const { join } = require('node:path');
@@ -29,7 +30,9 @@ const PAGES = [
   ['16-cashbook', '#/cashbook'],
   ['17-ledger', '#/reports/ledger'],
   ['18-trial-monthly', '#/reports/trial-monthly'],
-];
+  ['19-tax-return', '#/reports/tax-return'],
+  ['20-tax-return-form', '#/reports/tax-return?view=form'],
+].filter(([name]) => !process.env.ONLY || process.env.ONLY.split(',').some((p) => name.startsWith(p)));
 
 (async () => {
   const browser = await chromium.launch();

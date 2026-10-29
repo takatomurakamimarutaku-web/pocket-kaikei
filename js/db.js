@@ -383,9 +383,10 @@ export class Repository {
       if (![1, 2, 3, 4, 5, 6].includes(taxReturn.businessType)) errors.push('事業区分を選んでください');
       if (taxReturn.allocation !== undefined && !['individual', 'proportional'].includes(taxReturn.allocation)) errors.push('個別対応方式か一括比例配分方式を選んでください');
       for (const k of ['interimNational', 'interimLocal']) if (!isYen(taxReturn[k]) || taxReturn[k] < 0) errors.push('中間納付税額は0以上の整数で入力してください');
+      if (taxReturn.baseSales != null && (!isYen(taxReturn.baseSales) || taxReturn.baseSales < 0)) errors.push('基準期間の課税売上高は0以上の整数で入力してください');
       if (errors.length) throw new ValidationError([...new Set(errors)]);
-      const { method, businessType, interimNational, interimLocal, allocation = 'proportional' } = taxReturn;
-      const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal }, updatedAt: now() };
+      const { method, businessType, interimNational, interimLocal, allocation = 'proportional', baseSales = null } = taxReturn;
+      const next = { ...period, taxReturn: { method, businessType, allocation, interimNational, interimLocal, baseSales }, updatedAt: now() };
       store.put(next);
       return next;
     });

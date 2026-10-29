@@ -476,6 +476,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .st-subtotal.heading th, .st-subtotal.heading td { background: none; color: var(--primary-strong); }
 .st-subtotal.strong th, .st-subtotal.strong td { background: color-mix(in srgb, var(--primary) 10%, var(--surface)); font-size: 0.92rem; border-top: 1px solid color-mix(in srgb, var(--text) 45%, transparent); border-bottom: 3px double color-mix(in srgb, var(--text) 55%, transparent); }
 .taxsum td { width: 6.5em; }
+.taxform thead th:nth-child(2) { text-align: left; }
+.tf-title { font-size: 1rem; font-weight: 800; margin: 18px 4px 8px; line-height: 1.4; }
+.taxform .tf-no { width: 2.6em; text-align: center; color: var(--primary); font-weight: 700; white-space: nowrap; font-size: 0.85rem; }
+.taxform th[scope="row"] { font-weight: 500; min-width: 10em; }
+.taxform.abc th[scope="row"] { min-width: 11em; }
+.taxform td.num { width: 7em; white-space: nowrap; }
+.taxform.abc td.num { width: 6.5em; }
+.taxform .tf-sub th, .taxform .tf-sub .tf-no { padding-left: 1.2em; font-size: 0.88rem; }
 .blue-return td.num { width: 7em; }
 .blue-return .br-no { width: 1.8em; padding-right: 0; color: var(--muted); text-align: center; }
 .blue-return.br-wide { min-width: 640px; }
