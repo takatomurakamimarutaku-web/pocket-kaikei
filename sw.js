@@ -1,6 +1,6 @@
 // Service Worker
 // ファイルを変更したら CACHE_VERSION を上げる。ファイルを追加・削除したら PRECACHE_URLS も更新する（npm run check で検出）
-const CACHE_VERSION = 'v30';
+const CACHE_VERSION = 'v31';
 const CACHE_NAME = `pocket-kaikei-${CACHE_VERSION}`;
 
 // 事前にキャッシュするファイル（相対パス）
@@ -15,6 +15,10 @@ const PRECACHE_URLS = [
   'icons/icon-maskable-512.png',
   'icons/icon-maskable.svg',
   'icons/icon.svg',
+  'img/chara/family.svg',
+  'img/chara/kai-cheer.svg',
+  'img/chara/keily-caution.svg',
+  'img/chara/keily-normal.svg',
   'js/accounts.js',
   'js/app.js',
   'js/backup.js',

@@ -314,6 +314,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .neg { color: var(--negative); }
 .nowrap { white-space: nowrap; }
 .empty-title { font-size: var(--fs-title3); color: var(--text); }
+/* キャラクター（ケイリーとカイ・ケイ）。線が濃い色なので、ダークモードでも明るい丸の上に載せる */
+.chara { display: block; flex: none; border-radius: 50%; background: #f1faf6; }
+.chara-sm { width: 52px; height: 52px; }
+.chara-md { width: 96px; height: 96px; }
+.chara-lg { width: 168px; height: 168px; }
+.chara-say { display: flex; gap: 10px; align-items: center; margin-bottom: var(--sp-3); }
+.chara-bubble { flex: 1; min-width: 0; margin: 0; padding: 8px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--card-border); border-radius: 14px 14px 14px 4px; font-size: 0.92rem; }
+.chara-who { display: block; font-size: var(--fs-caption); font-weight: 700; color: var(--muted); }
+.setup-welcome { display: grid; justify-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.setup-welcome .chara-bubble { border-radius: 14px; }
 .error-title { font-weight: 700; color: var(--text); }
 .readonly { min-height: 44px; display: flex; align-items: center; margin: 0; font-weight: 600; }
 .plain-list { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; }

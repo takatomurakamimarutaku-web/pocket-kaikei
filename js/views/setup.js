@@ -1,5 +1,5 @@
 // 初期設定ウィザード（事業者名・個人/法人・会計期間・課税/免税）
-import { h, put, field, segmented, showErrors, showToast } from '../ui.js';
+import { h, put, field, segmented, showErrors, showToast, chara } from '../ui.js';
 import { templateAccounts } from '../accounts.js';
 import { createAccount, createPeriod, createSettings, ENTITY_LABELS, TAX_STATUS_LABELS } from '../models.js';
 import { individualPeriod, defaultCorporateEnd, todayString, validatePeriod } from '../period.js';
@@ -53,7 +53,12 @@ export async function render({ app, outlet }) {
   const form = h(
     'form',
     { class: 'setup', novalidate: true, onsubmit: (e) => (e.preventDefault(), submit()) },
-    h('div', { class: 'panel' }, h('p', { text: 'はじめに、帳簿の基本情報を設定します。個人/法人は後から変更できません。' })),
+    h(
+      'div',
+      { class: 'setup-welcome' },
+      chara('family', { size: 'lg' }),
+      h('p', { class: 'chara-bubble' }, h('span', { class: 'chara-who', text: 'ケイリー' }), 'はじめまして。双子のカイとケイと一緒に、帳簿づけをお手伝いします。はじめに、帳簿の基本情報を設定しましょう。個人/法人は後から変更できません。'),
+    ),
     field('事業者名（屋号・会社名）', name, { name: 'businessName' }),
     field(
       '事業の形態',
