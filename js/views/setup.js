@@ -5,6 +5,7 @@ import { createAccount, createPeriod, createSettings, ENTITY_LABELS, TAX_STATUS_
 import { individualPeriod, defaultCorporateEnd, todayString, validatePeriod } from '../period.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { samplePanel } from './sample-load.js';
 
 export async function render({ app, outlet }) {
   const thisYear = Number(todayString().slice(0, 4));
@@ -82,7 +83,7 @@ export async function render({ app, outlet }) {
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: 'この内容で始める' }),
   );
   syncEntity();
-  put(outlet, form);
+  put(outlet, form, samplePanel({ app }));
 
   async function submit() {
     const period = state.entityType === 'individual' ? individualPeriod(state.year) : { startDate: state.startDate, endDate: state.endDate };

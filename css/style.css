@@ -587,3 +587,6 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .mtb .mt-col-quarter, .mtb .mt-col-half, .mtb .mt-col-adjust, .mtb .mt-col-total { background: var(--surface-2); font-weight: 600; }
 .mtb .mt-col-opening { color: var(--muted); }
 .adjusting-check { display: flex; margin: 0 0 var(--sp-3); }
+
+/* サンプルデータ */
+.sample-panel { margin-top: 16px; }
