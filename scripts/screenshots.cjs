@@ -42,7 +42,7 @@ mkdirSync(OUT, { recursive: true });
     await page.getByRole('radio', { name: '課税事業者' }).click();
   }
   await page.click('button[type=submit]');
-  await page.waitForSelector('.stat-grid');
+  await page.waitForSelector('.kpi-grid');
 
   // 期首残高
   await go('#/opening');
