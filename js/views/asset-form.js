@@ -15,7 +15,8 @@ import {
   defaultAssetAccount,
   EXPENSE_GROUPS,
 } from '../depreciation.js';
-import { LIFE_PRESETS, usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults } from '../asset-tools.js';
+import { usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults } from '../asset-tools.js';
+import { searchLifeTable, lifeEntryName } from '../life-table.js';
 import { formatYen } from '../money.js';
 import { compareAccounts } from '../accounts.js';
 import { parseYen } from '../money.js';
@@ -94,16 +95,14 @@ export async function render({ app, outlet, params, query = {} }) {
           .map((a) => h('option', { value: a.id, text: `${a.code} ${a.name}`, selected: a.id === state.expenseAccountId })),
       )
     : null;
-  // 耐用年数表から選ぶ：種類と耐用年数を入れる
-  const preset = h(
-    'select',
-    { id: 'f-preset', 'aria-label': '耐用年数表から選ぶ' },
-    h('option', { value: '', text: '耐用年数表から選ぶ（任意）' }),
-    ASSET_CATEGORIES.map((c) => {
-      const items = LIFE_PRESETS.map((p, i) => [p, i]).filter(([p]) => p.category === c.id);
-      return items.length ? h('optgroup', { label: c.label }, items.map(([p, i]) => h('option', { value: String(i), text: `${p.label}　${p.life}年` }))) : null;
-    }),
-  );
+  // 耐用年数表から探す：選ぶと種類・耐用年数（法人は構造又は用途・細目も）を入れる
+  const lifeQuery = h('input', { id: 'f-life-q', type: 'search', autocomplete: 'off', enterkeyhint: 'search', placeholder: '例：パソコン、エアコン、木造 店舗' });
+  const lifeResults = h('ul', { class: 'life-results' });
+  const lifeNote = h('p', { class: 'field-hint', 'aria-live': 'polite', text: '言葉を入れると、国税庁の耐用年数表（主なもの）から候補を出します。空欄なら選んでいる種類の区分を出します' });
+  const preset = h('div', { class: 'field life-search' }, h('label', { class: 'field-label', for: 'f-life-q', text: '耐用年数表から探す（任意）' }), lifeQuery, lifeResults, lifeNote);
+  // 別表十六・少額減価償却資産の明細書の「構造又は用途」「細目」（法人だけ）
+  const structure = individual ? null : h('input', { id: 'f-structure', type: 'text', maxlength: 60, value: state.structure || '', placeholder: '例：事務機器、通信機器' });
+  const detail = individual ? null : h('input', { id: 'f-detail', type: 'text', maxlength: 60, value: state.detail || '', placeholder: '例：電子計算機（パソコン）' });
   // 中古資産の耐用年数（簡便法）
   const usedLegal = h('input', { id: 'f-used-legal', type: 'text', inputmode: 'numeric', maxlength: 2, placeholder: '例：6' });
   const usedYears = h('input', { id: 'f-used-years', type: 'text', inputmode: 'numeric', maxlength: 2, placeholder: '0' });
@@ -140,6 +139,8 @@ export async function render({ app, outlet, params, query = {} }) {
       assetNo: assetNo.value.trim(),
       quantity: toInt(quantity.value) ?? NaN,
       location: location.value.trim(),
+      structure: structure ? structure.value.trim() : (state.structure ?? ''),
+      detail: detail ? detail.value.trim() : (state.detail ?? ''),
       expenseAccountId: expense ? expense.value || null : (state.expenseAccountId ?? null),
       ...readSpecial(),
     };
@@ -322,12 +323,14 @@ export async function render({ app, outlet, params, query = {} }) {
     { novalidate: true, onsubmit: (e) => (e.preventDefault(), save()), oninput: paint, onchange: paint },
     relationBox,
     field('名前', name, { name: 'name' }),
-    h('div', { class: 'field' }, preset),
+    preset,
     h('div', { class: 'field-row' }, field('種類', category, { name: 'category' }), field('勘定科目', account, { name: 'accountId' })),
     h('div', { class: 'field-row' }, field('取得日', acquiredOn, { name: 'acquiredOn' }), field('使い始めた日', startedOn, { name: 'startedOn' })),
     field('取得価額（円）', cost, { name: 'cost', hint: 'このアプリは税込経理なので、消費税を含んだ金額で入力します（10万円・20万円などの判定も税込）' }),
     h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, h('p', { class: 'field-error', role: 'alert' })),
     lifeWrap,
+    structure ? field('構造又は用途（任意）', structure, { name: 'structure' }) : null,
+    detail ? field('細目（任意）', detail, { name: 'detail', hint: '別表十六・少額減価償却資産の明細書の「構造」「細目」になります。耐用年数表から選ぶと入ります' }) : null,
     usedWrap,
     specialWrap,
     expense ? field('償却費の科目', expense, { name: 'expenseAccountId', hint: '工場の機械など、製品を作るために使う資産は製造経費の「減価償却費（製造）」にすると、製造原価報告書に入ります' }) : null,
@@ -339,18 +342,61 @@ export async function render({ app, outlet, params, query = {} }) {
     field('メモ（任意）', memo, { name: 'memo' }),
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '登録する' }),
   );
-  category.addEventListener('change', () => paintAccounts(true));
-  preset.addEventListener('change', () => {
-    const p = LIFE_PRESETS[Number(preset.value)];
-    if (!preset.value || !p) return;
+  category.addEventListener('change', () => {
+    paintAccounts(true);
+    if (lifeResults.childElementCount && !lifeQuery.value.trim()) paintLifeResults();
+  });
+  /** 耐用年数表の区分を入力欄に入れる */
+  function applyLifeEntry(p) {
     category.value = p.category;
     paintAccounts(true);
-    if (!usesLife(method.value)) method.value = individual ? 'straight' : CATEGORY_BY_ID[p.category].decliningUntil ? 'straight' : 'declining';
+    const cat = CATEGORY_BY_ID[p.category];
+    if (!usesLife(method.value)) method.value = individual || cat.decliningUntil ? 'straight' : 'declining';
+    // 建物・建物附属設備・構築物・無形は、決まった日以後の取得なら定額法だけ
+    else if (method.value === 'declining' && cat.decliningUntil && (acquiredOn.value || today) >= cat.decliningUntil) method.value = 'straight';
     life.value = String(p.life);
     usedLegal.value = String(p.life);
-    if (!name.value.trim()) name.value = p.label.replace(/（.*$/, '').slice(0, 40);
+    if (structure) {
+      structure.value = p.structure;
+      detail.value = p.detail;
+    }
+    if (!name.value.trim()) name.value = lifeEntryName(p);
+    put(lifeResults);
+    lifeQuery.value = '';
+    lifeNote.textContent = `選んだ区分：${[p.kind, p.structure, p.detail].filter(Boolean).join('　')}（${p.life}年）`;
     paint();
-  });
+  }
+  const LIFE_LIMIT = 30;
+  function paintLifeResults() {
+    const q = lifeQuery.value.trim();
+    const hits = searchLifeTable(q, { category: category.value });
+    put(
+      lifeResults,
+      hits.slice(0, LIFE_LIMIT).map((p) =>
+        h(
+          'li',
+          {},
+          h(
+            'button',
+            { type: 'button', class: 'life-result', onclick: () => applyLifeEntry(p) },
+            h('span', { class: 'life-result-text' }, h('span', { class: 'muted small', text: [p.kind, p.structure].filter(Boolean).join('・') }), h('span', { text: p.detail || p.structure || p.kind })),
+            h('span', { class: 'life-result-years num', text: `${p.life}年` }),
+          ),
+        ),
+      ),
+    );
+    lifeNote.textContent = !hits.length
+      ? q
+        ? '見つかりませんでした。表に無い資産は、耐用年数を直接入力してください'
+        : ''
+      : hits.length > LIFE_LIMIT
+        ? `${hits.length}件のうち${LIFE_LIMIT}件を表示しています。言葉を足して絞り込んでください`
+        : `${hits.length}件（選ぶと種類・耐用年数が入ります）`;
+  }
+  lifeQuery.addEventListener('input', paintLifeResults);
+  lifeQuery.addEventListener('focus', () => !lifeResults.childElementCount && paintLifeResults());
+  // 検索欄で Enter を押しても登録しない
+  lifeQuery.addEventListener('keydown', (e) => e.key === 'Enter' && e.preventDefault());
   account.addEventListener('change', () => (state.accountId = account.value));
   startedOn.addEventListener('input', () => (startedTouched = true));
   acquiredOn.addEventListener('input', () => {
@@ -364,7 +410,7 @@ export async function render({ app, outlet, params, query = {} }) {
     preset.hidden = true;
   }
   if (splitLocked) {
-    for (const el of [category, acquiredOn, startedOn, cost, method, life, carryBook, carryRevised, specialRate, preset]) el.disabled = true;
+    for (const el of [category, acquiredOn, startedOn, cost, method, life, carryBook, carryRevised, specialRate, lifeQuery]) el.disabled = true;
     usedWrap.hidden = true;
   }
   put(

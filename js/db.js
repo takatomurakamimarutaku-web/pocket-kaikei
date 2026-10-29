@@ -227,6 +227,8 @@ async function putAsset(tx, asset, { split = false } = {}) {
     memo: String(asset.memo ?? '').trim(),
     assetNo: String(asset.assetNo ?? '').trim(),
     location: String(asset.location ?? '').trim(),
+    structure: String(asset.structure ?? '').trim(),
+    detail: String(asset.detail ?? '').trim(),
     quantity: asset.quantity ?? 1,
     businessRatio: settings?.entityType === 'individual' ? asset.businessRatio : 100,
     disposedOn: asset.disposedOn || null,

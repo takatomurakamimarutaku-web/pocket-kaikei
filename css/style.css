@@ -499,6 +499,20 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .taxform td.num { width: 7em; white-space: nowrap; }
 .taxform.abc td.num { width: 6.5em; }
 .taxform .tf-sub th, .taxform .tf-sub .tf-no { padding-left: 1.2em; font-size: 0.88rem; }
+/* 別表十六：欄を行、資産を列。項目の列は横に動かしても見えるように固定 */
+.s16-table thead th { white-space: normal; min-width: 7.5em; text-align: right; vertical-align: bottom; }
+.s16-table thead th:first-child { position: sticky; left: 0; z-index: 2; }
+.s16-table tbody th[scope="row"] { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 11em; max-width: 14em; font-size: 0.76rem; line-height: 1.35; box-shadow: 1px 0 0 var(--separator); }
+.s16-table td { min-width: 7.5em; }
+.s16-table td.num { width: auto; }
+.s16-table .s16-text { font-size: 0.74rem; line-height: 1.35; }
+.s16-no { display: inline-block; min-width: 1.8em; margin-right: 4px; color: var(--primary); font-weight: 800; }
+.s16-section th { font-size: 0.72rem; font-weight: 800; color: var(--primary-strong); background: var(--row-accent); padding: 6px; }
+.s16-notes th, .s16-notes td { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
+.s16-sum { margin-bottom: var(--sp-3); }
+.s16-sum td { width: 8em; white-space: nowrap; }
+.s16-help { margin: 12px 4px; padding-left: 1.2em; line-height: 1.55; }
+.s16-help li + li { margin-top: 4px; }
 .blue-return td.num { width: 7em; }
 .blue-return .br-no { width: 1.8em; padding-right: 0; color: var(--muted); text-align: center; }
 .blue-return.br-wide { min-width: 640px; }
@@ -527,6 +541,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .used-box[open] { padding-bottom: var(--sp-3); }
 .used-box summary { font-size: var(--fs-footnote); font-weight: 700; color: var(--accent, var(--text)); padding: 6px 0 var(--sp-2); cursor: pointer; }
 .used-box[hidden] { display: none; }
+/* 耐用年数表の検索 */
+.life-results { list-style: none; margin: 6px 0 0; padding: 0; max-height: 22rem; overflow-y: auto; border-radius: var(--radius); }
+.life-results:empty { display: none; }
+.life-results li + li { border-top: 1px solid var(--separator); }
+.life-result { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; min-height: 48px; text-align: left; background: var(--surface-2); border: 0; color: inherit; font: inherit; cursor: pointer; }
+.life-result:active { background: color-mix(in srgb, var(--primary) 12%, var(--surface-2)); }
+.life-result-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-footnote); line-height: 1.35; }
+.life-result-years { flex: none; font-weight: 800; color: var(--primary-strong); }
 .inline-inputs { display: flex; align-items: center; gap: 6px; }
 .inline-inputs input { width: 4em; text-align: right; }
 .disposal-done .section-title { margin-top: 0; }
