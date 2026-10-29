@@ -388,6 +388,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .st-subtotal.heading th, .st-subtotal.heading td { background: none; color: var(--primary-strong); }
 .st-subtotal.strong th, .st-subtotal.strong td { background: color-mix(in srgb, var(--primary) 14%, var(--surface)); font-size: 0.92rem; }
 .taxsum td { width: 6.5em; }
+.blue-return td.num { width: 7em; }
+.blue-return .br-no { width: 1.8em; padding-right: 0; color: var(--muted); text-align: center; }
+.blue-return.br-wide { min-width: 640px; }
+.blue-return.br-wide th, .blue-return.br-wide td { white-space: nowrap; }
 
 /* 科目・期首残高 */
 .acc-row { display: grid; grid-template-columns: 3em 1fr; gap: 10px; align-items: center; padding: 10px 16px; color: inherit; text-decoration: none; min-height: 52px; }
