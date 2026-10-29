@@ -77,7 +77,7 @@ export async function render({ app, outlet, query }) {
               h(
                 'tr',
                 {},
-                h('td', { class: 'nowrap' }, h('a', { href: `#/journal/${encodeURIComponent(r.journal.id)}/edit`, text: r.date.slice(5).replace('-', '/') })),
+                h('td', { class: 'nowrap' }, h('a', { href: `#/journal/${encodeURIComponent(r.journal.id)}/edit`, text: r.date.slice(5).replace('-', '/') }), h('span', { class: 'lg-no', text: `No.${r.journal.no}` })),
                 h('td', {}, h('span', { class: 'lg-counter', text: r.counterpart }), r.memo ? h('span', { class: 'lg-memo', text: r.memo }) : null),
                 amountCell('td', r.debit, { blankZero: true }),
                 amountCell('td', r.credit, { blankZero: true }),

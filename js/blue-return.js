@@ -69,14 +69,41 @@ export const BS_LIABILITY_LINES = [
   ['410', '元入金'],
 ];
 
-/** 青色申告特別控除額の選択肢（令和9年分以後は75万円が加わり、10万円の対象が変わる。国税庁「青色申告特別控除の見直し」） */
-export const BLUE_DEDUCTIONS = [
-  { value: 650000, label: '65万円（複式簿記・e-Tax または優良な電子帳簿）' },
-  { value: 550000, label: '55万円（複式簿記・書面で提出）' },
-  { value: 100000, label: '10万円' },
-  { value: 750000, label: '75万円（令和9年分以後・優良な電子帳簿など）' },
-  { value: 0, label: '適用しない' },
-];
+/**
+ * 青色申告特別控除額の選択肢（年分で変わる）
+ *   令和8年分まで：65万円（複式簿記・期限内申告に加え e-Tax か優良な電子帳簿）／55万円（複式簿記・書面）／10万円
+ *     国税庁 タックスアンサー No.2072 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2072.htm
+ *   令和9年分以後（令和8年度税制改正）：55万円の控除は e-Tax が要件に加わって65万円に、65万円の控除は仕訳帳・総勘定元帳を
+ *     優良な電子帳簿などで保存する場合に75万円になる。書面で提出すると10万円。簡易簿記で前々年分の収入金額が1,000万円を超える人は10万円の対象外
+ *     国税庁「令和9年分から青色申告特別控除はどう変わる？」https://www.nta.go.jp/taxes/shiraberu/shinkoku/kojin_jigyo/0026004-012.pdf
+ * @param {number} year 年分（個人の会計期間の終了日の年）
+ */
+export function blueDeductionOptions(year) {
+  if (year >= 2027) {
+    return [
+      { value: 750000, label: '75万円（複式簿記・e-Tax＋優良な電子帳簿）' },
+      { value: 650000, label: '65万円（複式簿記・e-Tax で提出）' },
+      { value: 100000, label: '10万円（書面で提出など）' },
+      { value: 0, label: '適用しない' },
+    ];
+  }
+  return [
+    { value: 650000, label: '65万円（複式簿記・e-Tax または優良な電子帳簿）' },
+    { value: 550000, label: '55万円（複式簿記・書面で提出）' },
+    { value: 100000, label: '10万円' },
+    { value: 0, label: '適用しない' },
+  ];
+}
+
+/** 保存した控除額がその年分の選択肢に無いとき（令和9年分の55万円など）は65万円にする */
+export function blueDeductionFor(year, saved) {
+  return blueDeductionOptions(year).some((o) => o.value === saved) ? saved : 650000;
+}
+
+/** 選択肢に無い控除額を選んでいたか（画面で知らせる） */
+export function blueDeductionReplaced(year, saved) {
+  return saved != null && !blueDeductionOptions(year).some((o) => o.value === saved);
+}
 
 const templateAccount = (accounts, code) => accounts.find((a) => a.template && a.code === code) || null;
 

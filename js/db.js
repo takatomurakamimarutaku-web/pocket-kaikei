@@ -2,6 +2,7 @@
 import { validateRule } from './bank-import.js';
 import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
+import { historyEntry, journalChanged } from './journal-history.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts } from './accounts.js';
 import { validatePeriod, addDays } from './period.js';
@@ -13,8 +14,8 @@ import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 2;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones'];
+export const DB_VERSION = 3;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory'];
 const ALL_STORES = ['meta', ...DATA_STORES];
 
 /** 締めた会計期間を変更しようとしたときのメッセージ */
@@ -47,6 +48,12 @@ export function migrate(db, oldVersion, tx) {
   if (oldVersion < 2) {
     // 固定資産台帳
     db.createObjectStore('assets', { keyPath: 'id' }).createIndex('accountId', 'accountId');
+  }
+  if (oldVersion < 3) {
+    // 仕訳の訂正・削除の履歴（優良な電子帳簿）
+    const history = db.createObjectStore('journalHistory', { keyPath: 'id' });
+    history.createIndex('journalId', 'journalId');
+    history.createIndex('periodId', 'periodId');
   }
 }
 
@@ -178,6 +185,8 @@ async function putJournal(tx, journal) {
     periods.put({ ...period, nextJournalNo: record.no + 1 });
   }
   journals.put(record);
+  if (!original) tx.objectStore('journalHistory').put(historyEntry('create', null, record, record.updatedAt));
+  else if (journalChanged(original, record)) tx.objectStore('journalHistory').put(historyEntry('update', original, record, record.updatedAt));
   return record;
 }
 
@@ -216,6 +225,8 @@ export class Repository {
 
   /** トランザクションを実行し、完了後に fn の戻り値を返す。fn が例外を投げたら中断して何も書かない */
   async run(stores, mode, fn) {
+    // 仕訳を書き換えるときは、必ず訂正・削除の履歴も同じトランザクションで書く
+    if (mode === 'readwrite' && stores.includes('journals') && !stores.includes('journalHistory')) stores = [...stores, 'journalHistory'];
     const tx = this.db.transaction(stores, mode);
     const done = txDone(tx);
     let result;
@@ -649,6 +660,15 @@ export class Repository {
     });
   }
 
+  /** 仕訳の訂正・削除の履歴（期間を指定すればその期間だけ）。新しい順 */
+  listJournalHistory(periodId = null) {
+    return this.run(['journalHistory'], 'readonly', async (tx) => {
+      const store = tx.objectStore('journalHistory');
+      const list = await req(periodId ? store.index('periodId').getAll(periodId) : store.getAll());
+      return list.sort((a, b) => b.at.localeCompare(a.at));
+    });
+  }
+
   /** 仕訳の削除。tombstone を記録し、「元に戻す」用に削除した仕訳を返す */
   deleteJournal(id) {
     return this.run(['journals', 'periods', 'tombstones'], 'readwrite', async (tx) => {
@@ -657,6 +677,7 @@ export class Repository {
       if ((await req(tx.objectStore('periods').get(j.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       tx.objectStore('journals').delete(id);
       tx.objectStore('tombstones').put(tombstone('journals', id));
+      tx.objectStore('journalHistory').put(historyEntry('delete', j, null, now()));
       return j;
     });
   }
@@ -667,6 +688,7 @@ export class Repository {
       if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
       tx.objectStore('journals').put(journal);
       tx.objectStore('tombstones').delete(journal.id);
+      tx.objectStore('journalHistory').put(historyEntry('restore', null, journal, now()));
     });
   }
 
@@ -708,6 +730,7 @@ export class Repository {
         if ((await req(tx.objectStore('periods').get(j.periodId)))?.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
         tx.objectStore('journals').delete(j.id);
         tx.objectStore('tombstones').put(tombstone('journals', j.id));
+        tx.objectStore('journalHistory').put(historyEntry('delete', j, null, now()));
       }
       return putAsset(tx, { ...asset, disposedOn: null, disposalType: null, salePrice: null });
     });
