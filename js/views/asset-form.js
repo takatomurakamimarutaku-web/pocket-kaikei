@@ -56,6 +56,10 @@ export async function render({ app, outlet, params }) {
   const life = h('input', { id: 'f-life', type: 'text', inputmode: 'numeric', maxlength: 2, value: state.usefulLife ?? '' });
   const ratio = h('input', { id: 'f-ratio', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.businessRatio ?? 100 });
   const disposedOn = h('input', { id: 'f-disposed', type: 'date', value: state.disposedOn || '' });
+  const firstStart = periods[0]?.startDate ?? period.startDate; // アプリで最初の会計期間の期首
+  const carryOn = state.carryOn || firstStart;
+  const carryBook = h('input', { id: 'f-carry-book', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.carryBook ?? '', placeholder: '空欄なら計算した額' });
+  const carryRevised = h('input', { id: 'f-carry-revised', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.carryRevisedBase ?? '', placeholder: '切り替えていなければ空欄' });
   const memo = h('input', { id: 'f-memo', type: 'text', maxlength: 100, value: state.memo || '' });
   const methodHint = h('p', { class: 'field-hint' });
   const rateHint = h('p', { class: 'field-hint' });
@@ -83,11 +87,22 @@ export async function render({ app, outlet, params }) {
       usefulLife: usesLife(method.value) ? toInt(life.value) : null,
       businessRatio: individual ? toInt(ratio.value) : 100,
       disposedOn: disposedOn.value || null,
+      ...readCarry(),
       memo: memo.value.trim(),
     };
   }
 
+  /** 引き継ぎの入力（空欄なら引き継がない。数字でなければ NaN にして検証で止める） */
+  function readCarry() {
+    const none = { carryOn: null, carryBook: null, carryRevisedBase: null };
+    if (carryWrap.hidden || !carryBook.value.trim()) return none;
+    const yen = (v) => (v.trim() === '' ? null : (toInt(v) ?? NaN));
+    return { carryOn, carryBook: yen(carryBook.value), carryRevisedBase: method.value === 'declining' ? yen(carryRevised.value) : null };
+  }
+
   function paint() {
+    carryWrap.hidden = !usesLife(method.value) || !(startedOn.value && startedOn.value < firstStart);
+    revisedWrap.hidden = method.value !== 'declining';
     const a = read();
     lifeWrap.hidden = !usesLife(a.method);
     const limit = smeLimit(a.acquiredOn || today);
@@ -139,11 +154,19 @@ export async function render({ app, outlet, params }) {
         ),
       ),
       rows.some((r) => r.switched) ? h('p', { class: 'muted small', text: '※ 償却保証額を下回ったため、改定取得価額×改定償却率で計算しています。' }) : null,
-      a.startedOn < (periods[0]?.startDate ?? period.startDate) ? h('p', { class: 'muted small', text: 'アプリで帳簿をつける前の年分も、同じ方法で計算した額としています（前の会計ソフトの帳簿価額を引き継ぐ入力は今後対応予定）。' }) : null,
+      a.startedOn < firstStart && !a.carryBook ? h('p', { class: 'muted small', text: 'アプリで帳簿をつける前の年分も、同じ方法で計算した額としています。前の会計ソフトや前年の決算書と帳簿価額が違うときは、「前の帳簿からの引き継ぎ」に期首の帳簿価額を入れてください。' }) : null,
     );
   }
 
   const lifeWrap = h('div', {}, field('耐用年数（年）', life, { name: 'usefulLife' }), rateHint);
+  const revisedWrap = h('div', {}, field('改定取得価額（定率法で切り替え済みのとき）', carryRevised, { name: 'carryRevisedBase', hint: '前の帳簿で改定償却率に切り替えていれば、切り替えた年の期首帳簿価額。空欄なら、引き継いだ年に償却保証額を下回ったときにその年の期首帳簿価額で切り替えます' }));
+  const carryWrap = h(
+    'fieldset',
+    { class: 'carry-box' },
+    h('legend', { text: '前の帳簿からの引き継ぎ（任意）' }),
+    field(`${slash(carryOn)} の期首の帳簿価額（円）`, carryBook, { name: 'carryBook', hint: 'アプリを使う前から持っている資産は、前の会計ソフトや前年の決算書（減価償却費の計算の「未償却残高」）の金額を入れると、そこから償却を続けます' }),
+    revisedWrap,
+  );
   const form = h(
     'form',
     { novalidate: true, onsubmit: (e) => (e.preventDefault(), save()), oninput: paint, onchange: paint },
@@ -154,6 +177,7 @@ export async function render({ app, outlet, params }) {
     h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, h('p', { class: 'field-error', role: 'alert' })),
     lifeWrap,
     individual ? field('事業で使う割合（%）', ratio, { name: 'businessRatio', hint: '車などを私用にも使うときは、事業で使う割合を入れます。残りは事業主貸になります' }) : null,
+    carryWrap,
     field('除却・売却した日（任意）', disposedOn, { name: 'disposedOn', hint: 'その月までの月数で償却し、以後は償却しません。売却・除却の仕訳は振替伝票で入力してください' }),
     field('メモ（任意）', memo, { name: 'memo' }),
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '登録する' }),

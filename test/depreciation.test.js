@@ -11,6 +11,7 @@ import {
   smeLimit,
   depreciationLines,
   findDepreciationJournals,
+  openingBook,
 } from '../js/depreciation.js';
 import { makeBook } from './helpers.js';
 import { fillHints } from '../js/accounts.js';
@@ -192,4 +193,40 @@ test('種類に合う初期値の科目はテンプレートのコードで選�
     const vid = defaultAssetAccount(entityType, 'vehicle', tangible);
     assert.equal(accounts.find((a) => a.id === vid).name, '車両運搬具');
   }
+});
+
+test('前の会計ソフトの帳簿価額を引き継ぐ：定額法は引き継いだ期首から取得価額×償却率で続ける', () => {
+  const a = asset({ acquiredOn: '2022-01-01', startedOn: '2022-01-01', carryOn: '2026-01-01', carryBook: 600000 });
+  const rows = depreciationSchedule(a, [P(2026)]);
+  assert.equal(rows[0].startDate, '2026-01-01'); // 引き継ぐ前の年分は出さない
+  assert.deepEqual([rows[0].opening, rows[0].amount, rows[0].closing], [600000, 125000, 475000]);
+  assert.equal(rows.at(-1).closing, 1); // 最後は1円を残す
+  assert.equal(depreciationFor(asset({ acquiredOn: '2022-01-01', startedOn: '2022-01-01' }), [P(2026)], P(2026)).opening, 500000); // 引き継がなければ計算どおり
+});
+
+test('前の会計ソフトの帳簿価額を引き継ぐ：定率法は改定取得価額があればそれで計算する', () => {
+  const base = { method: 'declining', acquiredOn: '2018-01-01', startedOn: '2018-01-01', carryOn: '2026-01-01', carryBook: 200000 };
+  // 200,000×0.250＝50,000 は償却保証額 79,090 未満 → 引き継いだ年に切り替え（200,000×0.334）
+  assert.equal(depreciationSchedule(asset(base), [P(2026)])[0].amount, 66800);
+  const r = depreciationSchedule(asset({ ...base, carryRevisedBase: 237305 }), [P(2026)])[0];
+  assert.deepEqual([r.amount, r.base, r.switched], [79259, 237305, true]);
+});
+
+test('前の会計ソフトの帳簿価額を引き継ぐ：1円だけ残っている資産は期首・期末とも1円', () => {
+  const a = asset({ acquiredOn: '2010-01-01', startedOn: '2010-01-01', carryOn: '2026-01-01', carryBook: 1 });
+  assert.equal(depreciationSchedule(a, [P(2026)]).length, 0);
+  assert.equal(openingBook(a, [P(2026)], P(2026)), 1);
+});
+
+test('前の会計ソフトの帳簿価額を引き継ぐ：入力の検証', () => {
+  const b = makeBook('individual');
+  const ctx = { entityType: 'individual', accounts: b.accounts };
+  const ok = { accountId: b.byName['工具器具備品'].id, acquiredOn: '2022-01-01', startedOn: '2022-01-01', carryOn: '2026-01-01', carryBook: 600000 };
+  assert.deepEqual(validateAsset(asset(ok), ctx), {});
+  assert.match(validateAsset(asset({ ...ok, carryOn: '2022-01-01' }), ctx).carryBook, /使い始めた日より後/);
+  assert.match(validateAsset(asset({ ...ok, carryBook: 1000001 }), ctx).carryBook, /取得価額以下/);
+  assert.match(validateAsset(asset({ ...ok, carryBook: 0 }), ctx).carryBook, /1円以上/);
+  assert.match(validateAsset(asset({ ...ok, method: 'lump3', cost: 150000, usefulLife: null }), ctx).carryBook, /定額法・定率法/);
+  assert.match(validateAsset(asset({ ...ok, carryRevisedBase: 300000 }), ctx).carryRevisedBase, /定率法/);
+  assert.match(validateAsset(asset({ ...ok, disposedOn: '2025-06-30' }), ctx).carryBook, /除却/);
 });
