@@ -13,15 +13,16 @@ import { validatePaymentTerms } from './receivables.js';
 import { validateBreakdownTargets } from './breakdown.js';
 import { REAL_ESTATE_MODES } from './real-estate.js';
 import { FILING_TYPES } from './white-return.js';
+import { validateDepartment } from './departments.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 6;
+export const BACKUP_VERSION = 7;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments'];
 
 /**
  * バックアップの内容（JSON にする前のオブジェクト）
@@ -70,12 +71,14 @@ const UPGRADES = {
   4: (obj) => ({ ...obj, version: 5, budgets: [] }),
   // 5 → 6：証憑の添付（attachments・attachmentData）を追加
   5: (obj) => ({ ...obj, version: 6, attachments: [], attachmentData: [] }),
+  // 6 → 7：部門（departments）を追加
+  6: (obj) => ({ ...obj, version: 7, departments: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
  * 証憑の中身は base64 から ArrayBuffer に戻す（ハッシュ値の照合は非同期のため verifyAttachments で行う）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, attachmentsOmitted, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, attachmentsOmitted, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -132,6 +135,10 @@ export function parseBackup(text) {
     unique(sa, '補助科目');
   }
   const subById = new Map(obj.subAccounts.map((x) => [x.id, x]));
+  for (const d of obj.departments) {
+    if (!hasBase(d) || Object.keys(validateDepartment(d, obj.departments)).length) bad('部門');
+    unique(d, '部門');
+  }
   for (const p of obj.periods) {
     if (!hasBase(p) || !isValidDate(p.startDate) || !isValidDate(p.endDate) || !Array.isArray(p.openingBalances)) bad('会計期間');
     for (const ob of p.openingBalances) {
@@ -150,7 +157,7 @@ export function parseBackup(text) {
   obj.journals.forEach((j) => {
     if (!hasBase(j) || !Number.isInteger(j.no) || !Array.isArray(j.lines)) bad('仕訳');
     // 無効化された科目を使った過去の仕訳も正しいので、仕訳自身を original として渡す
-    const errors = validateJournal(j, { accounts: obj.accounts, subAccounts: obj.subAccounts, period: periodById.get(j.periodId), original: j });
+    const errors = validateJournal(j, { accounts: obj.accounts, subAccounts: obj.subAccounts, period: periodById.get(j.periodId), original: j, departments: obj.departments });
     if (errors.length) throw new BackupError(`仕訳 No.${j.no}（${j.date}）が不正です：${errors[0]}`);
     unique(j, '仕訳');
   });
@@ -164,7 +171,7 @@ export function parseBackup(text) {
     unique(e, '仕訳の変更履歴');
   }
   for (const t of obj.templates) {
-    if (!hasBase(t) || validateTemplate(t, { accounts: obj.accounts, subAccounts: obj.subAccounts }).length) bad('定型仕訳');
+    if (!hasBase(t) || validateTemplate(t, { accounts: obj.accounts, subAccounts: obj.subAccounts, departments: obj.departments }).length) bad('定型仕訳');
     unique(t, '定型仕訳');
   }
   for (const b of obj.budgets) {

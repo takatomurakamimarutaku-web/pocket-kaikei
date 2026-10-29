@@ -9,7 +9,7 @@ import { monthsInPeriod, monthRange } from './period.js';
  * 月ごとの決算書の行（同じ科目の並びなので位置で揃う）を、値の配列を持つ1つの行にまとめる
  * group：{ type, label, lines:[{account, values}], values }  subtotal：{ type, label, values }
  */
-function mergeItems(perMonth) {
+export function mergeItems(perMonth) {
   return perMonth[0].map((item, i) => {
     const at = perMonth.map((items) => items[i]);
     if (item.type === 'group') {

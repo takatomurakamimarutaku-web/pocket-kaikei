@@ -76,11 +76,12 @@ export function hasCriteria(c) {
  * 変更の内容（行ごとの差分の説明）
  * @returns {string[]} 例：「日付 2026-05-01 → 2026-05-02」「借方 消耗品費 3,300 → 4,400」
  */
-export function describeChange(before, after, { accountById, subById, formatYen }) {
+export function describeChange(before, after, { accountById, subById, formatYen, departmentById = new Map() }) {
   if (!before || !after) return [];
   const out = [];
   if (before.date !== after.date) out.push(`日付 ${before.date.replaceAll('-', '/')} → ${after.date.replaceAll('-', '/')}`);
-  const line = (l) => `${l.side === 'debit' ? '借方' : '貸方'} ${accountById.get(l.accountId)?.name ?? '（不明）'}${l.subAccountId ? `・${subById.get(l.subAccountId)?.name ?? ''}` : ''} ${formatYen(l.amount)}${l.memo ? `「${l.memo}」` : ''}`;
+  const dep = (l) => (l.departmentId ? `［${departmentById.get(l.departmentId)?.name ?? '部門'}］` : '');
+  const line = (l) => `${l.side === 'debit' ? '借方' : '貸方'} ${accountById.get(l.accountId)?.name ?? '（不明）'}${l.subAccountId ? `・${subById.get(l.subAccountId)?.name ?? ''}` : ''}${dep(l)} ${formatYen(l.amount)}${l.memo ? `「${l.memo}」` : ''}`;
   const a = before.lines.map(line);
   const b = after.lines.map(line);
   for (const s of a) if (!b.includes(s)) out.push(`削除した行：${s}`);

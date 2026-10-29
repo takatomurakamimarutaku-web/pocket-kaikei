@@ -452,7 +452,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .jc-amt { font-weight: 700; }
 .jc-sub, .jc-tax { font-size: 0.75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jc-tax { grid-column: 2; text-align: right; }
-.jc-sub + .jc-amt { grid-row: 1; grid-column: 2; }
+.jc-amt { grid-row: 1; grid-column: 2; }
+.jc-sub, .jc-dep { grid-column: 1; }
+.jc-dep { justify-self: start; max-width: 100%; padding: 0 6px; border-radius: 999px; background: var(--row-accent); font-size: 0.72rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jc-memo { grid-column: 1 / -1; font-size: 0.82rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 帳票 */
@@ -615,6 +617,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .monthly .mt-acc { font-weight: 500; padding-left: 12px; }
 .mt-strong th, .mt-strong td { font-weight: 800; background: var(--surface-2); }
 .monthly .mt-strong th:first-child { background: var(--surface-2); }
+/* ---- 部門 ---- */
+.dep-row { flex-wrap: wrap; gap: 2px 6px; }
+.dep-head { display: flex; align-items: center; gap: 8px; flex-basis: 100%; min-width: 0; }
+.dep-head .sub-name { overflow-wrap: anywhere; }
+.dep-row { padding-top: 10px; padding-bottom: 4px; }
+.dep-row .link { min-width: 36px; min-height: 36px; }
+.dep-pl .dep-common { color: var(--muted); }
+.mt-ratio th, .mt-ratio td { color: var(--muted); font-size: 0.78rem; font-weight: 600; }
+.mt-strong + .mt-ratio th, .mt-strong + .mt-ratio td, .tb-subtotal + .mt-ratio th, .tb-subtotal + .mt-ratio td { border-top: 2px solid var(--separator); }
 .chart { margin: 0 0 var(--sp-3); padding: 12px 10px 8px; }
 .chart-title { font-weight: 800; margin: 0 4px 6px; }
 .ch-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 4px 6px; font-size: var(--fs-footnote); color: var(--muted); }

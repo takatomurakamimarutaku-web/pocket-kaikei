@@ -12,7 +12,7 @@ import { icon } from '../icons.js';
 
 export async function render({ app, outlet, query }) {
   const data = await app.load();
-  const { period, journals, accountById, subById } = data;
+  const { period, journals, accountById, subById, departmentById } = data;
   // 証憑を添付した仕訳に印を付ける
   const attachCount = new Map();
   for (const a of await app.db.listAttachments()) if (a.journalId) attachCount.set(a.journalId, (attachCount.get(a.journalId) || 0) + 1);
@@ -61,7 +61,7 @@ export async function render({ app, outlet, query }) {
   }
 
   function visible() {
-    const ctx = { accountById, subById, normalize };
+    const ctx = { accountById, subById, normalize, departmentById };
     // 詳しい検索の条件があるときは、会計期間の全体から探す
     const adv = hasCriteria(crit);
     const base = journals.filter((j) => (adv || month === 'all' || j.date.startsWith(month)) && matchJournal(j, q, ctx));
@@ -108,7 +108,7 @@ export async function render({ app, outlet, query }) {
     meta.textContent = `${hasCriteria(crit) ? '詳しい検索：会計期間の全体から ' : ''}${items.length}件・借方合計 ${formatYen(total)}円`;
     put(list, 
       ...(items.length
-        ? items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0 }))
+        ? items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0, departmentById }))
         : [emptyState(journals.length ? '条件に合う仕訳はありません' : 'まだ仕訳がありません', journals.length ? null : h('a', { href: '#/entry', class: 'btn btn-primary', text: '取引を入力する' }))]),
     );
   }
@@ -130,7 +130,7 @@ export async function render({ app, outlet, query }) {
         onclick: async () => {
           const items = visible();
           if (!items.length) return showToast('書き出す仕訳がありません');
-          const blob = new Blob([journalsCsv(items, { accountById, subById })], { type: 'text/csv' });
+          const blob = new Blob([journalsCsv(items, { accountById, subById, departmentById })], { type: 'text/csv' });
           await saveFile(blob, csvFileName('journals'));
         },
       }),
@@ -140,17 +140,19 @@ export async function render({ app, outlet, query }) {
 }
 
 /** 仕訳1件のカード（振替伝票の行を並べる）。attachments：添付した証憑の件数 */
-export function journalCard(j, accountById, subById, { attachments = 0 } = {}) {
+export function journalCard(j, accountById, subById, { attachments = 0, departmentById = new Map() } = {}) {
   const sideCell = (s) => {
     if (!s.accountId) return h('div', { class: 'jc-side jc-empty' });
     const acc = accountById.get(s.accountId);
     const sub = s.subAccountId ? subById.get(s.subAccountId) : null;
     const tax = TAX_BY_CODE[s.taxCategory];
+    const dep = s.departmentId ? departmentById.get(s.departmentId) : null;
     return h(
       'div',
       { class: 'jc-side' },
       h('span', { class: 'jc-acc', text: acc ? acc.name : '（不明な科目）' }),
       sub ? h('span', { class: 'jc-sub', text: sub.name }) : null,
+      dep ? h('span', { class: 'jc-dep', text: dep.name }) : null,
       h('span', { class: 'jc-amt num', text: formatYen(Number(s.amount)) }),
       tax?.short ? h('span', { class: 'jc-tax', text: tax.short }) : null,
     );

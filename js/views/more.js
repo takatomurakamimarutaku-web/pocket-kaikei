@@ -8,6 +8,7 @@ const GROUPS = [
     ['#/settings', '事業者の設定', '事業者名・消費税・会計期間', 'settings', 'setting'],
     ['#/accounts', '勘定科目', '科目・補助科目の追加と編集', 'list', 'setting'],
     ['#/opening', '期首残高', '期首時点の資産・負債・純資産', 'flag', 'setting'],
+    ['#/departments', '部門', '店舗・事業・商品などの部門。仕訳に付けて部門別の損益を見る', 'dept', 'setting'],
   ]],
   ['決算', [
     ['#/closing', '決算・繰越', '期末の棚卸・減価償却・次の期間への繰越', 'closing', 'close'],

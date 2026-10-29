@@ -39,6 +39,11 @@ export function createSubAccount(fields = {}, now = new Date()) {
   return { id: newId(), accountId: '', name: '', active: true, sortOrder: 0, ...stamp(now), ...fields };
 }
 
+/** 部門（店舗・事業・商品などの区分）。仕訳の明細に departmentId で付ける */
+export function createDepartment(fields = {}, now = new Date()) {
+  return { id: newId(), name: '', active: true, sortOrder: 0, ...stamp(now), ...fields };
+}
+
 export function createPeriod(fields = {}, now = new Date()) {
   return { id: newId(), startDate: '', endDate: '', openingBalances: [], ...stamp(now), ...fields };
 }

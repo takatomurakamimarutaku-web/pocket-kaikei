@@ -13,9 +13,9 @@ export function formatDateTime(iso) {
 }
 
 /** 履歴1件の表示 */
-export function historyItem(e, { accountById, subById }) {
+export function historyItem(e, { accountById, subById, departmentById = new Map() }) {
   const j = e.after || e.before;
-  const changes = e.action === 'update' ? describeChange(e.before, e.after, { accountById, subById, formatYen }) : [];
+  const changes = e.action === 'update' ? describeChange(e.before, e.after, { accountById, subById, formatYen, departmentById }) : [];
   const late = e.action === 'create' && isLateInput(j.date, e.at);
   const lineText = (l) => `${l.side === 'debit' ? '借方' : '貸方'} ${accountById.get(l.accountId)?.name ?? '（不明な科目）'} ${formatYen(l.amount)}${l.memo ? `「${l.memo}」` : ''}`;
   return h(
@@ -36,7 +36,7 @@ export function historyItem(e, { accountById, subById }) {
 }
 
 export async function render({ app, outlet, query }) {
-  const { period, accountById, subById } = await app.load();
+  const { period, accountById, subById, departmentById } = await app.load();
   const all = await app.db.listJournalHistory(period.id);
   let action = Object.keys(HISTORY_ACTIONS).includes(query.action) ? query.action : '';
   const list = h('div');
@@ -69,7 +69,7 @@ export async function render({ app, outlet, query }) {
     put(
       list,
       h('p', { class: 'list-meta', text: `${items.length}件（新しい順）` }),
-      items.length ? h('ul', { class: 'history-list' }, items.map((e) => historyItem(e, { accountById, subById }))) : emptyState(all.length ? '条件に合う履歴はありません' : 'この期間の履歴はまだありません', null, { face: null }),
+      items.length ? h('ul', { class: 'history-list' }, items.map((e) => historyItem(e, { accountById, subById, departmentById }))) : emptyState(all.length ? '条件に合う履歴はありません' : 'この期間の履歴はまだありません', null, { face: null }),
     );
   }
 

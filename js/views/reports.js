@@ -22,6 +22,7 @@ const GROUPS = [
     ['#/reports/cash-flow', 'キャッシュフロー計算書', '営業・投資・財務の資金の動き（間接法）', 'cashbook'],
     ['#/reports/cash-plan', '資金繰り表', '月ごとの収入・支出と残高。来月からは定型仕訳から予定を出す', 'calendar'],
     ['#/reports/budget', '予算と実績', '科目ごとの予算と実績の差異・達成率。前期の実績から予算を作れる', 'flag'],
+    ['#/reports/departments', '部門別損益', '店舗・事業などの部門ごとの売上と利益。共通費の配賦も', 'dept'],
     ['#/reports/analysis', '経営分析', '利益率・流動比率・自己資本比率・回転期間・損益分岐点を前期と並べる', 'chart'],
     ['#/reports/manufacturing', '製造原価報告書', '材料費・労務費・製造経費から当期製品製造原価まで。月次推移も', 'factory', 'manufacturing'],
     ['#/reports/monthly', '月次推移表', '月ごとの損益・月末残高と売上・利益のグラフ', 'chart'],

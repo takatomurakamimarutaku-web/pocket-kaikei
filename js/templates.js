@@ -11,7 +11,7 @@ export const MAX_TEMPLATE_NAME = 30;
  * 金額は0（呼び出したときに入れる）も可。毎月作る定型仕訳は、全行の金額が入っていて貸借が一致していること
  * @returns {string[]}
  */
-export function validateTemplate(t, { accounts, subAccounts }) {
+export function validateTemplate(t, { accounts, subAccounts, departments = null }) {
   const errors = [];
   const name = String(t.name ?? '').trim();
   if (!name) errors.push('名前を入力してください');
@@ -20,11 +20,13 @@ export function validateTemplate(t, { accounts, subAccounts }) {
   if (!lines.some((l) => l.side === 'debit') || !lines.some((l) => l.side === 'credit')) errors.push('借方と貸方を1行以上入力してください');
   const accountIds = new Set(accounts.map((a) => a.id));
   const subById = new Map(subAccounts.map((s) => [s.id, s]));
+  const departmentIds = departments ? new Set(departments.map((d) => d.id)) : null;
   lines.forEach((l, i) => {
     const at = `${i + 1}行目`;
     if (l.side !== 'debit' && l.side !== 'credit') errors.push(`${at}：貸借が不正です`);
     if (!accountIds.has(l.accountId)) errors.push(`${at}：勘定科目を選んでください`);
     if (l.subAccountId && subById.get(l.subAccountId)?.accountId !== l.accountId) errors.push(`${at}：補助科目が科目と合っていません`);
+    if (l.departmentId && departmentIds && !departmentIds.has(l.departmentId)) errors.push(`${at}：部門が見つかりません`);
     if (!Number.isInteger(l.amount) || l.amount < 0) errors.push(`${at}：金額は0以上の整数（円）にしてください`);
   });
   if (t.repeatDay != null) {
@@ -38,7 +40,7 @@ export function validateTemplate(t, { accounts, subAccounts }) {
 
 /** 仕訳から定型仕訳の明細を作る（日付・番号などは持たない） */
 export function linesForTemplate(lines) {
-  return lines.map((l) => ({ side: l.side, accountId: l.accountId, subAccountId: l.subAccountId || null, amount: l.amount, taxCategory: l.taxCategory || 'none', memo: l.memo || '' }));
+  return lines.map((l) => ({ side: l.side, accountId: l.accountId, subAccountId: l.subAccountId || null, amount: l.amount, taxCategory: l.taxCategory || 'none', memo: l.memo || '', ...(l.departmentId ? { departmentId: l.departmentId } : {}) }));
 }
 
 /** その月の日（月末を超える日は月末にする）。month は 'YYYY-MM' */
