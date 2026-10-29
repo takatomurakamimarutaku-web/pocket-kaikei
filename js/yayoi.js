@@ -71,10 +71,11 @@ const slash = (d) => d.replaceAll('-', '/');
  * 借方・貸方が1行ずつの仕訳は「2000」（仕訳データ）、複合仕訳は振替伝票（1行目2110・間2100・最終行2101、タイプ3）
  * 決算整理仕訳で期末日のものは「本決」にする
  * @param {Array} journals
- * @param {{ accountById: Map, subById: Map, period: object }} ctx
+ * 部門（借方部門・貸方部門の列）は部門の名前。弥生会計の側に同じ名前の部門が必要
+ * @param {{ accountById: Map, subById: Map, period: object, departmentById?: Map }} ctx
  * @returns {string[][]}
  */
-export function yayoiRows(journals, { accountById, subById, period }) {
+export function yayoiRows(journals, { accountById, subById, period, departmentById = new Map() }) {
   const out = [];
   for (const j of [...journals].sort(compareJournals)) {
     const rows = linesToRows(j.lines);
@@ -85,7 +86,8 @@ export function yayoiRows(journals, { accountById, subById, period }) {
       const side = (s) => {
         if (!s.accountId) return ['', '', '', '対象外', 0, ''];
         const amount = Number(s.amount);
-        return [accountById.get(s.accountId)?.name ?? '', s.subAccountId ? subById.get(s.subAccountId)?.name ?? '' : '', '', yayoiTaxName(s.taxCategory, j.date), amount, taxAmount(s.taxCategory, amount)];
+        const dep = s.departmentId ? departmentById.get(s.departmentId)?.name ?? '' : '';
+        return [accountById.get(s.accountId)?.name ?? '', s.subAccountId ? subById.get(s.subAccountId)?.name ?? '' : '', dep, yayoiTaxName(s.taxCategory, j.date), amount, taxAmount(s.taxCategory, amount)];
       };
       out.push([flag, j.no, kessan, slash(j.date), ...side(r.debit), ...side(r.credit), r.memo, '', '', single ? 0 : 3, '', '', 0, 0, 'no']);
     });

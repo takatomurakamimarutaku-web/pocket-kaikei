@@ -168,6 +168,7 @@ test('スキーマ移行：バージョン4のデータを残したまま予算�
     const open = idb.open(DB_NAME, 4);
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
+      open.result.deleteObjectStore('departments'); // バージョン7で追加
       open.result.deleteObjectStore('budgets'); // バージョン4の構成にする
       open.result.deleteObjectStore('attachments');
       open.result.deleteObjectStore('attachmentData');

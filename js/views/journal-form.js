@@ -6,6 +6,7 @@ import { formatYen, parseYen } from '../money.js';
 import { todayString, isInPeriod } from '../period.js';
 import { createJournal, createTemplate } from '../models.js';
 import { isAdjusting } from '../monthly.js';
+import { isBsGroup } from '../accounts.js';
 import { normalize } from '../search.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
@@ -18,7 +19,7 @@ const SIDE_LABEL = { debit: '借方', credit: '貸方' };
 
 export async function render({ app, outlet, params, query, route }) {
   const data = await app.load();
-  const { settings, period, accounts, subAccounts, journals, accountById } = data;
+  const { settings, period, accounts, subAccounts, journals, accountById, departments } = data;
   // 定型仕訳の登録・編集も同じ伝票の画面で行う（日付の代わりに名前と毎月作る日を入れる）
   const templateMode = route?.kind === 'template';
   const templates = await app.db.listTemplates();
@@ -62,6 +63,14 @@ export async function render({ app, outlet, params, query, route }) {
     for (const l of j.lines) if (!recentIds.includes(l.accountId)) recentIds.push(l.accountId);
     if (recentIds.length >= 12) break;
   }
+  // 部門：登録してあれば、損益の科目の行に部門を選ぶ欄を出す（貸借対照表の科目には付けない）
+  const isPl = (acc) => Boolean(acc) && !isBsGroup(acc.group);
+  const departmentsFor = (currentId) => departments.filter((d) => d.active || d.id === currentId);
+  // 新しく選んだ損益の科目には、直前の行で付けた部門を入れておく（複合仕訳で同じ部門が続くことが多い）
+  const lastDepartment = () => {
+    for (const r of [...rows].reverse()) for (const side of ['credit', 'debit']) if (r[side].departmentId) return r[side].departmentId;
+    return '';
+  };
   const subsOf = (accountId, currentSubId) =>
     subAccounts.filter((s) => s.accountId === accountId && (s.active || s.id === currentSubId)).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
@@ -95,7 +104,8 @@ export async function render({ app, outlet, params, query, route }) {
           const id = await pickAccount({ accounts, entityType: settings.entityType, recentIds, currentId: s.accountId, title: `${SIDE_LABEL[side]}の勘定科目` });
           if (!id || id === s.accountId) return;
           const a = accountById.get(id);
-          row[side] = { ...s, accountId: id, subAccountId: '', taxCategory: a.defaultTaxCategory };
+          const departmentId = !isPl(a) ? '' : s.departmentId || (departmentsFor('').some((d) => d.id === lastDepartment()) ? lastDepartment() : '');
+          row[side] = { ...s, accountId: id, subAccountId: '', taxCategory: a.defaultTaxCategory, departmentId };
           dirty = true;
           paintRows();
         },
@@ -116,6 +126,22 @@ export async function render({ app, outlet, params, query, route }) {
           },
           h('option', { value: '', text: '補助なし' }),
           subs.map((x) => h('option', { value: x.id, text: x.name, selected: x.id === s.subAccountId })),
+        )
+      : null;
+    const deps = isPl(acc) ? departmentsFor(s.departmentId) : [];
+    const depSelect = deps.length
+      ? h(
+          'select',
+          {
+            class: 'dep-select',
+            'aria-label': `${index + 1}行目の${SIDE_LABEL[side]}部門`,
+            onchange: (e) => {
+              s.departmentId = e.target.value;
+              dirty = true;
+            },
+          },
+          h('option', { value: '', text: '部門なし（共通）' }),
+          deps.map((d) => h('option', { value: d.id, text: d.active ? d.name : `${d.name}（使わない）`, selected: d.id === s.departmentId })),
         )
       : null;
     const amount = h('input', {
@@ -175,6 +201,7 @@ export async function render({ app, outlet, params, query, route }) {
       h('div', { class: 'jside-head' }, h('span', { class: 'jside-label', text: SIDE_LABEL[side] }), fill),
       accBtn,
       subSelect,
+      depSelect,
       h('div', { class: 'jside-amount' }, amount, tax),
     );
   }
@@ -206,7 +233,8 @@ export async function render({ app, outlet, params, query, route }) {
               if (row[side].accountId) continue;
               const l = c.lines.find((x) => x.side === side && accountById.get(x.accountId)?.active);
               if (!l) continue;
-              row[side] = { ...emptySide(), ...row[side], accountId: l.accountId, subAccountId: l.subAccountId || '', taxCategory: l.taxCategory };
+              const dep = l.departmentId && departmentsFor('').some((d) => d.id === l.departmentId) ? l.departmentId : '';
+              row[side] = { ...emptySide(), ...row[side], accountId: l.accountId, subAccountId: l.subAccountId || '', taxCategory: l.taxCategory, departmentId: dep };
               filled = true;
             }
             if (filled) paintRows();
@@ -280,7 +308,7 @@ export async function render({ app, outlet, params, query, route }) {
     if (!editing) return;
     const list = (await app.db.listJournalHistory(editing.periodId)).filter((e) => e.journalId === editing.id);
     if (!list.length) return;
-    outlet.append(h('details', { class: 'panel journal-history' }, h('summary', { text: `この仕訳の履歴（${list.length}件）` }), h('ul', { class: 'history-list' }, list.map((e) => historyItem(e, { accountById, subById: data.subById })))));
+    outlet.append(h('details', { class: 'panel journal-history' }, h('summary', { text: `この仕訳の履歴（${list.length}件）` }), h('ul', { class: 'history-list' }, list.map((e) => historyItem(e, { accountById, subById: data.subById, departmentById: data.departmentById })))));
   }
   function journalCardLike(j) {
     return h(
@@ -351,7 +379,7 @@ export async function render({ app, outlet, params, query, route }) {
     const journal = editing
       ? { ...editing, date, lines, adjusting: adjustingInput.checked }
       : createJournal({ periodId: period.id, date, lines, adjusting: adjustingInput.checked, ...(fromTemplate ? { source: TEMPLATE_SOURCE, sourceId: fromTemplate.id } : {}) });
-    const all = [...errors, ...validateJournal(journal, { accounts, subAccounts, period, original: editing })];
+    const all = [...errors, ...validateJournal(journal, { accounts, subAccounts, period, original: editing, departments })];
     if (all.length) {
       showErrorList([...new Set(all)]);
       return;
@@ -397,7 +425,7 @@ export async function render({ app, outlet, params, query, route }) {
         if (!sd.accountId && String(sd.amount ?? '').trim() === '') continue;
         const p = String(sd.amount ?? '').trim() === '' ? { ok: true, value: 0 } : parseYen(sd.amount, { allowZero: true });
         if (!p.ok) errors.push(`${i + 1}行目（${SIDE_LABEL[side]}）：${p.error}`);
-        lines.push({ side, accountId: sd.accountId, subAccountId: sd.subAccountId || null, amount: p.ok ? p.value : NaN, taxCategory: sd.taxCategory || 'none', memo: String(row.memo ?? '').trim() });
+        lines.push({ side, accountId: sd.accountId, subAccountId: sd.subAccountId || null, amount: p.ok ? p.value : NaN, taxCategory: sd.taxCategory || 'none', memo: String(row.memo ?? '').trim(), ...(sd.departmentId ? { departmentId: sd.departmentId } : {}) });
       }
     });
     if (errors.length) return showErrorList(errors);

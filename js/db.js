@@ -12,6 +12,7 @@ import { validatePeriod, addDays } from './period.js';
 import { computeOwnerCapital, fromNormal } from './ledger.js';
 import { isYen } from './money.js';
 import { newId, createAccount, createBudget, createSubAccount } from './models.js';
+import { validateDepartment, compareDepartments, usedDepartmentIds } from './departments.js';
 import { validatePaymentTerms } from './receivables.js';
 import { validateBreakdownTargets } from './breakdown.js';
 import { validateAsset } from './depreciation.js';
@@ -23,8 +24,8 @@ import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 6;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData'];
+export const DB_VERSION = 7;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments'];
 /** 証憑の添付（バックアップで画像を含めないときは書き出し・置き換えの対象から外す） */
 export const ATTACHMENT_STORES = ['attachments', 'attachmentData'];
 const ALL_STORES = ['meta', ...DATA_STORES];
@@ -78,6 +79,10 @@ export function migrate(db, oldVersion, tx) {
     // 証憑の添付：情報（attachments）とファイルの中身（attachmentData。id は attachments と同じ）
     db.createObjectStore('attachments', { keyPath: 'id' }).createIndex('journalId', 'journalId');
     db.createObjectStore('attachmentData', { keyPath: 'id' });
+  }
+  if (oldVersion < 7) {
+    // 部門（仕訳の明細の departmentId で付ける。部門別損益）
+    db.createObjectStore('departments', { keyPath: 'id' });
   }
 }
 
@@ -197,6 +202,7 @@ async function putJournal(tx, journal) {
     subAccounts: await req(tx.objectStore('subAccounts').getAll()),
     period,
     original,
+    departments: await req(tx.objectStore('departments').getAll()),
   });
   if (errors.length) throw new ValidationError(errors);
   const record = { ...journal, updatedAt: now() };
@@ -291,6 +297,8 @@ export class Repository {
   async run(stores, mode, fn) {
     // 仕訳を書き換えるときは、必ず訂正・削除の履歴も同じトランザクションで書く
     if (mode === 'readwrite' && stores.includes('journals') && !stores.includes('journalHistory')) stores = [...stores, 'journalHistory'];
+    // 仕訳の保存では部門も確かめる
+    if (mode === 'readwrite' && stores.includes('journals') && !stores.includes('departments')) stores = [...stores, 'departments'];
     const tx = this.db.transaction(stores, mode);
     const done = txDone(tx);
     let result;
@@ -777,6 +785,55 @@ export class Repository {
     });
   }
 
+  // ---- 部門 ----
+
+  /** 部門の一覧（並び順） */
+  listDepartments() {
+    return this.run(['departments'], 'readonly', async (tx) => (await req(tx.objectStore('departments').getAll())).sort(compareDepartments));
+  }
+
+  /** 仕訳（すべての期間）・定型仕訳で使っている部門の id */
+  departmentUsage() {
+    return this.run(['journals', 'templates'], 'readonly', async (tx) => usedDepartmentIds([...(await req(tx.objectStore('journals').getAll())), ...(await req(tx.objectStore('templates').getAll()))]));
+  }
+
+  /** 部門の追加・更新（名前は前後の空白を除き、同じ名前は不可） */
+  saveDepartment(dep) {
+    return this.run(['departments'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('departments');
+      const all = await req(store.getAll());
+      const before = all.find((d) => d.id === dep.id) || null;
+      const record = { ...dep, name: String(dep.name ?? '').trim(), active: dep.active ?? true, sortOrder: dep.sortOrder ?? (before ? before.sortOrder : all.length) };
+      const errors = validateDepartment(record, all);
+      if (Object.keys(errors).length) throw new ValidationError(errors);
+      const next = { ...record, createdAt: before?.createdAt || record.createdAt || now(), updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 部門の並び順を保存する（ids の順に 0, 1, 2…） */
+  reorderDepartments(ids) {
+    return this.run(['departments'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('departments');
+      const ts = now();
+      for (const [i, id] of ids.entries()) {
+        const d = await req(store.get(id));
+        if (d && d.sortOrder !== i) store.put({ ...d, sortOrder: i, updatedAt: ts });
+      }
+    });
+  }
+
+  /** 部門の削除：仕訳・定型仕訳で使っていない部門だけ（使っている部門は「使わない」にする） */
+  deleteDepartment(id) {
+    return this.run(['departments', 'journals', 'templates', 'tombstones'], 'readwrite', async (tx) => {
+      if (usedDepartmentIds(await req(tx.objectStore('journals').getAll())).has(id)) throw new ValidationError(['仕訳で使われているため削除できません。「使わない」にしてください']);
+      if (usedDepartmentIds(await req(tx.objectStore('templates').getAll())).has(id)) throw new ValidationError(['定型仕訳で使われているため削除できません。定型仕訳を直すか、「使わない」にしてください']);
+      tx.objectStore('departments').delete(id);
+      tx.objectStore('tombstones').put(tombstone('departments', id));
+    });
+  }
+
   // ---- 定型仕訳 ----
 
   listTemplates() {
@@ -784,9 +841,13 @@ export class Repository {
   }
 
   saveTemplate(template) {
-    return this.run(['accounts', 'subAccounts', 'templates'], 'readwrite', async (tx) => {
+    return this.run(['accounts', 'subAccounts', 'templates', 'departments'], 'readwrite', async (tx) => {
       const record = { ...template, name: String(template.name ?? '').trim() };
-      const errors = validateTemplate(record, { accounts: await req(tx.objectStore('accounts').getAll()), subAccounts: await req(tx.objectStore('subAccounts').getAll()) });
+      const errors = validateTemplate(record, {
+        accounts: await req(tx.objectStore('accounts').getAll()),
+        subAccounts: await req(tx.objectStore('subAccounts').getAll()),
+        departments: await req(tx.objectStore('departments').getAll()),
+      });
       if (errors.length) throw new ValidationError(errors);
       const next = { ...record, updatedAt: now() };
       tx.objectStore('templates').put(next);

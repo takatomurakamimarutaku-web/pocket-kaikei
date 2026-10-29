@@ -58,6 +58,8 @@ import * as closingView from './views/closing.js';
 import * as assetsView from './views/assets.js';
 import * as assetFormView from './views/asset-form.js';
 import * as assetDisposeView from './views/asset-dispose.js';
+import * as departmentsView from './views/departments.js';
+import * as departmentPlView from './views/department-pl.js';
 
 // back: 戻るボタンを表示し、アプリ内の履歴が無いときに戻る先。print: ヘッダーに印刷（PDF 保存）ボタンを出す
 const routes = [
@@ -84,6 +86,7 @@ const routes = [
   { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/trial-monthly', view: trialMonthlyView, title: '月次推移試算表', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/monthly', view: monthlyView, title: '月次推移表', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/departments', view: departmentPlView, title: '部門別損益', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/pl', view: statementsView, kind: 'pl', title: '損益計算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/manufacturing', view: manufacturingView, title: '製造原価報告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/cash-flow', view: cashFlowView, kind: 'statement', title: 'キャッシュフロー計算書', tab: 'reports', back: '#/reports', print: true },
@@ -110,6 +113,7 @@ const routes = [
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },
   { path: '/account/new', view: accountEditView, title: '科目の追加', tab: 'more', back: '#/accounts' },
   { path: '/account/:id', view: accountEditView, title: '科目の編集', tab: 'more', back: '#/accounts' },
+  { path: '/departments', view: departmentsView, title: '部門', tab: 'more', back: '#/more' },
   { path: '/opening', view: openingView, title: '期首残高', tab: 'more', back: '#/more' },
   { path: '/periods', view: periodsView, title: '会計期間', tab: 'more', back: '#/more' },
   { path: '/closing', view: closingView, title: '決算・繰越', tab: 'more', back: '#/more' },
@@ -184,20 +188,22 @@ async function start() {
     },
     /**
      * 画面で使うデータをまとめて読む（第1弾は件数が少ない前提で、画面ごとに読み直す）
-     * @returns {{ settings, period, accounts, subAccounts, journals, accountById, subById }}
+     * @returns {{ settings, period, accounts, subAccounts, journals, departments, accountById, subById, departmentById }}
      */
     async load() {
       const settings = await db.getSettings();
       const period = await db.getCurrentPeriod();
-      const [accounts, subAccounts, journals] = await Promise.all([db.listAccounts(), db.listSubAccounts(), period ? db.listJournals(period.id) : []]);
+      const [accounts, subAccounts, journals, departments] = await Promise.all([db.listAccounts(), db.listSubAccounts(), period ? db.listJournals(period.id) : [], db.listDepartments()]);
       return {
         settings,
         period,
         accounts,
         subAccounts,
         journals,
+        departments,
         accountById: new Map(accounts.map((a) => [a.id, a])),
         subById: new Map(subAccounts.map((s) => [s.id, s])),
+        departmentById: new Map(departments.map((d) => [d.id, d])),
       };
     },
   };

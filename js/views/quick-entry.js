@@ -11,6 +11,7 @@ import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { pickAccount } from './account-picker.js';
 import { closedNotice } from './period-common.js';
+import { isBsGroup } from '../accounts.js';
 import { attachmentPanel } from './attachment-panel.js';
 
 const SIDE_LABEL = { debit: '借方', credit: '貸方' };
@@ -20,7 +21,7 @@ const MAX_CHIPS = 8;
 export async function render({ app, outlet, params, query }) {
   const template = QUICK_BY_ID[params.kind];
   const data = await app.load();
-  const { settings, period, accounts, subAccounts, journals, accountById, subById } = data;
+  const { settings, period, accounts, subAccounts, journals, accountById, subById, departments } = data;
   if (!template || (template.entity !== 'both' && template.entity !== settings.entityType)) {
     put(outlet, h('p', { class: 'empty', text: 'この取引の種類は使えません' }), h('a', { href: '#/entry', class: 'btn', text: '入力メニューへ' }));
     return;
@@ -216,6 +217,18 @@ export async function render({ app, outlet, params, query }) {
   });
 
   const order = template.taxSide === 'credit' ? ['credit', 'debit'] : ['debit', 'credit'];
+  // 部門：登録してあれば選べる。損益の科目の行（売上・経費など）にだけ付ける
+  const activeDepartments = departments.filter((d) => d.active);
+  let departmentId = '';
+  const departmentSelect = activeDepartments.length
+    ? h(
+        'select',
+        { id: 'q-department', onchange: (e) => ((departmentId = e.target.value), (dirty = true)) },
+        h('option', { value: '', text: '部門なし（共通）' }),
+        activeDepartments.map((d) => h('option', { value: d.id, text: d.name })),
+      )
+    : null;
+  const withDepartment = (lines) => (departmentId ? lines.map((l) => (accountById.get(l.accountId) && !isBsGroup(accountById.get(l.accountId).group) ? { ...l, departmentId } : l)) : lines);
   // 証憑の添付（登録したときに一緒に保存する）
   const attach = attachmentPanel({ app, data, current: () => ({ date: state.date, lines: buildQuickLines(state).lines }), onPending: () => (dirty = true) });
   const form = h(
@@ -225,6 +238,7 @@ export async function render({ app, outlet, params, query }) {
     h('div', { class: 'field-row' }, field('日付', dateInput, { name: 'date' }), field('金額（円・税込）', amountInput, { name: 'amount' })),
     h('section', { class: 'panel qslots' }, slotEls[order[0]], slotEls[order[1]]),
     h('div', { class: 'memo-wrap' }, field('摘要', memoInput, { name: 'memo' })),
+    departmentSelect ? field('部門', departmentSelect, { name: 'department', hint: '売上・経費の科目の行に付けます' }) : null,
     previewEl,
     attach.el,
     errorsEl,
@@ -253,8 +267,8 @@ export async function render({ app, outlet, params, query }) {
 
   async function save() {
     const { lines, errors } = buildQuickLines(state);
-    const journal = createJournal({ periodId: period.id, date: state.date, lines });
-    const all = errors.length ? errors : validateJournal(journal, { accounts, subAccounts, period });
+    const journal = createJournal({ periodId: period.id, date: state.date, lines: withDepartment(lines) });
+    const all = errors.length ? errors : validateJournal(journal, { accounts, subAccounts, period, departments });
     if (all.length) return showErrorList([...new Set(all)]);
     saveBtn.disabled = true;
     try {

@@ -215,6 +215,7 @@ test('スキーマ移行：バージョン5のデータを残したまま証憑�
     const open = idb.open(DB_NAME, 5);
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
+      open.result.deleteObjectStore('departments'); // バージョン7で追加
       open.result.deleteObjectStore('attachments'); // バージョン5の構成にする
       open.result.deleteObjectStore('attachmentData');
       open.transaction.objectStore('budgets').put({ id: 'b1', periodId: 'p1', accountId: 'a1', months: { '2026-01': 1 }, createdAt: 'x', updatedAt: 'x' });

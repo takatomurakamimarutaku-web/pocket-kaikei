@@ -25,7 +25,7 @@ export function journalTotals(lines) {
  *   original：編集前の仕訳（無効化された科目でも、元から使っていた明細は残してよい）
  * @returns {string[]} エラー（空なら正常）
  */
-export function validateJournal(journal, { accounts, subAccounts, period, original = null }) {
+export function validateJournal(journal, { accounts, subAccounts, period, original = null, departments = null }) {
   const errors = [];
   if (!period || journal.periodId !== period.id) errors.push('会計期間が正しくありません');
   if (period && !isInPeriod(journal.date, period)) errors.push('日付は会計期間内で入力してください');
@@ -36,6 +36,9 @@ export function validateJournal(journal, { accounts, subAccounts, period, origin
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const subById = new Map(subAccounts.map((s) => [s.id, s]));
   const usedBefore = new Set((original?.lines || []).map((l) => `${l.accountId}|${l.subAccountId || ''}`));
+  // 部門（departments を渡したときだけ確かめる。Repository とバックアップの検証では必ず渡す）
+  const departmentById = departments ? new Map(departments.map((d) => [d.id, d])) : null;
+  const departmentsBefore = new Set((original?.lines || []).map((l) => l.departmentId).filter(Boolean));
   lines.forEach((l, i) => {
     const at = `${i + 1}行目（${l.side === 'debit' ? '借方' : l.side === 'credit' ? '貸方' : '?'}）`;
     if (l.side !== 'debit' && l.side !== 'credit') errors.push(`${at}：貸借が不正です`);
@@ -46,6 +49,11 @@ export function validateJournal(journal, { accounts, subAccounts, period, origin
       const sub = subById.get(l.subAccountId);
       if (!sub || sub.accountId !== l.accountId) errors.push(`${at}：補助科目が勘定科目と合っていません`);
       else if (!sub.active && !usedBefore.has(`${l.accountId}|${l.subAccountId}`)) errors.push(`${at}：補助科目「${sub.name}」は無効になっています`);
+    }
+    if (l.departmentId != null && l.departmentId !== '' && departmentById) {
+      const dep = departmentById.get(l.departmentId);
+      if (typeof l.departmentId !== 'string' || !dep) errors.push(`${at}：部門が見つかりません`);
+      else if (!dep.active && !departmentsBefore.has(l.departmentId)) errors.push(`${at}：部門「${dep.name}」は使わない設定になっています`);
     }
     if (!isYen(l.amount) || l.amount <= 0 || l.amount > MAX_AMOUNT) errors.push(`${at}：金額は1円以上1兆円未満の整数で入力してください`);
     if (!isTaxCategory(l.taxCategory)) errors.push(`${at}：税区分が不正です`);
@@ -61,7 +69,7 @@ export function validateJournal(journal, { accounts, subAccounts, period, origin
 // 画面の1行：{ debit: {accountId, subAccountId, amount(文字列), taxCategory}, credit: {...}, memo }
 
 export function emptySide() {
-  return { accountId: '', subAccountId: '', amount: '', taxCategory: 'none' };
+  return { accountId: '', subAccountId: '', amount: '', taxCategory: 'none', departmentId: '' };
 }
 
 export function emptyRow() {
@@ -90,6 +98,8 @@ export function rowsToLines(rows) {
         amount: parsed.ok ? parsed.value : NaN,
         taxCategory: s.taxCategory || 'none',
         memo: String(row.memo ?? '').trim(),
+        // 部門は付けたときだけ持たせる（部門を使わない人の仕訳の形は変えない）
+        ...(s.departmentId ? { departmentId: s.departmentId } : {}),
       });
     }
   });
@@ -102,7 +112,7 @@ export function linesToRows(lines) {
   const credits = lines.filter((l) => l.side === 'credit');
   const n = Math.max(debits.length, credits.length, 1);
   const toSide = (l) =>
-    l ? { accountId: l.accountId, subAccountId: l.subAccountId || '', amount: String(l.amount), taxCategory: l.taxCategory } : emptySide();
+    l ? { accountId: l.accountId, subAccountId: l.subAccountId || '', amount: String(l.amount), taxCategory: l.taxCategory, departmentId: l.departmentId || '' } : emptySide();
   const rows = [];
   for (let i = 0; i < n; i++) {
     rows.push({ debit: toSide(debits[i]), credit: toSide(credits[i]), memo: debits[i]?.memo || credits[i]?.memo || '' });
@@ -163,17 +173,17 @@ export function compareJournals(a, b) {
 }
 
 /**
- * 仕訳帳の検索。摘要・科目名・補助科目名の部分一致、または金額の一致
+ * 仕訳帳の検索。摘要・科目名・補助科目名・部門名の部分一致、または金額の一致
  * @param {(s:string)=>string} normalize
  */
-export function matchJournal(journal, query, { accountById, subById, normalize }) {
+export function matchJournal(journal, query, { accountById, subById, normalize, departmentById = new Map() }) {
   const q = normalize(query);
   if (!q) return true;
   const digits = q.replace(/[,円¥]/g, '');
   const amount = /^\d+$/.test(digits) ? Number(digits) : null;
   return journal.lines.some((l) => {
     if (amount !== null && l.amount === amount) return true;
-    const texts = [l.memo, accountById.get(l.accountId)?.name, subById.get(l.subAccountId)?.name];
+    const texts = [l.memo, accountById.get(l.accountId)?.name, subById.get(l.subAccountId)?.name, departmentById.get(l.departmentId)?.name];
     return texts.some((t) => t && normalize(t).includes(q));
   });
 }

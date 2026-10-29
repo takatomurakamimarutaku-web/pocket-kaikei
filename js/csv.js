@@ -21,12 +21,18 @@ export function toCsv(rows) {
 /**
  * 仕訳帳。振替伝票の行単位（複合仕訳は同じ No. で複数行）
  */
-export function journalsCsv(journals, { accountById, subById }) {
-  const header = ['No.', '日付', '借方科目', '借方補助', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方税区分', '貸方金額', '摘要'];
+export function journalsCsv(journals, { accountById, subById, departmentById = new Map() }) {
+  // 部門を登録しているときだけ、補助の次に部門の列を入れる
+  const dep = departmentById.size > 0;
+  const header = dep
+    ? ['No.', '日付', '借方科目', '借方補助', '借方部門', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方部門', '貸方税区分', '貸方金額', '摘要']
+    : ['No.', '日付', '借方科目', '借方補助', '借方税区分', '借方金額', '貸方科目', '貸方補助', '貸方税区分', '貸方金額', '摘要'];
   const side = (s) => {
-    if (!s.accountId) return ['', '', '', ''];
+    if (!s.accountId) return dep ? ['', '', '', '', ''] : ['', '', '', ''];
     const cat = TAX_BY_CODE[s.taxCategory];
-    return [accountById.get(s.accountId)?.name ?? '', subById.get(s.subAccountId)?.name ?? '', cat && cat.kind !== 'none' ? cat.label : '', s.amount];
+    const names = [accountById.get(s.accountId)?.name ?? '', subById.get(s.subAccountId)?.name ?? ''];
+    if (dep) names.push(departmentById.get(s.departmentId)?.name ?? '');
+    return [...names, cat && cat.kind !== 'none' ? cat.label : '', s.amount];
   };
   const rows = [header];
   for (const j of journals) {
@@ -74,8 +80,9 @@ export function csvFileName(kind, date = new Date()) {
  * 月次推移表（monthly.js の items）。区分の行・科目の行（「　科目名」）・段階利益の行
  * @param {{ total?: boolean, includeZero?: boolean }} opts total：期間合計の列を付ける（損益のみ）
  */
-export function monthlyCsv(items, months, { total = false, includeZero = false } = {}) {
-  const head = ['項目', ...months.map((m) => `${m.slice(0, 4)}/${m.slice(5)}`)];
+export function monthlyCsv(items, months, { total = false, includeZero = false, labels = null } = {}) {
+  // labels：列の見出し（部門別損益では部門名）。無ければ月（YYYY/MM）
+  const head = ['項目', ...(labels || months.map((m) => `${m.slice(0, 4)}/${m.slice(5)}`))];
   if (total) head.push('合計');
   const row = (label, values, t) => [label, ...values, ...(total ? [t ?? values.reduce((s, v) => s + v, 0)] : [])];
   const rows = [head];

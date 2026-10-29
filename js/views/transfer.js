@@ -21,7 +21,7 @@ const LIST_MAX = 200;
 
 export async function render({ app, outlet }) {
   const data = await app.load();
-  const { settings, period, accounts, subAccounts, journals, accountById, subById } = data;
+  const { settings, period, accounts, subAccounts, journals, accountById, subById, departmentById } = data;
   const saved = (await app.db.getMeta(META_KEY)) || { accounts: {}, taxes: {} };
   const usable = accounts.filter((a) => a.active !== false).sort(compareAccounts);
 
@@ -276,7 +276,7 @@ export async function render({ app, outlet }) {
   const exportNote = h('div');
   async function exportYayoi() {
     if (!journals.length) return showToast('書き出す仕訳がありません');
-    const text = yayoiCsv(journals, { accountById, subById, period });
+    const text = yayoiCsv(journals, { accountById, subById, period, departmentById });
     let blob;
     if (encodingSelect.value === 'sjis') {
       const { bytes, unmappable } = encodeShiftJis(text);
