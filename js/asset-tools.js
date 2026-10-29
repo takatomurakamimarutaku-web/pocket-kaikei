@@ -1,8 +1,6 @@
-// 固定資産台帳の補助機能（純粋関数）：耐用年数表の候補・中古資産の耐用年数・売却と除却の仕訳・科目別の集計
+// 固定資産台帳の補助機能（純粋関数）：中古資産の耐用年数・売却と除却の仕訳・科目別の集計・資本的支出・一部の売却除却
+// 耐用年数表の候補は js/life-table.js
 // 出典（2026-10-29 確認。令和8年4月1日現在の法令等）
-// - 耐用年数：国税庁「主な減価償却資産の耐用年数表」https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/pdf/2100_01.pdf
-//   確定申告書等作成コーナー「耐用年数（器具・備品）（その1）」「耐用年数（車両・運搬具／工具）」「耐用年数（建物、建物付属設備）」
-//   ソフトウエア：No.5461 https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5461.htm
 // - 中古資産の耐用年数（簡便法）：No.5404 https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5404.htm
 //   耐用年数の適用等に関する取扱通達 第5節（1-5-1 使い始めた年に限る、1-5-6 1年未満の端数は切り捨て）
 // - 事業用の固定資産の売却は消費税の課税対象：国税庁 質疑応答「事業者の事業用固定資産の売却」
@@ -16,44 +14,6 @@
 import { CATEGORY_BY_ID, usesLife, depreciationSchedule, hasCarryOver, MIN_LIFE, NEW_METHOD_FROM } from './depreciation.js';
 import { isValidDate } from './period.js';
 import { newId } from './models.js';
-
-/** よく使う資産の耐用年数（耐用年数表から抜粋。表にないものは利用者が年数を入力する） */
-export const LIFE_PRESETS = [
-  { category: 'tools', label: 'パソコン（サーバー用を除く）', life: 4 },
-  { category: 'tools', label: 'サーバー・その他の電子計算機', life: 5 },
-  { category: 'tools', label: '複写機・計算機・タイムレコーダー', life: 5 },
-  { category: 'tools', label: 'ファクシミリ', life: 5 },
-  { category: 'tools', label: 'デジタル構内交換設備・デジタルボタン電話設備', life: 6 },
-  { category: 'tools', label: 'その他の電話設備・通信機器', life: 10 },
-  { category: 'tools', label: 'エアコンなどの冷房用・暖房用機器', life: 6 },
-  { category: 'tools', label: '電気冷蔵庫・電気洗濯機など', life: 6 },
-  { category: 'tools', label: 'テレビ・音響機器', life: 5 },
-  { category: 'tools', label: 'カメラ', life: 5 },
-  { category: 'tools', label: '事務机・いす・キャビネット（主に金属製）', life: 15 },
-  { category: 'tools', label: '事務机・いす・キャビネット（その他）', life: 8 },
-  { category: 'tools', label: '応接セット（接客業用）', life: 5 },
-  { category: 'tools', label: '応接セット（その他）', life: 8 },
-  { category: 'tools', label: '陳列棚・陳列ケース（冷凍・冷蔵機能付き）', life: 6 },
-  { category: 'tools', label: '陳列棚・陳列ケース（その他）', life: 8 },
-  { category: 'tools', label: '看板・ネオンサイン', life: 3 },
-  { category: 'tools', label: '金庫（手さげ金庫を除く）', life: 20 },
-  { category: 'tools', label: '時計', life: 10 },
-  { category: 'tools', label: '理容・美容機器', life: 5 },
-  { category: 'tools', label: '測定工具・検査工具', life: 5 },
-  { category: 'vehicle', label: '自動車（普通車など）', life: 6 },
-  { category: 'vehicle', label: '軽自動車（総排気量0.66リットル以下）', life: 4 },
-  { category: 'vehicle', label: '貨物自動車（ダンプ式以外）', life: 5 },
-  { category: 'vehicle', label: '二輪・三輪自動車', life: 3 },
-  { category: 'vehicle', label: '自転車', life: 2 },
-  { category: 'building', label: '木造の事務所', life: 24 },
-  { category: 'building', label: '木造の店舗・住宅', life: 22 },
-  { category: 'building', label: '鉄筋コンクリート造の事務所', life: 50 },
-  { category: 'building', label: '鉄筋コンクリート造の住宅', life: 47 },
-  { category: 'building_equipment', label: '電気設備（照明設備を含む。蓄電池電源設備以外）', life: 15 },
-  { category: 'building_equipment', label: '給排水・衛生設備、ガス設備', life: 15 },
-  { category: 'building_equipment', label: '店用簡易装備', life: 3 },
-  { category: 'intangible', label: 'ソフトウェア（販売用の原本・研究開発用以外）', life: 5 },
-];
 
 /**
  * 中古資産の耐用年数（簡便法）
@@ -200,6 +160,8 @@ export function capexDefaults(parent, date) {
     businessRatio: parent.businessRatio ?? 100,
     expenseAccountId: parent.expenseAccountId ?? null,
     location: parent.location || '',
+    structure: parent.structure || '',
+    detail: parent.detail || '',
     parentId: parent.id,
   };
 }

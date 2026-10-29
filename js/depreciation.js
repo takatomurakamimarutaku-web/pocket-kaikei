@@ -327,6 +327,9 @@ export function validateAsset(asset, { entityType, accounts }) {
   if (String(asset.assetNo ?? '').length > 20) e.assetNo = '資産番号は20文字以内にしてください';
   if (asset.quantity != null && (!Number.isInteger(asset.quantity) || asset.quantity < 1 || asset.quantity > 99999)) e.quantity = '数量は1〜99999の整数で入力してください';
   if (String(asset.location ?? '').length > 40) e.location = '設置場所は40文字以内にしてください';
+  // v0.38.0 で追加した耐用年数表の区分（任意。別表十六・少額減価償却資産の明細書の「構造又は用途」「細目」）
+  if (asset.structure != null && (typeof asset.structure !== 'string' || asset.structure.length > 60)) e.structure = '構造又は用途は60文字以内にしてください';
+  if (asset.detail != null && (typeof asset.detail !== 'string' || asset.detail.length > 60)) e.detail = '細目は60文字以内にしてください';
   if (asset.disposalType != null) {
     if (!['sell', 'retire'].includes(asset.disposalType)) e.disposedOn = '売却か除却かが正しくありません';
     else if (!asset.disposedOn) e.disposedOn = '売却・除却した日を入力してください';
@@ -419,7 +422,8 @@ export function depreciationSchedule(asset, periods) {
       removed.push(part);
     }
     // 旧定額法・旧定率法の有形：償却費の累積額が取得価額の95%に達したときの帳簿価額（＝取得価額×5%）と、その後の5年間の均等償却
-    const tail = old && !cat?.intangible ? cost - Math.floor((cost * 95) / 100) : 0;
+    // 別表十六（一）「18」・（二）「19」の 差引取得価額×5%（1円未満切捨て）
+    const tail = old && !cat?.intangible ? Math.floor((cost * 5) / 100) : 0;
     if (book <= floor || out.length >= 200) break;
     if (asset.method !== 'lump3' && asset.disposedOn && r.startDate > asset.disposedOn) break;
     const from = r.startDate > asset.startedOn ? r.startDate : asset.startedOn;

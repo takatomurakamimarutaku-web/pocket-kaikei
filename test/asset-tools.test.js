@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { usedAssetLife, bookValueAt, disposalLines, canDispose, registerByAccount, LIFE_PRESETS, findDisposalJournals } from '../js/asset-tools.js';
-import { assetRegister, validateAsset, CATEGORY_BY_ID } from '../js/depreciation.js';
+import { usedAssetLife, bookValueAt, disposalLines, canDispose, registerByAccount, findDisposalJournals } from '../js/asset-tools.js';
+import { assetRegister, validateAsset } from '../js/depreciation.js';
 import { validateJournal } from '../js/journal.js';
 import { createJournal } from '../js/models.js';
 import { makeBook } from './helpers.js';
@@ -20,15 +20,6 @@ test('中古資産の耐用年数（簡便法）：(法定−経過)＋経過×2
   assert.equal(usedAssetLife(10, 0), 10);
   assert.equal(usedAssetLife(0, 10), null);
   assert.equal(usedAssetLife(6, -1), null);
-});
-
-test('耐用年数の候補：種類があり、年数は2〜50年', () => {
-  for (const p of LIFE_PRESETS) {
-    assert.ok(CATEGORY_BY_ID[p.category], p.label);
-    assert.ok(p.life >= 2 && p.life <= 50, p.label);
-  }
-  assert.equal(LIFE_PRESETS.find((p) => p.label.startsWith('パソコン')).life, 4);
-  assert.equal(LIFE_PRESETS.find((p) => p.label.startsWith('軽自動車')).life, 4);
 });
 
 test('法人の売却：減価償却累計額を消し、売却額は課税売上、差額は固定資産売却益', () => {

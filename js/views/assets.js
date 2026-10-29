@@ -105,7 +105,7 @@ export async function render({ app, outlet }) {
     register.length
       ? [
           summary(),
-          h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv })),
+          h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv }), settings.entityType === 'corporation' ? h('a', { class: 'btn', href: '#/reports/schedule16', text: '別表十六を見る' }) : null),
           h('h2', { class: 'menu-group-title', text: 'この期間の固定資産' }),
           h('ul', { class: 'menu-group' }, register.map(card)),
         ]

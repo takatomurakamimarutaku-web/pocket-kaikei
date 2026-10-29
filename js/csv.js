@@ -4,6 +4,7 @@ import { TAX_BY_CODE } from './tax.js';
 import { groupLabel } from './accounts.js';
 import { CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
 import { eraOf } from './property-tax.js';
+import { SCHEDULE16_LINES } from './schedule16.js';
 
 export const BOM = '﻿';
 
@@ -241,4 +242,25 @@ export function stackedTaxCsv(rows, { accountById, subById }) {
     r.transitionalTax ?? '',
   ]);
   return toCsv([header, ...body]);
+}
+
+/**
+ * 別表十六（一）（二）（七）（八）。欄を行、資産（一括償却は事業年度）を列にする
+ * @param {object} r js/schedule16.js の schedule16() の結果
+ */
+export function schedule16Csv(r) {
+  const out = [];
+  const form = (title, key, columns, heads) => {
+    out.push([title], ['欄', '項目', ...heads]);
+    for (const def of SCHEDULE16_LINES[key]) out.push([def.no, def.formula ? `${def.label} ${def.formula}` : def.label, ...columns.map((c) => c.lines[def.no] ?? '')]);
+    if (columns.some((c) => c.notes?.length)) out.push(['', '注記', ...columns.map((c) => (c.notes || []).join('。'))]);
+    out.push([]);
+  };
+  const names = (list) => list.map((c) => c.asset.name);
+  form('別表十六（一）旧定額法又は定額法による減価償却資産の償却額の計算に関する明細書', 'straight', r.straight, names(r.straight));
+  form('別表十六（二）旧定率法又は定率法による減価償却資産の償却額の計算に関する明細書', 'declining', r.declining, names(r.declining));
+  form('別表十六（七）少額減価償却資産の取得価額の損金算入の特例に関する明細書', 'small', r.small.items, names(r.small.items));
+  out.splice(out.length - 1, 0, [8, '当期の少額減価償却資産の取得価額の合計額 (7)の計', r.small.total]);
+  form('別表十六（八）一括償却資産の損金算入に関する明細書', 'lump', r.lump, r.lump.map((c) => (c.current ? '当期分' : '前期以前分')));
+  return toCsv(out);
 }

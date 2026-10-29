@@ -66,6 +66,8 @@ export function createAsset(fields = {}, now = new Date()) {
     assetNo: '', // 資産番号（任意）
     quantity: 1, // 数量
     location: '', // 設置場所（任意。償却資産申告などで使う）
+    structure: '', // 構造又は用途（任意。耐用年数表の区分。別表十六などで使う）
+    detail: '', // 細目（任意。同上）
     disposalType: null, // 売却（sell）・除却（retire）
     salePrice: null, // 売却額（税込）
     expenseAccountId: null, // 償却費の科目（null なら減価償却費。製造業の工場の資産は製造経費の科目）
