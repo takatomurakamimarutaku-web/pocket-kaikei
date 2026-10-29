@@ -19,7 +19,7 @@
 //   ・貸間・アパート等はおおむね10室以上、独立家屋はおおむね5棟以上なら事業として行われているものとする
 //   ・事業として行われていない貸付けでは、青色事業専従者給与は必要経費にならない
 // 科目と欄の対応は目印（hint）で決める（科目名は利用者が変えられるため名前では判定しない）
-import { trialBalance } from './ledger.js';
+import { trialBalance, bySubAccount } from './ledger.js';
 import { blueIncomeStatement, blueDeductionFor } from './blue-return.js';
 import { isYen } from './money.js';
 
@@ -170,19 +170,6 @@ export function realEstateForFirstTable(income, landInterest = 0) {
   return -income <= landInterest ? 0 : income + landInterest;
 }
 
-/** 補助科目（相手先）ごとの金額。補助科目の無い科目は科目名の行にする */
-function subRows(rows, label = (r) => r.account.name) {
-  const out = [];
-  for (const r of rows) {
-    if (!r.subs.length) {
-      if (r.closing) out.push({ name: label(r), amount: r.closing });
-      continue;
-    }
-    for (const s of r.subs) if (s.closing) out.push({ name: s.subAccount ? s.subAccount.name : `${r.account.name}（補助科目なし）`, amount: s.closing });
-  }
-  return out;
-}
-
 /**
  * 2・3ページ目の内訳のうち帳簿から作れるもの（補助科目を相手先として使う）
  *   tenants：不動産所得の収入の内訳（賃借人ごとの賃貸料・礼金等・名義書換料その他。補助科目の名前でまとめる）
@@ -205,10 +192,10 @@ export function realEstateDetails({ accounts, subAccounts = [], period, journals
   const byHint = (hint) => rows.filter((r) => r.account.group === 're_expenses' && r.account.hint === hint);
   return {
     tenants: [...tenants.values()],
-    wages: subRows(byHint('re_wages')),
-    family: subRows(rows.filter((r) => r.account.group === 're_family_salary')),
-    rent: subRows(byHint('re_rent')),
-    interest: subRows(byHint('re_interest')),
+    wages: bySubAccount(byHint('re_wages')),
+    family: bySubAccount(rows.filter((r) => r.account.group === 're_family_salary')),
+    rent: bySubAccount(byHint('re_rent')),
+    interest: bySubAccount(byHint('re_interest')),
   };
 }
 

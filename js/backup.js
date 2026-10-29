@@ -12,6 +12,7 @@ import { validateAttachment, bytesToBase64, base64ToBytes, sha256Hex, toArrayBuf
 import { validatePaymentTerms } from './receivables.js';
 import { validateBreakdownTargets } from './breakdown.js';
 import { REAL_ESTATE_MODES } from './real-estate.js';
+import { FILING_TYPES } from './white-return.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
 export const BACKUP_VERSION = 6;
@@ -106,6 +107,8 @@ export function parseBackup(text) {
   if (s.manufacturing !== undefined && (typeof s.manufacturing !== 'boolean' || (s.manufacturing && s.entityType !== 'corporation'))) throw new BackupError('事業者の設定が不正です');
   // 不動産所得（v0.39.0 で追加。個人だけ）
   if (s.realEstate !== undefined && (!REAL_ESTATE_MODES.includes(s.realEstate) || (s.realEstate !== 'none' && s.entityType !== 'individual'))) throw new BackupError('事業者の設定が不正です');
+  // 申告の種類（v0.40.0 で追加。白色申告は個人だけ。無いファイルは青色）
+  if (s.filing !== undefined && (!FILING_TYPES.includes(s.filing) || (s.filing === 'white' && s.entityType !== 'individual'))) throw new BackupError('事業者の設定が不正です');
   // 内訳書の対象の科目（v0.35.0 で追加）。消えた科目は使うときに外す
   if (validateBreakdownTargets(s.breakdownTargets)) throw new BackupError('内訳書の対象の科目のデータが不正です');
   const bad = (what) => {

@@ -32,6 +32,7 @@ import * as taxView from './views/tax.js';
 import * as taxReturnView from './views/tax-return.js';
 import * as blueReturnView from './views/blue-return.js';
 import * as realEstateView from './views/real-estate.js';
+import * as whiteReturnView from './views/white-return.js';
 import * as breakdownView from './views/breakdown.js';
 import * as financialView from './views/financial.js';
 import * as propertyTaxView from './views/property-tax.js';
@@ -91,6 +92,7 @@ const routes = [
   { path: '/reports/tax-return', view: taxReturnView, title: '消費税の申告計算', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/blue-return', view: blueReturnView, title: '青色申告決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/blue-return-re', view: realEstateView, title: '青色申告決算書（不動産所得用）', tab: 'reports', back: '#/reports', print: true },
+  { path: '/reports/white-return', view: whiteReturnView, title: '収支内訳書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/financial', view: financialView, title: '決算書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/income-tax', view: incomeTaxView, title: '所得税の確定申告書', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/enterprise-tax', view: enterpriseTaxView, title: '事業税', tab: 'reports', back: '#/reports', print: true },

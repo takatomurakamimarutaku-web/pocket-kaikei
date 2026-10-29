@@ -12,6 +12,7 @@ export async function render({ app, outlet }) {
   let taxUseSplit = Boolean(settings.taxUseSplit);
   let manufacturing = Boolean(settings.manufacturing);
   let realEstate = REAL_ESTATE_MODES.includes(settings.realEstate) ? settings.realEstate : 'none';
+  let filing = settings.filing === 'white' ? 'white' : 'blue';
   const name = h('input', { id: 's-name', type: 'text', maxlength: 60, value: settings.businessName });
   const corp = settings.entityType === 'corporation';
   const start = h('input', { id: 's-start', type: 'date', value: period.startDate });
@@ -22,6 +23,13 @@ export async function render({ app, outlet }) {
     { novalidate: true, onsubmit: (e) => (e.preventDefault(), save()) },
     field('事業者名', name, { name: 'businessName' }),
     field('事業の形態', h('p', { class: 'readonly', text: ENTITY_LABELS[settings.entityType] }), { hint: '個人/法人は変更できません。変える場合はデータを初期化してください' }),
+    corp
+      ? null
+      : field(
+          '申告の種類',
+          segmented({ name: '申告の種類', options: [{ value: 'blue', label: '青色申告' }, { value: 'white', label: '白色申告' }], value: filing, onChange: (v) => (filing = v) }),
+          { hint: '青色申告の承認を受けていない人は白色申告です。白色申告にすると、帳票は青色申告決算書の代わりに収支内訳書（専従者控除の計算つき）になります' },
+        ),
     field('消費税', segmented({ name: '消費税', options: Object.entries(TAX_STATUS_LABELS).map(([value, label]) => ({ value, label })), value: taxStatus, onChange: (v) => (taxStatus = v) })),
     field(
       '仕入の用途区分',
@@ -74,7 +82,7 @@ export async function render({ app, outlet }) {
     if (corp) Object.assign(errors, validatePeriod({ startDate: start.value, endDate: end.value }, 'corporation'));
     if (!showErrors(form, errors)) return;
     try {
-      await app.db.updateSettings({ businessName: name.value.trim(), taxStatus, taxUseSplit });
+      await app.db.updateSettings({ businessName: name.value.trim(), taxStatus, taxUseSplit, ...(corp ? {} : { filing }) });
       let message = '保存しました';
       if (corp && manufacturing !== Boolean(settings.manufacturing)) {
         const r = await app.db.setManufacturing(manufacturing);

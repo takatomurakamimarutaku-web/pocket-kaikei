@@ -222,3 +222,20 @@ export function firstNegativeDate({ accountId, subAccountId = null, accounts, su
   }
   return null;
 }
+
+/**
+ * 試算表の行を補助科目（相手先）ごとの金額にする（決算書・収支内訳書の内訳に使う）。補助科目の無い科目は科目名の行にする
+ * @param {Array} rows trialBalance の rows（subAccounts を渡して作ったもの）
+ * @returns {Array<{ name, amount }>}
+ */
+export function bySubAccount(rows, label = (r) => r.account.name) {
+  const out = [];
+  for (const r of rows) {
+    if (!r.subs.length) {
+      if (r.closing) out.push({ name: label(r), amount: r.closing });
+      continue;
+    }
+    for (const s of r.subs) if (s.closing) out.push({ name: s.subAccount ? s.subAccount.name : `${r.account.name}（補助科目なし）`, amount: s.closing });
+  }
+  return out;
+}

@@ -8,11 +8,13 @@ import { formatPeriod } from '../period.js';
 import { formatYen, parseYen } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { isWhite } from '../white-return.js';
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
   const corp = settings.entityType === 'corporation';
-  const { pl } = buildStatements({ entityType: settings.entityType, accounts, period, journals });
+  const white = isWhite(settings);
+  const { pl } = buildStatements({ entityType: settings.entityType, accounts, period, journals, white });
   const input = { ...DEFAULT_ENTERPRISE_TAX, ...(period.enterpriseTax || {}) };
   const months = periodMonths(period);
   const resultEl = h('div');
@@ -110,7 +112,9 @@ export async function render({ app, outlet }) {
       ),
       h('h3', { class: 'tf-title', text: '個人事業税の計算' }),
       table('個人事業税', [
-        row('', '所得金額（青色申告特別控除前）', r.income, { sub: '青色申告決算書の「青色申告特別控除前の所得金額」。事業税では青色申告特別控除は引けません' }),
+        white
+          ? row('', '所得金額（専従者控除前）', r.income, { sub: '帳簿の事業所得。事業税の事業専従者控除は計算していないので、控除する額は「損失の繰越控除など」に含めて入力してください' })
+          : row('', '所得金額（青色申告特別控除前）', r.income, { sub: '青色申告決算書の「青色申告特別控除前の所得金額」。事業税では青色申告特別控除は引けません' }),
         row('', '損失の繰越控除など', -r.lossCarry),
         row('', '事業主控除', -r.deduction, { sub: input.months < 12 ? `${input.months}か月の月割` : '年290万円' }),
         row('', '課税標準', r.base, { strong: true, sub: '1,000円未満切捨て' }),

@@ -6,6 +6,7 @@ import { openingDiff } from '../ledger.js';
 import { formatPeriod, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { zeroToggle, openingWarning } from './report-common.js';
+import { isWhite } from '../white-return.js';
 
 export async function render({ app, outlet, route, query }) {
   const { settings, period, accounts, journals } = await app.load();
@@ -16,7 +17,8 @@ export async function render({ app, outlet, route, query }) {
   ];
   if (route.kind === 'plan') return renderPlan({ app, outlet, period, accounts, journals, head, query });
 
-  const cf = cashFlowStatement({ entityType: settings.entityType, accounts, period, journals });
+  const white = isWhite(settings);
+  const cf = cashFlowStatement({ entityType: settings.entityType, accounts, period, journals, white });
   let showZero = false;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
@@ -69,7 +71,7 @@ export async function render({ app, outlet, route, query }) {
       'ul',
       { class: 'plain-list small muted' },
       h('li', { text: '資金は現金と預金（定期預金を含む）です。期首と期末の貸借対照表の差額と、損益計算書から作っています（間接法）。' }),
-      h('li', { text: individual ? '所得金額は青色申告特別控除前の金額です。生活費などの引出し・入金は「事業主との出し入れ」に入ります。' : '法人税等の支払額は、法人税等の費用から未払法人税等の増加を差し引いた額です。中間納付を仮払金で処理した場合は「その他の資産の増減」に入ります。' }),
+      h('li', { text: individual ? (white ? '所得金額は専従者控除前の金額です。' : '所得金額は青色申告特別控除前の金額です。') + '生活費などの引出し・入金は「事業主との出し入れ」に入ります。' : '法人税等の支払額は、法人税等の費用から未払法人税等の増加を差し引いた額です。中間納付を仮払金で処理した場合は「その他の資産の増減」に入ります。' }),
       h('li', { text: '利息の受取・支払は営業活動に含めています（中小企業向けの簡便な形）。' }),
     ),
   );

@@ -186,7 +186,7 @@ export async function render({ app, outlet }) {
           ),
         )
       : null,
-    h('p', { class: 'muted small center home-foot', text: `${ENTITY_LABELS[settings.entityType]}・データはこの端末の中だけに保存されています` }),
+    h('p', { class: 'muted small center home-foot', text: `${ENTITY_LABELS[settings.entityType]}${settings.entityType === 'individual' ? (settings.filing === 'white' ? '（白色申告）' : '（青色申告）') : ''}・データはこの端末の中だけに保存されています` }),
   );
 }
 
