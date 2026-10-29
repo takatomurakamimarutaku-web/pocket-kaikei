@@ -4,8 +4,10 @@ import {
   ASSET_CATEGORIES,
   CATEGORY_BY_ID,
   METHODS,
-  RATE_TABLE,
   usesLife,
+  methodVariant,
+  ratesFor,
+  NEW_METHOD_FROM,
   smeLimit,
   validateAsset,
   depreciationSchedule,
@@ -66,6 +68,9 @@ export async function render({ app, outlet, params }) {
   const assetNo = h('input', { id: 'f-no', type: 'text', maxlength: 20, value: state.assetNo || '', placeholder: '例：A-001' });
   const quantity = h('input', { id: 'f-qty', type: 'text', inputmode: 'numeric', maxlength: 5, value: state.quantity ?? 1 });
   const location = h('input', { id: 'f-location', type: 'text', maxlength: 40, value: state.location || '', placeholder: '例：本店、倉庫' });
+  // 特別償却（事業供用年度に 取得価額×率。即時償却は100）
+  const specialRate = h('input', { id: 'f-special-rate', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.specialRate ?? '', placeholder: '例：30' });
+  const specialName = h('input', { id: 'f-special-name', type: 'text', maxlength: 40, value: state.specialName || '', placeholder: '例：中小企業投資促進税制' });
   // 償却費の科目（製造原価を使うときか、選んであるときだけ出す）
   const showExpense = Boolean(settings.manufacturing || state.expenseAccountId);
   const expense = showExpense
@@ -126,7 +131,14 @@ export async function render({ app, outlet, params }) {
       quantity: toInt(quantity.value) ?? NaN,
       location: location.value.trim(),
       expenseAccountId: expense ? expense.value || null : (state.expenseAccountId ?? null),
+      ...readSpecial(),
     };
+  }
+
+  /** 特別償却の入力（率が空欄なら受けない。数字でなければ NaN にして検証で止める） */
+  function readSpecial() {
+    if (specialWrap.hidden || (!specialRate.value.trim() && !specialName.value.trim())) return { specialRate: null, specialName: null };
+    return { specialRate: specialRate.value.trim() === '' ? null : (toInt(specialRate.value) ?? NaN), specialName: specialName.value.trim() || null };
   }
 
   /** 引き継ぎの入力（空欄なら引き継がない。数字でなければ NaN にして検証で止める） */
@@ -143,20 +155,26 @@ export async function render({ app, outlet, params }) {
     const a = read();
     lifeWrap.hidden = !usesLife(a.method);
     usedWrap.hidden = !usesLife(a.method);
+    specialWrap.hidden = !usesLife(a.method) || Boolean(a.startedOn && a.startedOn < NEW_METHOD_FROM);
     const limit = smeLimit(a.acquiredOn || today);
+    const variant = a.startedOn && a.acquiredOn ? methodVariant(a) : a.method;
     const hints = {
       straight: '毎年同じ額を償却します。届出をしていない個人は定額法です。',
       declining: '最初の年ほど多く償却します（200%定率法）。届出をしていない法人の機械・車両・器具備品は定率法です。個人は届出が必要です。',
+      old_straight: '平成19年3月31日以前に使い始めた資産は旧定額法です：（取得価額−残存価額10%）×償却率。償却費の累計が取得価額の95%に達したら、翌年から5年間で1円まで均等に償却します。',
+      old_declining: '平成19年3月31日以前に使い始めた資産は旧定率法です：期首の帳簿価額×償却率。償却費の累計が取得価額の95%に達したら、翌年から5年間で1円まで均等に償却します。',
+      declining250: '平成19年4月1日〜平成24年3月31日に取得した資産は250%定率法です。最初の年ほど多く償却し、償却保証額を下回った年から改定償却率で償却します。',
       lump3: '取得価額20万円未満のものを、使い始めた年から3年間、1/3ずつ経費にします（月数で按分しません）。',
       small: '取得価額10万円未満（または使える期間が1年未満）のものは、使い始めた年に全額を経費にします。',
       sme: `青色申告の中小企業者等が、取得価額${limit / 10000}万円未満のものを使い始めた年に全額を経費にできます（年300万円まで。令和8年4月以後の取得は40万円未満）。`,
     };
-    methodHint.textContent = hints[a.method] || '';
-    const rates = RATE_TABLE[a.usefulLife];
-    rateHint.textContent = rates && usesLife(a.method)
-      ? a.method === 'straight'
-        ? `償却率 ${formatRate(rates[0])}`
-        : `償却率 ${formatRate(rates[1])}・改定償却率 ${rates[2] ? formatRate(rates[2]) : '－'}・保証率 ${rates[3] ? formatRate(rates[3], 5) : '－'}`
+    methodHint.textContent = hints[variant] || hints[a.method] || '';
+    const rates = usesLife(a.method) && a.startedOn && a.acquiredOn ? ratesFor(a) : null;
+    const variantName = { old_straight: '旧定額法', old_declining: '旧定率法', declining250: '250%定率法', declining200: '200%定率法', straight: '定額法' }[variant] ?? '';
+    rateHint.textContent = rates
+      ? variant === 'declining250' || variant === 'declining200'
+        ? `${variantName}：償却率 ${formatRate(rates.rate)}・改定償却率 ${rates.revised ? formatRate(rates.revised) : '－'}・保証率 ${rates.guarantee ? formatRate(rates.guarantee, 5) : '－'}`
+        : `${variantName}：償却率 ${formatRate(rates.rate)}`
       : '耐用年数は国税庁の耐用年数表で確認してください（例：パソコン4年、普通自動車6年、軽自動車4年）';
     const errors = validateAsset(a, { entityType: settings.entityType, accounts });
     if (Object.keys(errors).length) {
@@ -164,6 +182,7 @@ export async function render({ app, outlet, params }) {
       return;
     }
     const rows = depreciationSchedule(a, periods);
+    const hasSpecial = rows.some((r) => r.special);
     put(
       preview,
       h('h2', { class: 'section-title', text: '償却の予定' }),
@@ -173,7 +192,7 @@ export async function render({ app, outlet, params }) {
         h(
           'table',
           { class: 'report' },
-          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: '期間' }), h('th', { scope: 'col', text: '月数' }), h('th', { scope: 'col', text: '償却費' }), individual ? h('th', { scope: 'col', text: '経費' }) : null, h('th', { scope: 'col', text: '期末残高' }))),
+          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: '期間' }), h('th', { scope: 'col', text: '月数' }), h('th', { scope: 'col', text: '償却費' }), hasSpecial ? h('th', { scope: 'col', text: 'うち特別償却' }) : null, individual ? h('th', { scope: 'col', text: '経費' }) : null, h('th', { scope: 'col', text: '期末残高' }))),
           h(
             'tbody',
             {},
@@ -181,9 +200,10 @@ export async function render({ app, outlet, params }) {
               h(
                 'tr',
                 { class: r.startDate === period.startDate ? 'mt-strong' : '' },
-                h('th', { scope: 'row', class: 'nowrap', text: `${slash(r.startDate).slice(0, 7)}〜${slash(r.endDate).slice(0, 7)}${r.switched ? ' ※' : ''}` }),
+                h('th', { scope: 'row', class: 'nowrap', text: `${slash(r.startDate).slice(0, 7)}〜${slash(r.endDate).slice(0, 7)}${r.switched ? ' ※' : ''}${r.equal ? ' ＊' : ''}` }),
                 h('td', { class: 'num', text: String(r.months) }),
                 amountCell('td', r.amount),
+                hasSpecial ? (r.special ? amountCell('td', r.special) : h('td')) : null,
                 individual ? amountCell('td', r.business) : null,
                 amountCell('td', r.closing),
               ),
@@ -192,11 +212,20 @@ export async function render({ app, outlet, params }) {
         ),
       ),
       rows.some((r) => r.switched) ? h('p', { class: 'muted small', text: '※ 償却保証額を下回ったため、改定取得価額×改定償却率で計算しています。' }) : null,
+      rows.some((r) => r.equal) ? h('p', { class: 'muted small', text: '＊ 償却費の累計が取得価額の95%に達した翌年から、5年間で1円まで均等に償却しています（（取得価額×5%−1円）÷5。5年で1円になるよう1円未満は切り上げ）。' }) : null,
+      hasSpecial ? h('p', { class: 'muted small', text: `特別償却（${a.specialName}）は、使い始めた期間に取得価額×${a.specialRate}%（即時償却は取得価額−普通償却費）を普通償却に加えています。月数では按分しません。` }) : null,
       a.startedOn < firstStart && !a.carryBook ? h('p', { class: 'muted small', text: 'アプリで帳簿をつける前の年分も、同じ方法で計算した額としています。前の会計ソフトや前年の決算書と帳簿価額が違うときは、「前の帳簿からの引き継ぎ」に期首の帳簿価額を入れてください。' }) : null,
     );
   }
 
   const lifeWrap = h('div', {}, field('耐用年数（年）', life, { name: 'usefulLife' }), rateHint);
+  const specialWrap = h(
+    'details',
+    { class: 'used-box', open: state.specialRate ? true : null },
+    h('summary', { text: '特別償却を受ける（任意）' }),
+    h('div', { class: 'field-row' }, field('特別償却の率（%）', specialRate, { name: 'specialRate', hint: '即時償却は100' }), field('制度の名前', specialName, { name: 'specialName' })),
+    h('p', { class: 'muted small', text: '使い始めた期間に 取得価額×率 を普通償却に加えます（中小企業投資促進税制は30%、中小企業経営強化税制の即時償却は100：取得価額−普通償却費。国税庁 No.5433・No.5434）。対象の資産・期限・中小企業者等の要件は、制度ごとに確かめてください。特別償却不足額の繰越し・準備金方式には対応していません。' }),
+  );
   const usedWrap = h(
     'details',
     { class: 'used-box' },
@@ -260,6 +289,7 @@ export async function render({ app, outlet, params }) {
     h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, h('p', { class: 'field-error', role: 'alert' })),
     lifeWrap,
     usedWrap,
+    specialWrap,
     expense ? field('償却費の科目', expense, { name: 'expenseAccountId', hint: '工場の機械など、製品を作るために使う資産は製造経費の「減価償却費（製造）」にすると、製造原価報告書に入ります' }) : null,
     individual ? field('事業で使う割合（%）', ratio, { name: 'businessRatio', hint: '車などを私用にも使うときは、事業で使う割合を入れます。残りは事業主貸になります' }) : null,
     carryWrap,

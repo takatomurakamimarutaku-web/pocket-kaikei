@@ -224,6 +224,8 @@ async function putAsset(tx, asset) {
     disposedOn: asset.disposedOn || null,
     disposalType: asset.disposedOn ? (asset.disposalType ?? null) : null,
     salePrice: asset.disposedOn && asset.disposalType === 'sell' ? asset.salePrice : null,
+    specialRate: asset.specialRate ?? null,
+    specialName: asset.specialName ? String(asset.specialName).trim() : null,
   };
   const errors = validateAsset(record, { entityType: settings?.entityType, accounts });
   if (Object.keys(errors).length) throw new ValidationError(errors);

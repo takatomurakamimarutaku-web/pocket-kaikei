@@ -113,3 +113,22 @@ test('青色申告特別控除の選択肢：令和8年分までは65万・55万
   assert.equal(blueDeductionReplaced(2027, undefined), false);
   assert.equal(blueDeductionFor(2026, 0), 0);
 });
+
+test('減価償却費の計算：特別償却は㋬の列と摘要の制度名、旧定額法の均等償却は摘要「均等償却」', () => {
+  const b = makeBook('individual');
+  const tools = b.byName['工具器具備品'].id;
+  const assets = [
+    { id: 'm', name: '加工機', category: 'machinery', accountId: b.byName['機械装置'].id, acquiredOn: '2026-07-01', startedOn: '2026-07-01', cost: 3000000, method: 'straight', usefulLife: 10, businessRatio: 100, specialRate: 30, specialName: '中小企業投資促進税制' },
+    { id: 'o', name: '古い棚', category: 'tools', accountId: tools, acquiredOn: '2000-01-01', startedOn: '2000-01-01', cost: 1000000, method: 'straight', usefulLife: 5, businessRatio: 100 },
+  ];
+  const t = depreciationTable({ assets, periods: [b.period], period: b.period });
+  const m = t.rows.find((r) => r.name === '加工機');
+  assert.deepEqual([m.method, m.ordinary, m.special, m.amount, m.note], ['定額法', 150000, 900000, 1050000, '中小企業投資促進税制']);
+  const o = t.rows.find((r) => r.name === '古い棚');
+  // 旧定額法 100万円・5年：6年目（2005年）に95%、2006〜2010年に均等償却。2026年は償却済み（未償却残高1円の行は残る）
+  assert.deepEqual([o.method, o.amount, o.closing, o.note], ['旧定額法', 0, 1, '']);
+  const t2010 = depreciationTable({ assets, periods: [b.period], period: { startDate: '2010-01-01', endDate: '2010-12-31' } });
+  const o2010 = t2010.rows.find((r) => r.name === '古い棚');
+  assert.deepEqual([o2010.method, o2010.base, o2010.rate, o2010.amount, o2010.closing, o2010.note], ['旧定額法', 50000, '', 9999, 1, '均等償却']);
+  assert.deepEqual([t.total.ordinary, t.total.special, t.total.amount], [150000, 900000, 1050000]);
+});

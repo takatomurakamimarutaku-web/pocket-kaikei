@@ -260,7 +260,8 @@ export function showErrors(form, errors) {
   let first = null;
   for (const el of form.querySelectorAll('.field')) {
     const msg = errors[el.dataset.field] || '';
-    el.querySelector('.field-error').textContent = msg;
+    const box = el.querySelector('.field-error'); // 見出しだけの .field（入力のまとまり）には無い
+    if (box) box.textContent = msg;
     el.classList.toggle('has-error', Boolean(msg));
     if (msg && !first) first = el;
   }

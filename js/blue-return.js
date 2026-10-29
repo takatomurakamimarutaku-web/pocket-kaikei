@@ -10,7 +10,7 @@
 import { trialBalance } from './ledger.js';
 import { monthsInPeriod, monthRange } from './period.js';
 import { isBsGroup } from './accounts.js';
-import { assetRegister, CATEGORY_BY_ID, METHOD_BY_ID, usesLife } from './depreciation.js';
+import { assetRegister, CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
 
 /** 損益計算書の経費の欄（テンプレートのコード → 欄番号と様式の科目名） */
 export const EXPENSE_LINES = [
@@ -205,14 +205,21 @@ export function monthlySalesPurchases({ accounts, period, journals }) {
 }
 
 /**
- * 3ページ目：減価償却費の計算
- * @returns {{ rows: Array, total: { amount, business, closing } }}
+ * 3ページ目：減価償却費の計算（㋭普通償却費・㋬割増（特別）償却費・㋣償却費合計）
+ * @returns {{ rows: Array, total: { ordinary, special, amount, business, closing } }}
  */
 export function depreciationTable({ assets, periods, period }) {
   const rows = assetRegister(assets, periods, period).map(({ asset, opening, row, closing }) => {
-    const method = METHOD_BY_ID[asset.method];
     const rateText = row?.rate ? (row.rate / 1000).toFixed(3) : asset.method === 'lump3' ? '1/3' : '';
-    const note = { lump3: '一括償却資産', sme: '措法28条の2', small: '少額減価償却資産' }[asset.method] || (asset.disposedOn && asset.disposedOn <= period.endDate ? `${asset.disposedOn.replaceAll('-', '/')} 除却` : '');
+    // 摘要：一括償却・少額の区分、95%到達後の「均等償却」、特別償却の制度の名前、除却した日
+    const note = [
+      { lump3: '一括償却資産', sme: '措法28条の2', small: '少額減価償却資産' }[asset.method],
+      row?.equal ? '均等償却' : '',
+      row?.special ? asset.specialName : '',
+      asset.disposedOn && asset.disposedOn <= period.endDate && usesLife(asset.method) ? `${asset.disposedOn.replaceAll('-', '/')} 除却` : '',
+    ]
+      .filter(Boolean)
+      .join('・');
     return {
       asset,
       name: asset.name,
@@ -220,10 +227,12 @@ export function depreciationTable({ assets, periods, period }) {
       acquired: asset.startedOn.slice(0, 7).replace('-', '/'),
       cost: asset.cost,
       base: row?.base ?? opening,
-      method: usesLife(asset.method) ? method.short : '',
+      method: usesLife(asset.method) ? methodLabel(asset) : '',
       life: usesLife(asset.method) ? asset.usefulLife : null,
       rate: rateText,
       months: row ? `${row.months}/12` : '',
+      ordinary: row ? (row.ordinary ?? row.amount) : 0,
+      special: row?.special ?? 0,
       amount: row?.amount ?? 0,
       ratio: asset.businessRatio ?? 100,
       business: row?.business ?? 0,
@@ -234,6 +243,8 @@ export function depreciationTable({ assets, periods, period }) {
   return {
     rows,
     total: {
+      ordinary: rows.reduce((s, r) => s + r.ordinary, 0),
+      special: rows.reduce((s, r) => s + r.special, 0),
       amount: rows.reduce((s, r) => s + r.amount, 0),
       business: rows.reduce((s, r) => s + r.business, 0),
       closing: rows.reduce((s, r) => s + r.closing, 0),

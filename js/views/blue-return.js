@@ -91,7 +91,7 @@ export async function render({ app, outlet, query }) {
 
   function page3(is) {
     const t = depreciationTable({ assets, periods, period });
-    const head = h('thead', {}, h('tr', {}, ['名称', '取得年月', '取得価額', '償却の基礎になる金額', '償却方法', '耐用年数', '償却率', '本年中の償却期間', '本年分の普通償却費', '事業専用割合', '本年分の必要経費算入額', '未償却残高', '摘要'].map((c) => h('th', { scope: 'col', text: c }))));
+    const head = h('thead', {}, h('tr', {}, ['名称', '取得年月', '取得価額', '償却の基礎になる金額', '償却方法', '耐用年数', '償却率', '本年中の償却期間', '本年分の普通償却費', '割増（特別）償却費', '本年分の償却費合計', '事業専用割合', '本年分の必要経費算入額', '未償却残高', '摘要'].map((c) => h('th', { scope: 'col', text: c }))));
     const rows = t.rows.map((r) =>
       h(
         'tr',
@@ -104,6 +104,8 @@ export async function render({ app, outlet, query }) {
         h('td', { class: 'num', text: r.life ? `${r.life}年` : '' }),
         h('td', { class: 'num', text: r.rate }),
         h('td', { class: 'num', text: r.months }),
+        amountCell('td', r.ordinary),
+        r.special ? amountCell('td', r.special) : h('td'),
         amountCell('td', r.amount),
         h('td', { class: 'num', text: `${r.ratio}%` }),
         amountCell('td', r.business),
@@ -111,7 +113,7 @@ export async function render({ app, outlet, query }) {
         h('td', { class: 'small', text: r.note }),
       ),
     );
-    rows.push(h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '計' }), h('td', { colspan: 7 }), amountCell('td', t.total.amount), h('td'), amountCell('td', t.total.business), amountCell('td', t.total.closing), h('td')));
+    rows.push(h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '計' }), h('td', { colspan: 7 }), amountCell('td', t.total.ordinary), t.total.special ? amountCell('td', t.total.special) : h('td'), amountCell('td', t.total.amount), h('td'), amountCell('td', t.total.business), amountCell('td', t.total.closing), h('td')));
     return [
       t.rows.length ? h('p', { class: 'muted small no-print', text: '表は横にスクロールできます（償却方法・耐用年数・償却率・本年分の償却費・事業専用割合・未償却残高）。' }) : null,
       t.rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'report blue-return br-wide' }, h('caption', { text: '減価償却費の計算' }), head, h('tbody', {}, rows))) : h('p', { class: 'muted small' }, '固定資産台帳に資産がありません。', h('a', { class: 'link', href: '#/assets', text: '固定資産台帳' })),

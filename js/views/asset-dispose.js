@@ -1,7 +1,7 @@
 // 固定資産の売却・除却：日付・売却額・科目を選ぶと、帳簿価額と仕訳を表示し、資産と仕訳を一緒に登録する
 import { h, put, field, segmented, showToast, errorBox, amountCell } from '../ui.js';
 import { disposalLines, bookValueAt, canDispose } from '../asset-tools.js';
-import { CATEGORY_BY_ID, METHOD_BY_ID } from '../depreciation.js';
+import { CATEGORY_BY_ID, METHOD_BY_ID, methodLabel } from '../depreciation.js';
 import { compareAccounts } from '../accounts.js';
 import { validateJournal } from '../journal.js';
 import { TAX_BY_CODE } from '../tax.js';
@@ -167,7 +167,7 @@ export async function render({ app, outlet, params }) {
       'section',
       { class: 'panel' },
       h('h2', { class: 'section-title', text: asset.name }),
-      h('p', { class: 'muted small', text: `${CATEGORY_BY_ID[asset.category]?.label ?? ''}・${accountById.get(asset.accountId)?.name ?? ''}・${METHOD_BY_ID[asset.method]?.short ?? ''}${asset.usefulLife ? ` ${asset.usefulLife}年` : ''}・取得価額 ${formatYen(asset.cost)}円・${slash(asset.startedOn)} から使用${individual && asset.businessRatio < 100 ? `・事業${asset.businessRatio}%` : ''}` }),
+      h('p', { class: 'muted small', text: `${CATEGORY_BY_ID[asset.category]?.label ?? ''}・${accountById.get(asset.accountId)?.name ?? ''}・${methodLabel(asset)}${asset.usefulLife ? ` ${asset.usefulLife}年` : ''}・取得価額 ${formatYen(asset.cost)}円・${slash(asset.startedOn)} から使用${individual && asset.businessRatio < 100 ? `・事業${asset.businessRatio}%` : ''}` }),
     ),
     h(
       'form',

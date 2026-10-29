@@ -118,8 +118,9 @@ test('検証：方法ごとの金額・期間の制限', () => {
   assert.match(validateAsset(asset({ method: 'sme', cost: 100000, acquiredOn: '2029-04-01', startedOn: '2029-04-01' }), ctxInd).method, /対象期間/);
   // 建物附属設備は平成28年4月1日以後の取得は定額法のみ
   assert.match(validateAsset(asset({ category: 'building_equipment', method: 'declining' }), ctxInd).method, /定額法/);
-  assert.match(validateAsset(asset({ method: 'declining', acquiredOn: '2011-05-01', startedOn: '2011-05-01' }), ctxInd).method, /250%/);
-  assert.match(validateAsset(asset({ startedOn: '2007-03-31', acquiredOn: '2007-03-01' }), ctxInd).method, /旧定額法/);
+  // 旧定額法・旧定率法・250%定率法も入力できる（v0.36.0）
+  assert.deepEqual(validateAsset(asset({ method: 'declining', acquiredOn: '2011-05-01', startedOn: '2011-05-01' }), ctxInd), {});
+  assert.deepEqual(validateAsset(asset({ startedOn: '2007-03-31', acquiredOn: '2007-03-01' }), ctxInd), {});
   assert.match(validateAsset(asset({ usefulLife: 51 }), ctxInd).usefulLife, /2〜50/);
   assert.match(validateAsset(asset({ category: 'intangible' }), ctxInd).accountId, /無形/);
   assert.deepEqual(validateAsset(asset({ category: 'intangible', accountId: 'sw' }), ctxInd), {});

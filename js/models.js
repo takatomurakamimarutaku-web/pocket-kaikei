@@ -69,6 +69,8 @@ export function createAsset(fields = {}, now = new Date()) {
     disposalType: null, // 売却（sell）・除却（retire）
     salePrice: null, // 売却額（税込）
     expenseAccountId: null, // 償却費の科目（null なら減価償却費。製造業の工場の資産は製造経費の科目）
+    specialRate: null, // 特別償却の率（%。100 は即時償却）
+    specialName: null, // 特別償却の制度の名前
     memo: '',
     ...stamp(now),
     ...fields,
