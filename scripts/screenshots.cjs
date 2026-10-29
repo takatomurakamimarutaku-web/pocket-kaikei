@@ -221,6 +221,20 @@ mkdirSync(OUT, { recursive: true });
   await page.getByRole('button', { name: '前期末の残高で期首残高を更新' }).click();
   await page.waitForTimeout(600);
   if (await page.locator('.notice').count()) errors.push('期首残高の更新後も注意が残る');
+  // 前期を締めると、その期間の仕訳は表示のみになる
+  await page.getByRole('button', { name: '締める', exact: true }).click();
+  await page.getByRole('button', { name: '締める', exact: true }).last().click();
+  await page.waitForTimeout(500);
+  await shot('31-periods-closed', true);
+  await page.getByRole('button', { name: '表示する' }).click();
+  await page.waitForTimeout(500);
+  await go('#/journals?month=all');
+  await page.locator('.jcard').first().click();
+  await page.waitForTimeout(500);
+  await shot('32-journal-locked', true);
+  if (await page.getByRole('button', { name: '保存する' }).count()) errors.push('締めた期間の仕訳が編集できる');
+  await go('#/quick/sale');
+  if (!(await page.locator('.notice').count())) errors.push('締めた期間でかんたん入力ができる');
 
   console.log(errors.length ? `NG\n${errors.join('\n')}` : 'OK: エラーなし');
   await browser.close();

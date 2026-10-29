@@ -174,3 +174,31 @@ test('バックアップ：会計期間が重なるデータは拒否する', as
   assert.throws(() => parseBackup(JSON.stringify(createBackup(data))), /重なって/);
   repo.close();
 });
+
+test('締め：繰越前は締められない。締めた期間は仕訳・期首残高・日付を変更できず、解除すれば戻る', async () => {
+  const { repo, period, byName } = await setupRepo();
+  const line = (side, name, amount) => ({ side, accountId: byName[name].id, subAccountId: null, amount, taxCategory: 'none', memo: '' });
+  const j = await repo.saveJournal(createJournal({ periodId: period.id, date: '2026-05-01', lines: [line('debit', '現金', 100), line('credit', '売上高', 100)] }));
+  await assert.rejects(repo.closePeriod(period.id), /繰り越してから/);
+  const balances = [line('debit', '現金', 100), line('credit', '資本金', 100)].map((l) => ({ accountId: l.accountId, subAccountId: null, amount: l.amount }));
+  const next = await repo.createNextPeriod(createPeriod(nextPeriodDates(period, 'corporation')), balances);
+  const closed = await repo.closePeriod(period.id);
+  assert.equal(closed.closed, true);
+  assert.ok(closed.closedAt);
+  const locked = /締めてある/;
+  await assert.rejects(repo.saveJournal(createJournal({ periodId: period.id, date: '2026-06-01', lines: [line('debit', '現金', 1), line('credit', '売上高', 1)] })), locked);
+  await assert.rejects(repo.saveJournal({ ...j, date: '2026-05-02' }), locked);
+  await assert.rejects(repo.deleteJournal(j.id), locked);
+  await assert.rejects(repo.restoreJournal(j), locked);
+  await assert.rejects(repo.saveOpeningBalances(period.id, []), locked);
+  await assert.rejects(repo.savePeriodDates(period.id, { startDate: '2026-04-01', endDate: '2027-03-30' }), locked);
+  // 締めた期間の仕訳を、締めていない期間へ移すこともできない
+  await assert.rejects(repo.saveJournal({ ...j, periodId: next.id, date: '2027-05-01' }), locked);
+  // 次の期間は変更できる
+  await repo.saveOpeningBalances(next.id, balances);
+  // 締めはバックアップの検証を通る
+  assert.equal(parseBackup(JSON.stringify(createBackup(await repo.dumpAll()))).periods.find((p) => p.id === period.id).closed, true);
+  await repo.reopenPeriod(period.id);
+  await repo.deleteJournal(j.id);
+  repo.close();
+});

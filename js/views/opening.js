@@ -5,6 +5,7 @@ import { parseYen, formatYen } from '../money.js';
 import { fromNormal, computeOwnerCapital } from '../ledger.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { closedNotice } from './period-common.js';
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, subAccounts } = await app.load();
@@ -116,7 +117,8 @@ export async function render({ app, outlet }) {
     ),
   );
 
-  put(outlet, 
+  put(outlet,
+    closedNotice(period),
     h(
       'p',
       { class: 'muted small', text: `${period.startDate.replaceAll('-', '/')} 時点の残高を、各科目の残高の側（資産は借方、負債・純資産は貸方）でプラスとして入力します。マイナスは「-」か「△」を付けます。` },
@@ -127,6 +129,11 @@ export async function render({ app, outlet }) {
     h('div', { class: 'form-footer' }, summary, saveBtn),
   );
   paintSummary();
+  if (period.closed) {
+    for (const el of outlet.querySelectorAll('input')) el.disabled = true;
+    saveBtn.hidden = true;
+    return;
+  }
 
   app.leaveGuard = async () => !dirty || confirmDialog({ title: '入力中の内容を破棄しますか？', buttons: [{ label: '入力を続ける', value: false }, { label: '破棄する', value: true, variant: 'danger' }] });
 
