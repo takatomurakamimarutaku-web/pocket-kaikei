@@ -47,15 +47,69 @@ const env = () => ({
 });
 
 /**
+ * 印刷条件の欄。options：[{ key, label, type: 'select'|'check', choices?: [[value, label]], value }]
+ * 条件を変えると onChange(values) を呼ぶ
+ */
+function optionsPanel(options, onChange) {
+  const values = Object.fromEntries(options.map((o) => [o.key, o.value]));
+  const controls = options.map((o) => {
+    const id = `pp-opt-${o.key}`;
+    if (o.type === 'check') {
+      return h(
+        'label',
+        { class: 'pp-check', for: id },
+        h('input', { id, type: 'checkbox', checked: Boolean(o.value), onchange: (e) => ((values[o.key] = e.target.checked), onChange({ ...values })) }),
+        h('span', { text: o.label }),
+      );
+    }
+    return h(
+      'label',
+      { class: 'pp-select', for: id },
+      h('span', { class: 'pp-opt-label', text: o.label }),
+      h(
+        'select',
+        { id, onchange: (e) => ((values[o.key] = e.target.value), onChange({ ...values })) },
+        o.choices.map(([v, label]) => h('option', { value: v, text: label, selected: String(v) === String(o.value) })),
+      ),
+    );
+  });
+  return { el: h('details', { class: 'pp-options', open: true }, h('summary', { text: '印刷条件' }), h('div', { class: 'pp-options-body' }, controls)), values };
+}
+
+/**
  * 印刷プレビューを開く
- * @param {object} doc print-layout.js の doc
+ * @param {object} source print-layout.js の doc、または { options, build(values) → doc }（印刷条件を選べる帳票）
  * @param {{ fileName: string }} opts ファイル名（拡張子なし）
  */
-export function openPrintPreview(doc, { fileName }) {
-  const pages = layoutDocument(doc);
+export function openPrintPreview(source, { fileName }) {
   const prevFocus = document.activeElement;
   const pdfName = `${fileName}.pdf`;
-  const pdfBlob = () => new Blob([buildPdf(pages, { title: doc.title })], { type: 'application/pdf' });
+  const build = typeof source.build === 'function' ? source.build : () => source;
+  const options = source.options || [];
+  let doc;
+  let pages;
+  const titleEl = h('strong');
+  const metaEl = h('span', { class: 'muted small' });
+  const pagesEl = h('div', { class: 'pp-pages' });
+
+  function render(values) {
+    try {
+      doc = build(values);
+      pages = layoutDocument(doc);
+    } catch (e) {
+      console.error(e);
+      showToast('この条件では帳票を作れませんでした');
+      return;
+    }
+    titleEl.textContent = doc.title.replace(/ (?=\S)/g, '');
+    const orientation = pages[0]?.orientation === 'landscape' ? 'A4横' : 'A4縦';
+    metaEl.textContent = `${orientation}・全${pages.length}ページ`;
+    pagesEl.replaceChildren(...pages.map((p, i) => h('div', { class: `pp-sheet ${p.orientation}`, 'aria-label': `${i + 1}ページ` }, pageSvg(p))));
+  }
+  const panel = options.length ? optionsPanel(options, render) : null;
+  render(panel ? panel.values : {});
+  if (!doc) return null;
+  const pdfBlob = () => new Blob([buildPdf(pages, { title: titleEl.textContent })], { type: 'application/pdf' });
 
   async function savePdf() {
     const r = await saveFile(pdfBlob(), pdfName);
@@ -90,24 +144,23 @@ export function openPrintPreview(doc, { fileName }) {
   }
   const onKey = (e) => e.key === 'Escape' && close();
 
-  const orientation = pages[0]?.orientation === 'landscape' ? 'A4横' : 'A4縦';
   const overlay = h(
     'div',
-    { class: 'print-preview', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${doc.title}の印刷プレビュー` },
+    { class: 'print-preview', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${titleEl.textContent}の印刷プレビュー` },
     h(
       'div',
       { class: 'pp-bar' },
       h('button', { type: 'button', class: 'btn btn-small', text: '閉じる', onclick: close }),
-      h('div', { class: 'pp-title' }, h('strong', { text: doc.title }), h('span', { class: 'muted small', text: `${orientation}・全${pages.length}ページ` })),
+      h('div', { class: 'pp-title' }, titleEl, metaEl),
       h('button', { type: 'button', class: 'btn btn-small', text: '印刷', onclick: print }),
       h('button', { type: 'button', class: 'btn btn-small btn-primary', text: 'PDF', 'aria-label': 'PDFを保存・共有', onclick: savePdf }),
     ),
-    h('div', { class: 'pp-pages' }, pages.map((p, i) => h('div', { class: `pp-sheet ${p.orientation}`, 'aria-label': `${i + 1}ページ` }, pageSvg(p)))),
+    h('div', { class: 'pp-scroll' }, panel?.el, pagesEl),
   );
   document.body.append(overlay);
   document.documentElement.classList.add('pp-open');
   document.addEventListener('keydown', onKey);
   const release = trapFocus(overlay);
   overlay.querySelector('.btn-primary').focus();
-  return { close, pages };
+  return { close, pages: () => pages, rebuild: render };
 }

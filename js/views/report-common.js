@@ -133,3 +133,23 @@ export function ledgerSection(lg, { period, from, title = '', meta = '', id = nu
     lg.rows.length || !showEmpty ? null : emptyState('この期間の取引はありません', null, { face: null }),
   );
 }
+
+/** 印刷条件の月の選択肢（[['2026-04', '2026年4月'], …]） */
+export function monthChoices(period) {
+  return monthsInPeriod(period).map((m) => [m, monthText(m)]);
+}
+
+/** 印刷条件：開始月・終了月 */
+export function monthRangeOptions(period, fromMonth, toMonth) {
+  const choices = monthChoices(period);
+  return [
+    { key: 'from', label: '開始月', type: 'select', choices, value: fromMonth ?? choices[0][0] },
+    { key: 'to', label: '終了月', type: 'select', choices, value: toMonth ?? choices.at(-1)[0] },
+  ];
+}
+
+/** 印刷条件の開始月・終了月から日付の範囲（終了月が前なら入れ替える） */
+export function printRange(period, v) {
+  const [a, b] = v.from <= v.to ? [v.from, v.to] : [v.to, v.from];
+  return { ...monthRange(period, a, b), fromMonth: a, toMonth: b };
+}

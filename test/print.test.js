@@ -8,6 +8,7 @@ import { buildStatements } from '../js/statements.js';
 import { browserPrintWorks } from '../js/install.js';
 import { makeBook } from './helpers.js';
 
+const textOf = (c) => (c !== null && typeof c === 'object' && !Array.isArray(c) ? c.text : c);
 const texts = (page) => page.items.filter((i) => i.t === 'text').map((i) => i.text);
 const allTexts = (pages) => pages.flatMap(texts);
 
@@ -176,7 +177,8 @@ test('残高試算表：貸借対照表と損益計算書の科目に分け、�
   b.opening([['現金', 100000], ['資本金', 100000]]);
   const journals = [b.j('2026-03-01', [['現金', 40000]], [['売上高', 40000]]), b.j('2026-03-02', [['消耗品費', 10000]], [['現金', 10000]])];
   const tb = trialBalance({ accounts: b.accounts, period: b.period, journals });
-  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越' });
+  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'balance' });
+  assert.equal(doc.title, '残高試算表');
   const [, bsT, , plT] = doc.blocks;
   const find = (rows, label) => rows.find((r) => (typeof r.cells[0] === 'string' ? r.cells[0] : r.cells[0].text) === label);
   assert.equal(find(bsT.rows, '資産合計').cells[4], '130,000');
@@ -196,10 +198,13 @@ test('決算書（報告式）：科目は左の列、区分の計と段階利�
   const { pl, bs } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals });
   const doc = statementDoc([{ caption: '', items: pl.items }], { head: {}, title: '損益計算書' });
   const rows = doc.blocks[0].rows;
+  assert.equal(doc.title, '損 益 計 算 書');
+  assert.equal(doc.blocks[0].style, 'open', '罫線を使わない決算書の体裁');
   const line = rows.find((r) => r.cells[0].text === '消耗品費');
   assert.deepEqual(line.cells.slice(1), ['10,000', '']);
   const last = rows.at(-1);
-  assert.equal(last.cells[2], '30,000');
+  assert.equal(last.cells[2].text, '30,000');
+  assert.equal(last.cells[2].rule, 'double', '当期純利益は二重線');
   const bsDoc = statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: '負債・純資産の部', items: bs.liabilities }], { head: {}, title: '貸借対照表' });
   assert.deepEqual(bsDoc.blocks.map((x) => x.type), ['heading', 'table', 'heading', 'table']);
   assert.ok(layoutDocument(bsDoc).length >= 1);
@@ -216,4 +221,93 @@ test('ブラウザの印刷：iPhone・iPad のホーム画面のアプリだけ
 test('丸数字：㉑以上は (21) と書き、①〜⑳はそのまま', async () => {
   const { printable } = await import('../js/print-layout.js');
   assert.equal(printable('①㉑㉟㊱㊿'), '①(21)(35)(36)(50)');
+});
+
+test('合計残高試算表：借方合計＝繰越（借方残の科目）＋借方、合計の行で借方合計＝貸方合計・借方残高＝貸方残高', async () => {
+  const { totalsOf } = await import('../js/print-forms.js');
+  const b = makeBook('corporation');
+  b.opening([['現金', 100000], ['資本金', 100000]]);
+  const journals = [b.j('2026-03-01', [['現金', 40000]], [['売上高', 40000]]), b.j('2026-03-02', [['消耗品費', 10000]], [['現金', 10000]])];
+  const tb = trialBalance({ accounts: b.accounts, period: b.period, journals });
+  const cash = tb.rows.find((r) => r.account.name === '現金');
+  assert.deepEqual(totalsOf(cash), { debitTotal: 140000, creditTotal: 10000, debitBalance: 130000, creditBalance: 0 });
+  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越' });
+  assert.equal(doc.title, '合計残高試算表');
+  assert.deepEqual(doc.blocks[1].columns.map((c) => c.label), ['借方残高', '借方合計', '勘定科目', '貸方合計', '貸方残高']);
+  const total = doc.blocks[3].rows.at(-1).cells;
+  assert.equal(total[2].text, '合計');
+  assert.equal(total[1], total[3], '借方合計＝貸方合計');
+  assert.equal(total[0], total[4], '借方残高＝貸方残高');
+  assert.equal(total[1], fmt(140000 + 10000 + 0));
+});
+
+test('貸借対照表（勘定式）：左に資産、右に負債・純資産。最後の行で両方の合計をそろえる', async () => {
+  const { balanceSheetAccountDoc } = await import('../js/print-forms.js');
+  const b = makeBook('corporation');
+  b.opening([['現金', 100000], ['資本金', 100000]]);
+  const journals = [b.j('2026-03-01', [['現金', 40000]], [['売上高', 40000]])];
+  const { bs } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals });
+  const doc = balanceSheetAccountDoc(bs, { head: {}, rightLabel: '負債・純資産の部' });
+  const t = doc.blocks[0];
+  assert.equal(t.split, 2);
+  assert.equal(t.columns.length, 4);
+  const last = t.rows.at(-1).cells;
+  assert.equal(last[0].text, '資産合計');
+  assert.equal(last[1].text, '140,000');
+  assert.equal(last[2].text, '負債・純資産合計');
+  assert.equal(last[3].text, '140,000');
+  assert.equal(layoutDocument(doc).length, 1);
+});
+
+test('元帳の印刷条件：累計の行・税区分の列なし・改ページしない', () => {
+  const b = makeBook('individual');
+  const journals = [b.j('2026-01-05', [['現金', 10000]], [['売上高', 10000]]), b.j('2026-02-03', [['現金', 5000]], [['売上高', 5000]])];
+  const lg = generalLedger({ accountId: b.byName['現金'].id, accounts: b.accounts, period: b.period, journals });
+  const doc = ledgerBookDoc([lg], { head: {}, carriedLabel: '前期繰越', cumulative: true, taxColumn: false, pageBreak: false });
+  assert.equal(doc.blocks[0].caption, undefined);
+  const t = doc.blocks[1];
+  assert.equal(t.columns.length, 7);
+  const labels = t.rows.map((r) => textOf(r.cells[3]));
+  assert.deepEqual(labels.filter((x) => /月計|累計/.test(x)), ['1月計', '累計', '2月計', '累計']);
+  const cum = t.rows.filter((r) => textOf(r.cells[3]) === '累計').at(-1);
+  assert.equal(cum.cells[4], '15,000');
+  assert.equal(t.carry.balance, 6);
+});
+
+test('仕訳日記帳の印刷条件：月計と月ごとの改ページ', () => {
+  const b = makeBook('corporation');
+  const journals = [b.j('2026-01-05', [['現金', 1000]], [['売上高', 1000]]), b.j('2026-02-05', [['現金', 2000]], [['売上高', 2000]])];
+  const doc = journalBookDoc({ journals, accountById: new Map(b.accounts.map((a) => [a.id, a])), subById: new Map(), head: {}, monthTotal: true, monthBreak: true });
+  assert.equal(doc.orientation, 'landscape');
+  const rows = doc.blocks[0].rows;
+  const jan = rows.find((r) => textOf(r.cells[0]) === '1月計');
+  assert.equal(jan.cells[1], '1,000');
+  assert.ok(jan.breakAfter);
+  assert.equal(layoutDocument(doc).length, 2, '月ごとに改ページ');
+});
+
+test('申告書の様式：欄の番号の表は3列のマス目、資産・負債の表は勘定式', async () => {
+  const { formLayoutBlocks } = await import('../js/print-forms.js');
+  const num = (n, label, amt) => ({ cells: [n, label, amt] });
+  const t3 = (rows) => ({ type: 'table', columns: [{ label: '' }, { label: '' }, { label: '' }], rows });
+  const blocks = [
+    { type: 'heading', caption: true, text: '1ページ' },
+    { type: 'heading', text: '売上原価' },
+    t3([num('①', '売上', '100'), num('②', '期首', '0')]),
+    { type: 'heading', text: '経費' },
+    t3([num('⑧', '租税公課', '10'), num('㉜', '計', '10')]),
+    { type: 'heading', caption: true, text: '4ページ' },
+    { type: 'heading', text: '資産の部' },
+    { type: 'table', columns: [{ label: '科目' }, { label: '期首' }, { label: '期末' }], rows: [{ cells: ['現金', '1', '2'] }, { kind: 'total', cells: ['合計', '1', '2'] }] },
+    { type: 'heading', text: '負債・資本の部' },
+    { type: 'table', columns: [{ label: '科目' }, { label: '期首' }, { label: '期末' }], rows: [{ cells: ['元入金', '1', '1'] }, { cells: ['所得', '', '1'] }, { kind: 'total', cells: ['合計', '1', '2'] }] },
+  ];
+  const out = formLayoutBlocks(blocks);
+  const grid = out.find((b) => b.type === 'table' && b.columns.length === 9);
+  assert.deepEqual(grid.split, [3, 6]);
+  assert.equal(grid.rows.length, 2, '6項目（見出し2＋欄4）を3列に');
+  const bs = out.find((b) => b.type === 'table' && b.columns.length === 6);
+  assert.equal(bs.split, 3);
+  assert.deepEqual(bs.rows.at(-1).cells, ['合計', '1', '2', '合計', '1', '2']);
+  assert.equal(bs.rows.length, 1 + 2 + 1);
 });

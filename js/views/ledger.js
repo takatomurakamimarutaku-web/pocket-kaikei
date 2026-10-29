@@ -1,9 +1,9 @@
 // 総勘定元帳（補助科目を選ぶと補助元帳。「すべての科目」で全科目を続けて表示・印刷・CSV 出力）
 import { h, put, emptyState, saveFile } from '../ui.js';
-import { generalLedger, generalLedgers, carriedLabel } from '../ledger.js';
+import { generalLedger, generalLedgers, subLedgers, carriedLabel } from '../ledger.js';
 import { ledgerCsv, csvFileName } from '../csv.js';
-import { compareAccounts, groupLabel, GROUPS } from '../accounts.js';
-import { monthRangePicker, ledgerSection } from './report-common.js';
+import { compareAccounts, groupLabel, GROUPS, GROUP_BY_ID } from '../accounts.js';
+import { monthRangePicker, ledgerSection, monthRangeOptions, printRange } from './report-common.js';
 import { ledgerBookDoc, docHead } from '../print-forms.js';
 
 export async function render({ app, outlet, query }) {
@@ -47,12 +47,52 @@ export async function render({ app, outlet, query }) {
     const ctx = { accounts, subAccounts, period, journals, from, to };
     const ledgers = accountId === ALL ? generalLedgers(ctx) : [generalLedger({ ...ctx, accountId, subAccountId: subId || null })];
     const subName = subId ? subAccounts.find((s) => s.id === subId)?.name ?? '' : '';
-    // 印刷：科目ごとに改ページした総勘定元帳の様式
-    app.printDoc = ({ printedAt }) =>
-      ledgerBookDoc(
-        ledgers.map((lg) => ({ ...lg, subName })),
-        { head: docHead({ settings, period, from, to, printedAt }), carriedLabel: carriedLabel(period, from), title: subId ? '補助元帳' : '総勘定元帳' },
-      );
+    // 印刷条件：印刷する科目（すべて・BS/PLの科目・1つの科目）・期間・補助科目ごと・月計・累計・改ページ・税区分の列
+    const range = picker.range();
+    app.printDoc = ({ printedAt }) => ({
+      options: [
+        {
+          key: 'target',
+          label: '印刷する科目',
+          type: 'select',
+          choices: [['all', 'すべての科目（取引・残高のある科目）'], ['bs', '貸借対照表の科目'], ['pl', '損益計算書の科目'], ...sorted.map((a) => [a.id, `${a.code} ${a.name}${used.has(a.id) ? '' : '（取引なし）'}`])],
+          value: accountId === ALL ? 'all' : accountId,
+        },
+        ...monthRangeOptions(period, range.fromMonth, range.toMonth),
+        { key: 'subs', label: '補助科目ごとに分ける', type: 'check', value: Boolean(subId) },
+        { key: 'empty', label: '取引・残高のない科目も出す', type: 'check', value: false },
+        { key: 'monthly', label: '月計を出す', type: 'check', value: true },
+        { key: 'cumulative', label: '累計を出す', type: 'check', value: false },
+        { key: 'pageBreak', label: '科目ごとに改ページ', type: 'check', value: true },
+        { key: 'tax', label: '税区分の列', type: 'check', value: true },
+      ],
+      build: (v) => {
+        const r = printRange(period, v);
+        const ctx = { accounts, subAccounts, period, journals, from: r.from, to: r.to };
+        const isBs = (a) => GROUP_BY_ID[a.group]?.section !== 'pl';
+        const targets = v.target === 'all' ? sorted : v.target === 'bs' ? sorted.filter(isBs) : v.target === 'pl' ? sorted.filter((a) => !isBs(a)) : sorted.filter((a) => a.id === v.target);
+        const single = targets.length === 1;
+        const list = [];
+        for (const a of targets) {
+          const hasSubs = subAccounts.some((x) => x.accountId === a.id);
+          if (v.subs && hasSubs) {
+            list.push(...subLedgers({ ...ctx, accountId: a.id, includeEmpty: v.empty }));
+            continue;
+          }
+          const lg = generalLedger({ ...ctx, accountId: a.id, subAccountId: single && subId && !v.subs ? subId : null });
+          if (v.empty || single || lg.rows.length || lg.carried || lg.closing) list.push({ ...lg, subName: single && subId && !v.subs ? subName : '' });
+        }
+        return ledgerBookDoc(list, {
+          head: docHead({ settings, period, ...r, printedAt }),
+          carriedLabel: carriedLabel(period, r.from),
+          title: v.subs || (single && subId) ? '補助元帳' : '総勘定元帳',
+          monthly: v.monthly,
+          cumulative: v.cumulative,
+          pageBreak: v.pageBreak,
+          taxColumn: v.tax,
+        });
+      },
+    });
     const csv = () => saveFile(new Blob([ledgerCsv(ledgers, { carried: carriedLabel(period, from), subName })], { type: 'text/csv' }), csvFileName('ledger'));
     put(
       body,

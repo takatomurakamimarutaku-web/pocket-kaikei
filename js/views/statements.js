@@ -7,7 +7,7 @@ import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
 import { isWhite } from '../white-return.js';
 import { zeroToggle, openingWarning, statementRows, loadPrevious } from './report-common.js';
-import { statementDoc, docHead } from '../print-forms.js';
+import { statementDoc, balanceSheetAccountDoc, docHead } from '../print-forms.js';
 import { warekiText } from '../print-layout.js';
 
 const slash = (d) => d.replaceAll('-', '/');
@@ -73,14 +73,23 @@ export async function render({ app, outlet, route, query }) {
   };
 
   // 印刷：報告式の決算書の様式（前期と比べる表は画面の表から作る）
+  // 印刷：決算書の体裁。貸借対照表は勘定式（左右2段）と報告式を選べる。前期と比べる表は画面の表から作る
   app.printDoc = ({ printedAt }) => {
     const head = docHead({ settings, period, printedAt });
     if (!isPl) head.period = `${warekiText(period.endDate)} 現在`;
     if (compare) return { title: route.title, ...head };
     const right = individual ? '負債・資本の部' : '負債・純資産の部';
-    return isPl
-      ? statementDoc([{ caption: individual ? '損益計算書（青色申告決算書の並び）' : '', items: pl.items }], { head, title: route.title, showZero })
-      : statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero });
+    return {
+      options: [
+        isPl ? null : { key: 'format', label: '様式', type: 'select', choices: [['account', '勘定式（左右に並べる）'], ['report', '報告式（上下に並べる）']], value: 'account' },
+        { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
+      ].filter(Boolean),
+      build: (v) => {
+        if (isPl) return statementDoc([{ caption: '', items: pl.items }], { head, title: route.title, showZero: v.zero });
+        if (v.format === 'account') return balanceSheetAccountDoc(bs, { head, title: route.title, showZero: v.zero, rightLabel: right });
+        return statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero: v.zero });
+      },
+    };
   };
 
   function paint() {

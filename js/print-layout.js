@@ -153,8 +153,11 @@ function chooseOrientation(orientation, blocks) {
  *     { type: 'heading', text: string, caption?: boolean } |       caption：改ページして各ページの左上に出す（元帳の科目名など）
  *     { type: 'text', text: string, size?: number } |
  *     { type: 'table', columns: Array<{label, align?, w?, grow?, min?, max?}>,
- *       rows: Array<{ cells: Array<string|string[]|{text, span?, align?}>, kind?: 'group'|'subtotal'|'total'|'carried', keep?: string, nums?: object }>,
- *       carry?: { label: number, sum: number[], balance?: number } }>
+ *       rows: Array<{ cells: Array<string|string[]|{text, span?, align?, indent?, bold?, rule?: 'over'|'double'}>,
+ *                     kind?: 'group'|'subtotal'|'total'|'carried', keep?: string, nums?: object, breakAfter?: boolean }>,
+ *       carry?: { label: number, sum: number[], balance?: number },
+ *       style?: 'grid'|'open',   open：決算書の体裁（縦罫・塗りなし）
+ *       split?: number|number[] }>  勘定式の左右の境・様式のマス目の区切り（この列の左に太い縦線）
  * }} doc
  * @returns {Array<{ w, h, orientation, items: Array }>} items：{t:'text', x, y, size, text, align, bold, scale} | {t:'line', x1, y1, x2, y2, w} | {t:'rect', x, y, w, h, gray}
  */
@@ -216,13 +219,15 @@ export function layoutDocument(doc) {
     let balance = null;
 
     const noHeader = block.columns.every((c) => !c.label);
+    // open：決算書の体裁（縦の罫線と塗りを使わず、見出しの上下と表の下の横線だけ。計の金額の上に線）
+    const open = block.style === 'open';
     function drawHeader() {
       tableTop = y;
       if (noHeader) {
         line(left, y, right, y, 0.3);
         return;
       }
-      rect(left, y, avail, HEAD_H, 0.9);
+      if (!open) rect(left, y, avail, HEAD_H, 0.9);
       block.columns.forEach((col, i) => {
         const labels = linesOf(col.label);
         const size = HEAD_FONT;
@@ -238,14 +243,17 @@ export function layoutDocument(doc) {
     function closeTable() {
       // 縦の罫線（見出し行の上端から表の下端まで）・外枠
       line(left, y, right, y, 0.3);
+      // 勘定式（左右2段）の中央の線
+      for (const sp of [].concat(block.split ?? [])) line(xs[sp], tableTop, xs[sp], y, 0.3);
+      if (open) return;
       line(left, tableTop, left, y, 0.3);
       line(right, tableTop, right, y, 0.3);
     }
     function drawRow(row, { vlines = true } = {}) {
       const hh = rowHeight(row);
-      const bold = row.kind === 'subtotal' || row.kind === 'total' || row.kind === 'group' || row.bold;
-      if (row.kind === 'group') rect(left, y, avail, hh, 0.96);
-      if (row.kind === 'total' || row.kind === 'carry') rect(left, y, avail, hh, 0.95);
+      const rowBold = row.kind === 'subtotal' || row.kind === 'total' || row.kind === 'group' || row.bold;
+      if (!open && row.kind === 'group') rect(left, y, avail, hh, 0.96);
+      if (!open && (row.kind === 'total' || row.kind === 'carry')) rect(left, y, avail, hh, 0.95);
       let i = 0;
       for (const raw of row.cells) {
         const c = cellOf(raw);
@@ -255,18 +263,26 @@ export function layoutDocument(doc) {
         const x1 = xs[i + span];
         const align = c.align || (span === 1 ? block.columns[i].align : null) || 'left';
         const ls = linesOf(c.text);
+        const bold = c.bold ?? rowBold;
+        // セルの線：over＝金額の上に線（計）、double＝下に二重線（最後の合計）
+        if (c.rule === 'over' || c.rule === 'double') line(x0 + PAD, y + 0.15, x1 - PAD * 0.5, y + 0.15, 0.15);
+        if (c.rule === 'double') {
+          line(x0 + PAD, y + hh - 0.25, x1 - PAD * 0.5, y + hh - 0.25, 0.15);
+          line(x0 + PAD, y + hh + 0.3, x1 - PAD * 0.5, y + hh + 0.3, 0.15);
+        }
         ls.forEach((l, k) => {
           if (!l) return;
           const yy = y + LINE_H * k + LINE_H / 2 + FONT * PT * 0.36;
           const ax = align === 'right' ? x1 - PAD : align === 'center' ? (x0 + x1) / 2 : x0 + PAD + (c.indent || 0);
           fitted(ax, yy, l, k > 0 && ls.length > 1 && c.subSmall !== false ? FONT - 0.5 : FONT, x1 - x0 - PAD * 2 - (c.indent || 0), { align, bold });
         });
-        if (vlines && i > 0) line(x0, y, x0, y + hh, 0.1);
+        if (vlines && !open && i > 0) line(x0, y, x0, y + hh, 0.1);
         i += span;
       }
       // セルが列より少ない行は残りの縦線だけ引く
-      for (; vlines && i < block.columns.length; i++) if (i > 0) line(xs[i], y, xs[i], y + hh, 0.1);
+      for (; vlines && !open && i < block.columns.length; i++) if (i > 0) line(xs[i], y, xs[i], y + hh, 0.1);
       y += hh;
+      if (open) return;
       if (row.kind === 'total') {
         line(left, y - hh, right, y - hh, 0.2);
         line(left, y - hh + 0.5, right, y - hh + 0.5, 0.2);
@@ -305,6 +321,14 @@ export function layoutDocument(doc) {
       drawRow(row);
       // 1件の仕訳の終わりは罫線を太くして区切る
       if (row.keep != null && rows[r + 1]?.keep !== row.keep) line(left, y, right, y, 0.25);
+      // 改ページの指定（月ごとに改ページなど）
+      if (row.breakAfter && r < rows.length - 1) {
+        if (carry) carryRow('次頁へ繰越');
+        closeTable();
+        newPage(true);
+        drawHeader();
+        if (carry) carryRow('前頁より繰越');
+      }
       if (carry) {
         if (row.sum !== false && row.kind !== 'subtotal' && row.kind !== 'total') carry.sum.forEach((col, k) => (sums[k] += row.nums?.[col] ?? 0));
         if (carry.balance != null && row.nums && row.nums[carry.balance] != null) balance = row.nums[carry.balance];
