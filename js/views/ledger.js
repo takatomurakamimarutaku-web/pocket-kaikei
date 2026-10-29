@@ -1,6 +1,7 @@
-// 総勘定元帳（補助科目を選ぶと補助元帳）
-import { h, put, amountCell, emptyState } from '../ui.js';
-import { generalLedger, carriedLabel } from '../ledger.js';
+// 総勘定元帳（補助科目を選ぶと補助元帳。「すべての科目」で全科目を続けて表示・印刷・CSV 出力）
+import { h, put, amountCell, emptyState, saveFile } from '../ui.js';
+import { generalLedger, generalLedgers, carriedLabel } from '../ledger.js';
+import { ledgerCsv, csvFileName } from '../csv.js';
 import { compareAccounts, groupLabel, GROUPS } from '../accounts.js';
 import { monthRangePicker } from './report-common.js';
 
@@ -9,12 +10,14 @@ export async function render({ app, outlet, query }) {
   const sorted = [...accounts].sort(compareAccounts);
   const used = new Set(journals.flatMap((j) => j.lines.map((l) => l.accountId)));
   for (const ob of period.openingBalances || []) used.add(ob.accountId);
-  let accountId = accounts.some((a) => a.id === query.account) ? query.account : (sorted.find((a) => used.has(a.id)) || sorted[0]).id;
+  const ALL = 'all';
+  let accountId = query.account === ALL ? ALL : accounts.some((a) => a.id === query.account) ? query.account : (sorted.find((a) => used.has(a.id)) || sorted[0]).id;
   let subId = subAccounts.some((s) => s.id === query.sub && s.accountId === accountId) ? query.sub : '';
 
   const accSelect = h(
     'select',
     { 'aria-label': '勘定科目', onchange: (e) => ((accountId = e.target.value), (subId = ''), paintSubs(), update()) },
+    h('option', { value: ALL, text: 'すべての科目（取引・残高のある科目）', selected: accountId === ALL }),
     GROUPS.filter((g) => sorted.some((a) => a.group === g.id)).map((g) =>
       h(
         'optgroup',
@@ -25,7 +28,7 @@ export async function render({ app, outlet, query }) {
   );
   const subSelect = h('select', { 'aria-label': '補助科目', onchange: (e) => ((subId = e.target.value), update()) });
   function paintSubs() {
-    const subs = subAccounts.filter((s) => s.accountId === accountId);
+    const subs = accountId === ALL ? [] : subAccounts.filter((s) => s.accountId === accountId);
     subSelect.hidden = !subs.length;
     put(subSelect, h('option', { value: '', text: 'すべての補助科目' }), ...subs.map((s) => h('option', { value: s.id, text: s.name, selected: s.id === subId })));
   }
@@ -40,10 +43,25 @@ export async function render({ app, outlet, query }) {
 
   function paint() {
     const { from, to } = picker.range();
-    const lg = generalLedger({ accountId, subAccountId: subId || null, accounts, subAccounts, period, journals, from, to });
+    const ctx = { accounts, subAccounts, period, journals, from, to };
+    const ledgers = accountId === ALL ? generalLedgers(ctx) : [generalLedger({ ...ctx, accountId, subAccountId: subId || null })];
+    const subName = subId ? subAccounts.find((s) => s.id === subId)?.name ?? '' : '';
+    const csv = () => saveFile(new Blob([ledgerCsv(ledgers, { carried: carriedLabel(period, from), subName })], { type: 'text/csv' }), csvFileName('ledger'));
+    put(
+      body,
+      ledgers.map((lg) => ledgerTable(lg, from, accountId === ALL)),
+      accountId === ALL && !ledgers.length ? emptyState('この期間の取引はありません') : null,
+      h('div', { class: 'report-tools no-print' }, h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv })),
+    );
+  }
+
+  function ledgerTable(lg, from, many) {
     const side = lg.account.normalSide === 'debit' ? '借方残' : '貸方残';
-    put(body, 
-      h('p', { class: 'list-meta', text: `${lg.account.code} ${lg.account.name}・${side}・${lg.rows.length}件` }),
+    return h(
+      'section',
+      { class: 'lg-section' },
+      many ? h('h2', { class: 'section-title', text: `${lg.account.code} ${lg.account.name}` }) : null,
+      h('p', { class: 'list-meta', text: `${many ? '' : `${lg.account.code} ${lg.account.name}・`}${side}・${lg.rows.length}件` }),
       h(
         'div',
         { class: 'table-wrap' },
@@ -70,7 +88,7 @@ export async function render({ app, outlet, query }) {
           h('tfoot', {}, h('tr', {}, h('th', { colspan: 2, text: '期間計' }), amountCell('td', lg.debit), amountCell('td', lg.credit), amountCell('td', lg.closing))),
         ),
       ),
-      lg.rows.length ? null : emptyState('この期間の取引はありません'),
+      lg.rows.length || many ? null : emptyState('この期間の取引はありません'),
     );
   }
   paintSubs();

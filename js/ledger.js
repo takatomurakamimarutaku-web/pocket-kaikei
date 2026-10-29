@@ -191,6 +191,17 @@ export function generalLedger({ accountId, subAccountId = null, accounts, subAcc
   return { account, carried, rows, debit, credit, closing: toNormal(dc, account) };
 }
 
+/**
+ * 全科目の総勘定元帳（科目の並び順）。期間に取引があるか、繰越・期末の残高がある科目だけ
+ * @returns {Array<ReturnType<typeof generalLedger>>}
+ */
+export function generalLedgers({ accounts, subAccounts = [], period, journals, from = period.startDate, to = period.endDate }) {
+  return [...accounts]
+    .sort(compareAccounts)
+    .map((a) => generalLedger({ accountId: a.id, accounts, subAccounts, period, journals, from, to }))
+    .filter((lg) => lg.rows.length || lg.carried || lg.closing);
+}
+
 /** 繰越行の名前（期首からなら「前期繰越」、途中の月からなら「前月繰越」） */
 export function carriedLabel(period, from) {
   return from <= period.startDate ? '前期繰越' : '前月繰越';

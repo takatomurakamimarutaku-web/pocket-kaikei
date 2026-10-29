@@ -48,6 +48,20 @@ export function trialBalanceCsv(tb, entityType, { includeSubs = true } = {}) {
   return toCsv(rows);
 }
 
+/**
+ * 総勘定元帳・出納帳（ledger.generalLedger の結果の配列）。科目ごとに繰越の行、取引の行を続ける
+ * @param {{ carried: string, debitLabel?: string, creditLabel?: string, subName?: string }} opts carried：繰越行の名前（前期繰越・前月繰越）
+ */
+export function ledgerCsv(ledgers, { carried, debitLabel = '借方', creditLabel = '貸方', subName = '' }) {
+  const rows = [['コード', '勘定科目', '補助科目', '日付', 'No.', '相手科目', '摘要', debitLabel, creditLabel, '残高']];
+  for (const lg of ledgers) {
+    const head = [lg.account.code, lg.account.name, subName];
+    rows.push([...head, '', '', carried, '', '', '', lg.carried]);
+    for (const r of lg.rows) rows.push([...head, r.date.replaceAll('-', '/'), r.no, r.counterpart, r.memo, r.debit || '', r.credit || '', r.balance]);
+  }
+  return toCsv(rows);
+}
+
 export function csvFileName(kind, date = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
   return `pocket-kaikei-${kind}-${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}.csv`;
