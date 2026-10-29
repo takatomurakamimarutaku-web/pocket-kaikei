@@ -27,6 +27,6 @@ export async function render({ outlet }) {
         items.map(([href, label, sub, icon, tone]) => menuRow({ href, label, sub, icon, tone })),
       ),
     ]),
-    h('p', { class: 'muted small center', text: `ポケット会計 バージョン ${APP_VERSION}` }),
+    h('p', { class: 'muted small center', text: `Pocket会計 バージョン ${APP_VERSION}` }),
   );
 }

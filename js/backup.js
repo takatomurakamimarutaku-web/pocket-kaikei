@@ -58,7 +58,7 @@ export function parseBackup(text) {
   } catch {
     throw new BackupError('JSONとして読み込めません。バックアップファイルを選んでください');
   }
-  if (!isObj(obj) || obj.format !== BACKUP_FORMAT) throw new BackupError('ポケット会計のバックアップファイルではありません');
+  if (!isObj(obj) || obj.format !== BACKUP_FORMAT) throw new BackupError('Pocket会計のバックアップファイルではありません');
   if (!Number.isInteger(obj.version) || obj.version < 1) throw new BackupError('バックアップのバージョンが不正です');
   if (obj.version > BACKUP_VERSION) throw new BackupError('新しいバージョンのアプリで作成されたファイルです。アプリを更新してから読み込んでください');
   while (obj.version < BACKUP_VERSION) {
