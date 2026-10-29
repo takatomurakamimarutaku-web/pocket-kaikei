@@ -14,15 +14,16 @@ import { validateBreakdownTargets } from './breakdown.js';
 import { REAL_ESTATE_MODES } from './real-estate.js';
 import { FILING_TYPES } from './white-return.js';
 import { validateDepartment } from './departments.js';
+import { validateInvoice, validateInvoiceSettings } from './invoices.js';
 
 export const BACKUP_FORMAT = 'pocket-kaikei-backup';
-export const BACKUP_VERSION = 8;
+export const BACKUP_VERSION = 9;
 /** 最後のバックアップからこの日数が過ぎ、その後に仕訳を入力していたら催促する */
 export const BACKUP_REMIND_DAYS = 14;
 
 export class BackupError extends Error {}
 
-const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments'];
+const STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices'];
 
 /**
  * バックアップの内容（JSON にする前のオブジェクト）
@@ -80,12 +81,14 @@ const UPGRADES = {
     journals: Array.isArray(obj.journals) ? obj.journals.map((j) => (isObj(j) && j.voucherNo == null ? { ...j, voucherNo: j.no } : j)) : obj.journals,
     periods: Array.isArray(obj.periods) ? obj.periods.map((p) => (isObj(p) && p.nextVoucherNo == null ? { ...p, nextVoucherNo: p.nextJournalNo || 1 } : p)) : obj.periods,
   }),
+  // 8 → 9：請求書・見積書（invoices）を追加
+  8: (obj) => ({ ...obj, version: 9, invoices: [] }),
 };
 
 /**
  * テキストを検証してデータにする。不正なら BackupError（部分的な取り込みはしない）
  * 証憑の中身は base64 から ArrayBuffer に戻す（ハッシュ値の照合は非同期のため verifyAttachments で行う）
- * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, attachmentsOmitted, exportedAt }}
+ * @returns {{ settings, currentPeriodId, accounts, subAccounts, periods, journals, assets, tombstones, journalHistory, templates, budgets, attachments, attachmentData, departments, invoices, attachmentsOmitted, exportedAt }}
  */
 export function parseBackup(text) {
   let obj;
@@ -121,6 +124,8 @@ export function parseBackup(text) {
   if (s.filing !== undefined && (!FILING_TYPES.includes(s.filing) || (s.filing === 'white' && s.entityType !== 'individual'))) throw new BackupError('事業者の設定が不正です');
   // 内訳書の対象の科目（v0.35.0 で追加）。消えた科目は使うときに外す
   if (validateBreakdownTargets(s.breakdownTargets)) throw new BackupError('内訳書の対象の科目のデータが不正です');
+  // 請求書の設定（v0.45.0 で追加）
+  if (validateInvoiceSettings(s.invoice).length) throw new BackupError('請求書の設定が不正です');
   const bad = (what) => {
     throw new BackupError(`${what}のデータが不正です`);
   };
@@ -185,6 +190,11 @@ export function parseBackup(text) {
   for (const b of obj.budgets) {
     if (!hasBase(b) || validateBudget(b, { accounts: obj.accounts, periods: obj.periods }).length) bad('予算');
     unique(b, '予算');
+  }
+  for (const inv of obj.invoices) {
+    if (!hasBase(inv) || validateInvoice(inv, { accounts: obj.accounts, subAccounts: obj.subAccounts, original: inv }).length) bad('請求書・見積書');
+    if (inv.journalId != null && !isStr(inv.journalId)) bad('請求書・見積書');
+    unique(inv, '請求書・見積書');
   }
   if (obj.attachmentsOmitted !== undefined && typeof obj.attachmentsOmitted !== 'boolean') bad('証憑');
   const omitted = obj.attachmentsOmitted === true;

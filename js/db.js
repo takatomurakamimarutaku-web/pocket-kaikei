@@ -22,10 +22,11 @@ import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
 import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js';
 import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
+import { validateInvoice, validateInvoiceSettings, normalizeRegistrationNo, isDuplicateNumber, invoiceJournal, postingDate, compareInvoices, INVOICE_KINDS } from './invoices.js';
 
 export const DB_NAME = 'pocket-kaikei';
-export const DB_VERSION = 8;
-export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments'];
+export const DB_VERSION = 9;
+export const DATA_STORES = ['accounts', 'subAccounts', 'periods', 'journals', 'assets', 'tombstones', 'journalHistory', 'templates', 'budgets', 'attachments', 'attachmentData', 'departments', 'invoices'];
 /** 証憑の添付（バックアップで画像を含めないときは書き出し・置き換えの対象から外す） */
 export const ATTACHMENT_STORES = ['attachments', 'attachmentData'];
 const ALL_STORES = ['meta', ...DATA_STORES];
@@ -98,6 +99,10 @@ export function migrate(db, oldVersion, tx) {
       if (cursor.value.nextVoucherNo == null) cursor.update({ ...cursor.value, nextVoucherNo: cursor.value.nextJournalNo || 1 });
       cursor.continue();
     };
+  }
+  if (oldVersion < 9) {
+    // 請求書・見積書
+    db.createObjectStore('invoices', { keyPath: 'id' });
   }
 }
 
@@ -240,6 +245,29 @@ async function putJournal(tx, journal) {
   if (!original) tx.objectStore('journalHistory').put(historyEntry('create', null, record, record.updatedAt));
   else if (journalChanged(original, record)) tx.objectStore('journalHistory').put(historyEntry('update', original, record, record.updatedAt));
   return record;
+}
+
+/** 請求書・見積書の保存する形（前後の空白を除き、知らない項目を持ち込まない） */
+function cleanInvoice(inv, stamps) {
+  const t = (v) => String(v ?? '').trim();
+  const base = {
+    id: inv.id || newId(),
+    kind: inv.kind,
+    status: inv.status,
+    number: t(inv.number),
+    issueDate: inv.issueDate,
+    customer: { name: t(inv.customer?.name), honorific: inv.customer?.honorific ?? '', subAccountId: inv.customer?.subAccountId || null },
+    subject: t(inv.subject),
+    priceMode: inv.priceMode,
+    rounding: inv.rounding,
+    lines: (Array.isArray(inv.lines) ? inv.lines : []).map((l) => ({ name: t(l.name), qty100: l.qty100, unit: t(l.unit), unitPrice: l.unitPrice, tax: l.tax })),
+    note: t(inv.note),
+    ...stamps,
+  };
+  if (inv.kind === 'invoice') {
+    return { ...base, deliveryFrom: inv.deliveryFrom, deliveryTo: inv.deliveryTo || '', dueDate: inv.dueDate || '', revenueAccountId: inv.revenueAccountId, estimateId: inv.estimateId || null, journalId: inv.journalId ?? null, issuedAt: inv.issuedAt ?? null, voidedAt: inv.voidedAt ?? null };
+  }
+  return { ...base, validUntil: inv.validUntil || '', invoiceId: inv.invoiceId ?? null };
 }
 
 /** 一部を売却・除却した資産（分けた元・分けた資産）で変えられない項目（償却の計算が変わり、分けた帳簿価額と合わなくなる） */
@@ -1028,6 +1056,143 @@ export class Repository {
       tx.objectStore('journals').put(journal);
       tx.objectStore('tombstones').delete(journal.id);
       tx.objectStore('journalHistory').put(historyEntry('restore', null, journal, now()));
+    });
+  }
+
+  // ---- 請求書・見積書 ----
+
+  listInvoices() {
+    return this.run(['invoices'], 'readonly', async (tx) => (await req(tx.objectStore('invoices').getAll())).sort(compareInvoices));
+  }
+
+  getInvoice(id) {
+    return this.run(['invoices'], 'readonly', (tx) => req(tx.objectStore('invoices').get(id)));
+  }
+
+  /** 請求書の設定（発行元の情報・登録番号・振込先・端数処理）。設定の invoice に持つ（バックアップに入る） */
+  saveInvoiceSettings(patch) {
+    return this.run(['meta'], 'readwrite', async (tx) => {
+      const meta = tx.objectStore('meta');
+      const cur = (await req(meta.get('settings')))?.value;
+      if (!cur) throw new Error('初期設定がされていません');
+      const t = (v) => String(v ?? '').trim();
+      const invoice = {
+        registrationNo: normalizeRegistrationNo(patch.registrationNo),
+        issuerName: t(patch.issuerName),
+        address: t(patch.address),
+        phone: t(patch.phone),
+        email: t(patch.email),
+        bank: t(patch.bank),
+        note: t(patch.note),
+        rounding: patch.rounding ?? 'floor',
+        priceMode: patch.priceMode ?? 'exclusive',
+      };
+      const errors = validateInvoiceSettings(invoice);
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...cur, invoice, updatedAt: now() };
+      meta.put({ key: 'settings', value: next });
+      return next;
+    });
+  }
+
+  /**
+   * 請求書・見積書の保存（下書き）。発行済み・取消の請求書は変えられない（交付した書類の控えを残すため。直すときは取り消して複製する）
+   * 番号は種類ごとに重ならないこと。見積書から作った請求書を新しく保存したら、見積書に請求書の id を記録する
+   */
+  saveInvoice(inv) {
+    return this.run(['invoices', 'accounts', 'subAccounts'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('invoices');
+      const original = inv.id ? (await req(store.get(inv.id))) || null : null;
+      if (original && original.kind !== inv.kind) throw new ValidationError(['請求書と見積書は切り替えられません']);
+      if (original && original.status !== 'draft') throw new ValidationError(['発行した請求書は変更できません。直すときは取り消してから複製してください']);
+      const at = now();
+      const record = cleanInvoice({ ...inv, status: 'draft', journalId: null, issuedAt: null, voidedAt: null, invoiceId: original?.invoiceId ?? null }, { createdAt: original?.createdAt ?? at, updatedAt: at });
+      const [accounts, subAccounts, all] = await Promise.all([req(tx.objectStore('accounts').getAll()), req(tx.objectStore('subAccounts').getAll()), req(store.getAll())]);
+      const errors = validateInvoice(record, { accounts, subAccounts, original });
+      if (isDuplicateNumber(all, record)) errors.push(`${INVOICE_KINDS[record.kind].label}の番号「${record.number}」はもう使われています`);
+      if (errors.length) throw new ValidationError(errors);
+      store.put(record);
+      if (!original && record.estimateId) {
+        const est = await req(store.get(record.estimateId));
+        if (est?.kind === 'estimate') store.put({ ...est, invoiceId: record.id, updatedAt: at });
+      }
+      return record;
+    });
+  }
+
+  /** 削除。発行済みの請求書は取り消してから（取り消した請求書も、交付したものは控えを保存する決まりがあるため画面で注意する） */
+  deleteInvoice(id) {
+    return this.run(['invoices', 'tombstones'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('invoices');
+      const inv = await req(store.get(id));
+      if (!inv) return null;
+      if (inv.status === 'issued') throw new ValidationError(['発行済みの請求書は削除できません。先に取り消してください']);
+      store.delete(id);
+      tx.objectStore('tombstones').put(tombstone('invoices', id));
+      // 見積書から作った請求書を消したら、見積書の「請求書を作成済み」を外す
+      if (inv.estimateId) {
+        const est = await req(store.get(inv.estimateId));
+        if (est?.invoiceId === id) store.put({ ...est, invoiceId: null, updatedAt: now() });
+      }
+      return inv;
+    });
+  }
+
+  /**
+   * 請求書の発行：売掛金の仕訳（取引年月日を含む会計期間）を登録し、発行済みにする。1つのトランザクションで行う
+   * 発行済みでも仕訳が消されていれば、もう一度計上できる
+   * @returns {Promise<{ invoice, journal }>}
+   */
+  issueInvoice(id) {
+    return this.run(['invoices', 'accounts', 'subAccounts', 'periods', 'journals'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('invoices');
+      const inv = await req(store.get(id));
+      if (!inv || inv.kind !== 'invoice') throw new ValidationError(['請求書が見つかりません']);
+      if (inv.status === 'void') throw new ValidationError(['取り消した請求書は発行できません。複製して作り直してください']);
+      if (inv.status === 'issued' && inv.journalId && (await req(tx.objectStore('journals').get(inv.journalId)))) throw new ValidationError(['この請求書の売掛金はもう計上してあります']);
+      const [accounts, subAccounts, periods, all] = await Promise.all([
+        req(tx.objectStore('accounts').getAll()),
+        req(tx.objectStore('subAccounts').getAll()),
+        req(tx.objectStore('periods').getAll()),
+        req(store.getAll()),
+      ]);
+      const errors = validateInvoice(inv, { accounts, subAccounts, original: inv });
+      if (isDuplicateNumber(all, inv)) errors.push(`請求書の番号「${inv.number}」はもう使われています`);
+      if (errors.length) throw new ValidationError(errors);
+      const date = postingDate(inv);
+      const period = periods.find((p) => p.startDate <= date && date <= p.endDate);
+      if (!period) throw new ValidationError([`取引年月日（${date.replaceAll('-', '/')}）を含む会計期間がありません。会計期間の画面で期間を作ってから発行してください`]);
+      if (period.closed) throw new ValidationError([CLOSED_PERIOD_MESSAGE]);
+      const journal = await putJournal(tx, invoiceJournal(inv, { accounts, subAccounts, periodId: period.id }));
+      const at = now();
+      const next = { ...inv, status: 'issued', journalId: journal.id, issuedAt: inv.issuedAt || at, updatedAt: at };
+      store.put(next);
+      return { invoice: next, journal };
+    });
+  }
+
+  /**
+   * 請求書の取消：売掛金の仕訳を削除して（訂正・削除の履歴に残る）、取消にする。請求書の記録は控えとして残す
+   * 仕訳の会計期間を締めてあるときは取り消せない（返品・値引きの仕訳で直す）
+   * @returns {Promise<{ invoice, journal: object|null }>} journal：削除した仕訳
+   */
+  voidInvoice(id) {
+    return this.run(['invoices', 'periods', 'journals', 'tombstones'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('invoices');
+      const inv = await req(store.get(id));
+      if (!inv || inv.kind !== 'invoice') throw new ValidationError(['請求書が見つかりません']);
+      if (inv.status !== 'issued') throw new ValidationError(['発行済みの請求書だけ取り消せます']);
+      const journal = inv.journalId ? (await req(tx.objectStore('journals').get(inv.journalId))) || null : null;
+      if (journal) {
+        if ((await req(tx.objectStore('periods').get(journal.periodId)))?.closed) throw new ValidationError(['売掛金の仕訳の会計期間を締めてあるため取り消せません。返品・値引きの仕訳を入力してください']);
+        tx.objectStore('journals').delete(journal.id);
+        tx.objectStore('tombstones').put(tombstone('journals', journal.id));
+        tx.objectStore('journalHistory').put(historyEntry('delete', journal, null, now()));
+      }
+      const at = now();
+      const next = { ...inv, status: 'void', voidedAt: at, updatedAt: at };
+      store.put(next);
+      return { invoice: next, journal };
     });
   }
 

@@ -169,6 +169,7 @@ test('スキーマ移行：バージョン4のデータを残したまま予算�
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('departments'); // バージョン7で追加
+      open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.result.deleteObjectStore('budgets'); // バージョン4の構成にする
       open.result.deleteObjectStore('attachments');
       open.result.deleteObjectStore('attachmentData');

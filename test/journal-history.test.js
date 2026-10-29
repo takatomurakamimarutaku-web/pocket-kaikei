@@ -62,6 +62,7 @@ test('スキーマ移行：バージョン2のデータを残したまま履歴�
     open.onupgradeneeded = () => {
       migrate(open.result, 0, open.transaction);
       open.result.deleteObjectStore('departments'); // バージョン7で追加
+      open.result.deleteObjectStore('invoices'); // バージョン9で追加
       open.result.deleteObjectStore('journalHistory'); // バージョン2の構成にする
       open.result.deleteObjectStore('templates');
       open.result.deleteObjectStore('budgets');

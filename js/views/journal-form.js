@@ -342,6 +342,7 @@ export async function render({ app, outlet, params, query, route }) {
     'form',
     { class: 'journal-form', novalidate: true, onsubmit: (e) => (e.preventDefault(), templateMode ? saveTemplate() : save()) },
     editing ? h('p', { class: 'muted small', text: `入力No.${editing.no}（登録した順に付く番号で、変わりません）` }) : null,
+    editing?.source === 'invoice' ? h('p', { class: 'notice small' }, '請求書を発行したときに作った売掛金の仕訳です。', h('a', { href: `#/invoices/${editing.sourceId}`, text: '請求書を見る' })) : null,
     source && !templateMode ? h('p', { class: 'notice', text: `${journalLabel(source)} を複製しました。日付を確認して登録してください。` }) : null,
     fromTemplate ? h('p', { class: 'notice', text: `定型仕訳「${fromTemplate.name}」を呼び出しました。日付と金額を確認して登録してください。` }) : null,
     templateMode
