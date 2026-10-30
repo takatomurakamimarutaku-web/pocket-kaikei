@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { layoutDocument, fitText, textWidth, emWidth, columnWidths, warekiText, periodText, fmt, PT } from '../js/print-layout.js';
 import { buildPdf, ucs2Hex, showText, pageContent } from '../js/print-pdf.js';
-import { journalBookDoc, ledgerBookDoc, trialBalanceDoc, statementDoc, ratioText, splitSub, docHead } from '../js/print-forms.js';
+import { journalBookDoc, ledgerBookDoc, trialBalanceDoc, incomeStatementDoc, balanceSheetReportDoc, ratioText, splitSub, docHead } from '../js/print-forms.js';
 import { generalLedger, generalLedgers, trialBalance } from '../js/ledger.js';
 import { buildStatements } from '../js/statements.js';
 import { browserPrintWorks } from '../js/install.js';
@@ -179,34 +179,46 @@ test('残高試算表：貸借対照表と損益計算書の科目に分け、�
   const tb = trialBalance({ accounts: b.accounts, period: b.period, journals });
   const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'balance' });
   assert.equal(doc.title, '残高試算表');
-  const [, bsT, , plT] = doc.blocks;
+  const [, bsT, , plT, grandHead, grandT] = doc.blocks;
   const find = (rows, label) => rows.find((r) => (typeof r.cells[0] === 'string' ? r.cells[0] : r.cells[0].text) === label);
   assert.equal(find(bsT.rows, '資産合計').cells[4], '130,000');
   assert.equal(find(bsT.rows, '資産合計').cells[5], '100.0%');
   assert.equal(find(bsT.rows, '純資産合計').cells[4], '100,000');
   assert.equal(find(plT.rows, '消耗品費').cells[5], '25.0%');
-  assert.equal(find(plT.rows, '借方・貸方の合計').cells[2], fmt(tb.totals.debit));
+  // 段階利益（損益）：売上総損益金額〜当期純損益金額を残高の欄に書き、構成比は売上高に対する割合
+  assert.equal(find(plT.rows, '売上総損益金額').cells[4], '40,000');
+  assert.equal(find(plT.rows, '当期純損益金額').cells[4], '30,000');
+  assert.equal(find(plT.rows, '当期純損益金額').cells[5], '75.0%');
+  assert.equal(grandHead.text, '全科目の合計');
+  assert.equal(find(grandT.rows, '借方・貸方の合計').cells[2], fmt(tb.totals.debit));
   assert.equal(ratioText(1, 3), '33.3%');
   assert.equal(ratioText(-1, 8), '△12.5%');
   assert.equal(ratioText(5, 0), '');
 });
 
-test('決算書（報告式）：科目は左の列、区分の計と段階利益は右の列', () => {
+test('決算書（報告式）：科目は左の列、区分の合計は区分の最後の科目の行の右の列、段階利益は右の列', () => {
   const b = makeBook('corporation');
   b.opening([['現金', 100000], ['資本金', 100000]]);
   const journals = [b.j('2026-03-01', [['現金', 40000]], [['売上高', 40000]]), b.j('2026-03-02', [['消耗品費', 10000]], [['現金', 10000]])];
   const { pl, bs } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals });
-  const doc = statementDoc([{ caption: '', items: pl.items }], { head: {}, title: '損益計算書' });
+  const doc = incomeStatementDoc(pl.items, { head: {}, title: '損益計算書', entityType: 'corporation' });
   const rows = doc.blocks[0].rows;
   assert.equal(doc.title, '損 益 計 算 書');
+  assert.equal(doc.formal, true, '決算書の体裁（作成日・アプリ名を出さない）');
   assert.equal(doc.blocks[0].style, 'open', '罫線を使わない決算書の体裁');
+  assert.equal(doc.blocks[0].width, 144, '表は用紙の中央に置き、科目と金額の間を空けすぎない');
+  // 販売費及び一般管理費の科目が1つだけなので、右の列に書く
   const line = rows.find((r) => r.cells[0].text === '消耗品費');
-  assert.deepEqual(line.cells.slice(1), ['10,000', '']);
+  assert.equal(line.cells[1], '');
+  assert.equal(line.cells[2].text, '10,000');
+  assert.equal(rows.find((r) => r.cells[0].text === '営業利益金額').cells[2].text, '30,000');
   const last = rows.at(-1);
+  assert.equal(last.cells[0].text, '当期純利益金額');
   assert.equal(last.cells[2].text, '30,000');
-  assert.equal(last.cells[2].rule, 'double', '当期純利益は二重線');
-  const bsDoc = statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: '負債・純資産の部', items: bs.liabilities }], { head: {}, title: '貸借対照表' });
-  assert.deepEqual(bsDoc.blocks.map((x) => x.type), ['heading', 'table', 'heading', 'table']);
+  assert.equal(last.cells[2].rule, 'double', '当期純利益金額は二重線');
+  const bsDoc = balanceSheetReportDoc(bs, { head: {}, entityType: 'corporation' });
+  const labels = bsDoc.blocks[0].rows.map((r) => r.cells[0].text);
+  for (const l of ['資 産 の 部', '負 債 の 部', '純 資 産 の 部', '【株主資本】', '資産合計', '負債・純資産合計']) assert.ok(labels.includes(l), l);
   assert.ok(layoutDocument(bsDoc).length >= 1);
 });
 
@@ -234,7 +246,8 @@ test('合計残高試算表：借方合計＝繰越（借方残の科目）＋�
   const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越' });
   assert.equal(doc.title, '合計残高試算表');
   assert.deepEqual(doc.blocks[1].columns.map((c) => c.label), ['借方残高', '借方合計', '勘定科目', '貸方合計', '貸方残高']);
-  const total = doc.blocks[3].rows.at(-1).cells;
+  assert.deepEqual(doc.blocks.filter((x) => x.type === 'heading').map((x) => x.text), ['貸借対照表', '損益計算書', '全科目の合計']);
+  const total = doc.blocks.at(-1).rows.at(-1).cells;
   assert.equal(total[2].text, '合計');
   assert.equal(total[1], total[3], '借方合計＝貸方合計');
   assert.equal(total[0], total[4], '借方残高＝貸方残高');
@@ -247,7 +260,7 @@ test('貸借対照表（勘定式）：左に資産、右に負債・純資産�
   b.opening([['現金', 100000], ['資本金', 100000]]);
   const journals = [b.j('2026-03-01', [['現金', 40000]], [['売上高', 40000]])];
   const { bs } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals });
-  const doc = balanceSheetAccountDoc(bs, { head: {}, rightLabel: '負債・純資産の部' });
+  const doc = balanceSheetAccountDoc(bs, { head: {}, entityType: 'corporation' });
   const t = doc.blocks[0];
   assert.equal(t.split, 2);
   assert.equal(t.columns.length, 4);
@@ -328,7 +341,7 @@ test('推移表：A4横・区分の行は区分の計、科目は0を空欄に�
   assert.equal(layoutDocument(doc)[0].w, 297);
   const b = makeBook('corporation');
   const { pl } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals: [] });
-  assert.equal(layoutDocument(statementDoc([{ caption: '', items: pl.items }], { head: {}, title: '損益計算書', orientation: 'landscape' }))[0].orientation, 'landscape');
+  assert.equal(layoutDocument(incomeStatementDoc(pl.items, { head: {}, title: '損益計算書', entityType: 'corporation', orientation: 'landscape' }))[0].orientation, 'landscape');
 });
 
 test('組版：見出しの2段（headGroups）と、見出しだけ右の列とまとめる列（headSpan）', () => {

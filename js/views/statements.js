@@ -4,10 +4,11 @@ import { buildStatements, balanceSheet } from '../statements.js';
 import { openingDiff } from '../ledger.js';
 import { compareStatement, hideZeroRows, openingRows, formatPermille } from '../compare.js';
 import { formatPeriod } from '../period.js';
-import { formatYen, formatAmount, normalizeUnit } from '../money.js';
+import { formatYen, formatAmount, normalizeUnit, unitCaption } from '../money.js';
 import { isWhite } from '../white-return.js';
-import { zeroToggle, openingWarning, statementRows, loadPrevious, unitPicker, unitPrintOptions } from './report-common.js';
-import { statementDoc, balanceSheetAccountDoc, docHead } from '../print-forms.js';
+import { zeroToggle, openingWarning, loadPrevious, unitPicker, unitPrintOptions } from './report-common.js';
+import { fsPaper, fsPeriod, incomeStatementTable, balanceSheetView } from './fs-view.js';
+import { incomeStatementDoc, balanceSheetAccountDoc, balanceSheetReportDoc, docHead } from '../print-forms.js';
 import { warekiText } from '../print-layout.js';
 
 const slash = (d) => d.replaceAll('-', '/');
@@ -40,7 +41,9 @@ export async function render({ app, outlet, route, query }) {
   });
   const compareToggle = h('label', { class: 'check small' }, compareInput, isPl ? '前期と比べる' : `${labels[1]}と比べる`);
 
-  const table = (caption, items) => h('div', { class: 'table-wrap' }, h('table', { class: 'report statement' }, h('caption', { text: caption }), h('tbody', {}, statementRows(items, showZero))));
+  // 紙の決算書と同じ配置の表（印刷の様式と同じ行）
+  const paper = (body) =>
+    fsPaper({ title: route.title, period: isPl ? fsPeriod.range(period) : fsPeriod.at(period.endDate), company: settings.businessName, unit: unitCaption(unit.value()), body });
   const dash = () => h('td', { class: 'num muted', text: '—' });
   const compareTable = (caption, items, prevItems) => {
     let rows = compareStatement(items, prevItems, { skipPreviousNotes: !isPl });
@@ -79,7 +82,6 @@ export async function render({ app, outlet, route, query }) {
     const head = docHead({ settings, period, printedAt });
     if (!isPl) head.period = `${warekiText(period.endDate)} 現在`;
     if (compare) return { title: route.title, ...head };
-    const right = individual ? '負債・資本の部' : '負債・純資産の部';
     return {
       options: [
         isPl ? null : { key: 'format', label: '様式', type: 'select', choices: [['account', '勘定式（左右に並べる）'], ['report', '報告式（上下に並べる）']], value: 'account' },
@@ -88,9 +90,9 @@ export async function render({ app, outlet, route, query }) {
         ...unitPrintOptions(unit.value()),
       ].filter(Boolean),
       build: (v) => {
-        if (isPl) return statementDoc([{ caption: '', items: pl.items }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation });
-        if (v.format === 'account') return balanceSheetAccountDoc(bs, { head, title: route.title, showZero: v.zero, rightLabel: right, unit: normalizeUnit(v), orientation: v.orientation });
-        return statementDoc([{ caption: '資産の部', items: bs.assets }, { caption: right, items: bs.liabilities }], { head, title: route.title, showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation });
+        const opts = { head, title: route.title, entityType: settings.entityType, showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation };
+        if (isPl) return incomeStatementDoc(pl.items, opts);
+        return v.format === 'account' ? balanceSheetAccountDoc(bs, opts) : balanceSheetReportDoc(bs, opts);
       },
     };
   };
@@ -98,7 +100,7 @@ export async function render({ app, outlet, route, query }) {
   function paint() {
     if (isPl) {
       const caption = individual ? '損益計算書（青色申告決算書の並び）' : '損益計算書';
-      if (!compare) return put(body, table(caption, pl.items));
+      if (!compare) return put(body, paper(incomeStatementTable(pl.items, { entityType: settings.entityType, showZero })), individual ? h('p', { class: 'muted small', text: '科目の並びは青色申告決算書（収支内訳書）の損益計算書に合わせています。' }) : null);
       return put(
         body,
         prevPl
@@ -114,8 +116,7 @@ export async function render({ app, outlet, route, query }) {
         ? `資産合計 ${formatYen(bs.totalAssets)}円 ＝ ${individual ? '負債・資本合計' : '負債・純資産合計'}`
         : `資産合計と${individual ? '負債・資本合計' : '負債・純資産合計'}が一致しません（差額 ${formatYen(bs.totalAssets - bs.totalLiabilitiesAndEquity)}円）`,
     );
-    const right = individual ? '負債・資本の部' : '負債・純資産の部';
-    if (!compare) return put(body, balance, table('資産の部', bs.assets), table(right, bs.liabilities));
+    if (!compare) return put(body, balance, paper(balanceSheetView(bs, { entityType: settings.entityType, showZero })));
     put(
       body,
       balance,
@@ -127,7 +128,6 @@ export async function render({ app, outlet, route, query }) {
 
   put(
     outlet,
-    h('p', { class: 'muted small', text: `${settings.businessName}　${isPl ? formatPeriod(period) : `${slash(period.endDate)} 現在`}` }),
     openingWarning(individual ? 0 : openingDiff(period, accounts)),
     unit.el,
     h('div', { class: 'toggles' }, zero.el, compareToggle),

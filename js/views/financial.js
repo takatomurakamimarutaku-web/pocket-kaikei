@@ -4,11 +4,12 @@ import { h, put, amountCell, field, showToast, errorBox } from '../ui.js';
 import { buildStatements, closingRows, manufacturingReport } from '../statements.js';
 import { sgaBreakdown, condensedIncomeItems, equityStatement, companyNotes, DEFAULT_NOTES } from '../financial.js';
 import { openingDiff } from '../ledger.js';
-import { formatPeriod } from '../period.js';
-import { formatYen, unitCaption } from '../money.js';
+import { formatYen, unitCaption, normalizeUnit } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
-import { statementRows, openingWarning, unitPicker } from './report-common.js';
+import { openingWarning, unitPicker, unitPrintOptions } from './report-common.js';
+import { fsPaper, fsPeriod, incomeStatementTable, balanceSheetView, breakdownTable } from './fs-view.js';
+import { financialStatementsDoc, FINANCIAL_PARTS, docHead } from '../print-forms.js';
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
@@ -19,52 +20,38 @@ export async function render({ app, outlet }) {
   const mfg = manufacturingReport(closingRows({ accounts, period, journals }));
   const equity = equityStatement({ accounts, period, journals, netIncome: pl.netIncome });
   const sga = sgaBreakdown(pl);
-  const end = period.endDate.replaceAll('-', '/');
   const notesBody = h('div');
   const errorsEl = h('div');
 
-  const table = (label, rows, cls = 'statement') => h('div', { class: 'table-wrap' }, h('table', { class: `report ${cls}`, 'aria-label': label }, h('tbody', {}, rows)));
-  const line = (label, amount, cls = 'st-line') => h('tr', { class: cls }, h('th', { text: label }), amountCell('td', amount));
+  // 貸借対照表の貸借の一致（画面だけ）。純資産の部は株主資本 › 資本金・資本剰余金・利益剰余金（その他利益剰余金）の区分（fs-rows.js）
+  const bsCheck = () => h('p', { class: `check-line no-print ${bs.balanced ? 'ok' : 'ng'}`, text: bs.balanced ? `資産合計 ${formatYen(bs.totalAssets)}円 ＝ 負債・純資産合計` : `資産合計と負債・純資産合計が一致しません（差額 ${formatYen(bs.totalAssets - bs.totalLiabilitiesAndEquity)}円）` });
 
-  // 貸借対照表の純資産の部（株主資本 › 資本金・資本剰余金・利益剰余金）
-  function equityRows() {
-    const out = [h('tr', { class: 'st-group' }, h('th', { colspan: 2, text: '純資産の部' })), h('tr', { class: 'st-group level2' }, h('th', { colspan: 2, text: '株主資本' }))];
-    for (const s of equity.sections) {
-      if (s.id === 'capital' || s.id === 'other') {
-        for (const r of s.rows) out.push(line(r.account.name, r.closing));
-        continue;
-      }
-      out.push(line(s.label, s.total.closing, 'st-subtotal heading'));
-      for (const r of s.rows) {
-        if (r.account.role === 'retained_earnings') out.push(line('その他利益剰余金', r.closing, 'st-line'), line(`　${r.account.name}`, r.closing, 'st-line fs-indent'));
-        else out.push(line(`　${r.account.name}`, r.closing, 'st-line fs-indent'));
-      }
-      out.push(line(`${s.label}合計`, s.total.closing, 'st-total'));
-    }
-    out.push(line('株主資本合計', equity.total.closing, 'st-total'), line('純資産合計', equity.total.closing, 'st-subtotal'));
-    return out;
-  }
-
-  function bsTable() {
-    const liab = bs.liabilities.filter((it) => !(it.type === 'group' && it.groups?.includes('equity')) && !(it.type === 'subtotal' && it.strong));
-    return [
-      h('p', { class: `check-line ${bs.balanced ? 'ok' : 'ng'}`, text: bs.balanced ? `資産合計 ${formatYen(bs.totalAssets)}円 ＝ 負債・純資産合計` : `資産合計と負債・純資産合計が一致しません（差額 ${formatYen(bs.totalAssets - bs.totalLiabilitiesAndEquity)}円）` }),
-      table('資産の部', [h('tr', { class: 'st-group' }, h('th', { colspan: 2, text: '資産の部' })), ...statementRows(bs.assets)]),
-      table('負債・純資産の部', [h('tr', { class: 'st-group' }, h('th', { colspan: 2, text: '負債の部' })), ...statementRows(liab), ...equityRows(), line('負債・純資産合計', bs.totalLiabilitiesAndEquity, 'st-subtotal strong')]),
-    ];
-  }
-
+  // 株主資本等変動計算書：科目を縦に並べ、当期首残高・当期変動額（当期純利益・その他）・当期末残高（印刷と同じ並び）
   function equityTable() {
-    const head = h('tr', {}, ['科目', '当期首残高', '当期純利益', 'その他の変動', '当期末残高'].map((t) => h('th', { scope: 'col', text: t })));
-    const row = (label, v, cls = '') => h('tr', { class: cls }, h('th', { scope: 'row', text: label }), amountCell('td', v.opening), amountCell('td', v.netIncome, { blankZero: true }), amountCell('td', v.other, { blankZero: true }), amountCell('td', v.closing));
-    const rows = [];
+    const cell = (n, { blank = false, rule = null } = {}) => (blank && !n ? h('td', { class: 'num' }) : amountCell('td', n, { cls: rule ? `fs-${rule}` : '' }));
+    const row = (label, v, { cls = 'fs-r-line', lv = 1, rule = null } = {}) => h('tr', { class: cls }, h('th', { scope: 'row', class: `lv${lv}`, text: label }), cell(v.opening, { rule }), cell(v.netIncome, { blank: true, rule: v.netIncome ? rule : null }), cell(v.other, { blank: true, rule: v.other ? rule : null }), cell(v.closing, { rule }));
+    const heading = (label, lv, cls = 'fs-r-heading') => h('tr', { class: cls }, h('th', { scope: 'row', colspan: 5, class: `lv${lv}`, text: label }));
+    const rows = [heading('株主資本', 0)];
     for (const s of equity.sections) {
-      if (s.id !== 'capital' && s.id !== 'other') rows.push(h('tr', { class: 'tb-group' }, h('th', { scope: 'row', colspan: 5, text: s.label })));
-      for (const r of s.rows) rows.push(row(r.account.name, r));
-      if (s.id !== 'capital' && s.id !== 'other') rows.push(row(`${s.label}合計`, s.total, 'tb-subtotal'));
+      const grouped = s.id !== 'capital' && s.id !== 'other';
+      if (grouped) rows.push(heading(s.label, 1, 'fs-r-heading2'));
+      for (const r of s.rows) {
+        // 繰越利益剰余金は「その他利益剰余金」の下に書く（貸借対照表の純資産の部と同じ区分。会社計算規則 第76条）
+        if (r.account.role === 'retained_earnings') rows.push(heading('その他利益剰余金', 2, 'fs-r-heading3'), row(r.account.name, r, { lv: 3 }));
+        else rows.push(row(r.account.name, r, { lv: grouped ? 2 : 1 }));
+      }
+      if (grouped && s.rows.length > 1) rows.push(row(`${s.label}合計`, s.total, { cls: 'fs-r-total', lv: 2, rule: 'over' }));
     }
-    rows.push(row('株主資本合計', equity.total, 'tb-subtotal'), row('純資産合計', equity.total, 'mt-strong'));
-    return h('div', { class: 'table-wrap' }, h('table', { class: 'report tb fs-equity', 'aria-label': '株主資本等変動計算書' }, h('thead', {}, head), h('tbody', {}, rows)));
+    rows.push(row('株主資本合計', equity.total, { cls: 'fs-r-total', lv: 1, rule: 'over' }), row('純資産合計', equity.total, { cls: 'fs-r-net', lv: 0, rule: 'double' }));
+    const head = [
+      h('tr', {}, h('th', { scope: 'col', rowspan: 2, text: '科　目' }), h('th', { scope: 'col', rowspan: 2, text: '当期首残高' }), h('th', { scope: 'colgroup', colspan: 2, text: '当期変動額' }), h('th', { scope: 'col', rowspan: 2, text: '当期末残高' })),
+      h('tr', {}, h('th', { scope: 'col', text: '当期純利益' }), h('th', { scope: 'col', text: 'その他の変動' })),
+    ];
+    return h(
+      'div',
+      { class: 'table-wrap fs-wrap' },
+      h('table', { class: 'fs-table fs-equity-table', 'aria-label': '株主資本等変動計算書' }, h('colgroup', {}, h('col', { class: 'fs-c-label' }), ...[0, 1, 2, 3].map(() => h('col', { class: 'fs-c-amt' }))), h('thead', {}, head), h('tbody', {}, rows)),
+    );
   }
 
   function paintNotes() {
@@ -131,30 +118,43 @@ export async function render({ app, outlet }) {
 
   // 金額の表は単位を切り替えるたびに組み直す（個別注記表は入力中の内容を残すため組み直さない）
   const unit = unitPicker({ key: '/reports/financial', onChange: () => paintAmounts() });
+  const at = fsPeriod.at(period.endDate);
+  const range = fsPeriod.range(period);
   const parts = [
-    ['bs', '貸借対照表', `${end} 現在`, () => bsTable()],
-    ['pl', '損益計算書', formatPeriod(period), () => table('損益計算書', statementRows(condensedIncomeItems(pl)))],
-    ['sga', '販売費及び一般管理費内訳書', formatPeriod(period), () => table('販売費及び一般管理費内訳書', [...sga.lines.filter((l) => l.amount).map((l) => line(l.account.name, l.amount)), line('合計', sga.total, 'st-subtotal strong')])],
-    mfg.used ? ['mfg', '製造原価報告書', formatPeriod(period), () => table('製造原価報告書', statementRows(mfg.items))] : null,
-    ['equity', '株主資本等変動計算書', formatPeriod(period), () => [equityTable(), h('p', { class: 'muted small no-print', text: '「その他の変動」は、期中の仕訳による純資産の科目の増減です（剰余金の配当・利益準備金の積立・増資など）。' })]],
-    ['notes', '個別注記表', formatPeriod(period), [notesBody, editor]],
+    ['bs', '貸借対照表', at, () => balanceSheetView(bs, { entityType: 'corporation' })],
+    ['pl', '損益計算書', range, () => incomeStatementTable(condensedIncomeItems(pl), { entityType: 'corporation' })],
+    ['sga', '販売費及び一般管理費内訳書', range, () => breakdownTable(sga.lines, sga.total, { label: '販売費及び一般管理費内訳書' })],
+    mfg.used ? ['mfg', '製造原価報告書', range, () => incomeStatementTable(mfg.items, { entityType: 'corporation', label: '製造原価報告書' })] : null,
+    ['equity', '株主資本等変動計算書', range, () => [equityTable(), h('p', { class: 'muted small no-print', text: '「その他の変動」は、期中の仕訳による純資産の科目の増減です（剰余金の配当・利益準備金の積立・増資など）。' })]],
+    ['notes', '個別注記表', range, null],
   ].filter(Boolean);
-  const subs = parts.map(([id, , sub]) => h('span', { class: 'fs-sub', text: `${settings.businessName}　${sub}${id === 'notes' ? '' : '　（単位：円）'}` }));
-  const bodies = parts.map(([, , , content]) => (typeof content === 'function' ? h('div') : content));
-  const sections = parts.map(([id, title], i) => h('section', { class: 'fs-section', id: `fs-${id}` }, h('h3', { class: 'fs-title' }, title, subs[i]), bodies[i]));
+  // 帳票ごとに紙の決算書と同じ見出し（表題・期間・会社名・単位）。個別注記表は入力中の内容を残すため組み直さない
+  const bodies = parts.map(([id, title, sub]) => (id === 'notes' ? fsPaper({ title, period: sub, company: settings.businessName, unit: '', body: notesBody }) : h('div')));
+  const sections = parts.map(([id], i) => h('section', { class: 'fs-section', id: `fs-${id}` }, bodies[i], id === 'notes' ? editor : null));
   function paintAmounts() {
     const caption = unitCaption(unit.value());
-    parts.forEach(([id, , sub, content], i) => {
-      if (typeof content !== 'function') return;
-      subs[i].textContent = `${settings.businessName}　${sub}　${caption}`;
-      put(bodies[i], content());
-    });
+    parts.forEach(([id, title, sub, content], i) => content && put(bodies[i], id === 'bs' ? bsCheck() : null, fsPaper({ title, period: sub, company: settings.businessName, unit: caption, body: content() })));
   }
   paintAmounts();
 
+  // 印刷：帳票を選んで1冊に（帳票ごとに改ページ。体裁は貸借対照表・損益計算書を1つずつ印刷するときと同じ）
+  const used = FINANCIAL_PARTS.filter(([k]) => k !== 'mfg' || mfg.used);
+  app.printDoc = ({ printedAt }) => ({
+    options: [
+      ...used.map(([k, t]) => ({ key: `part_${k}`, label: t, type: 'check', value: true })),
+      { key: 'format', label: '貸借対照表の様式', type: 'select', choices: [['account', '勘定式（左右に並べる）'], ['report', '報告式（上下に並べる）']], value: 'account' },
+      { key: 'zero', label: '0円の科目も出す', type: 'check', value: false },
+      ...unitPrintOptions(unit.value()),
+    ],
+    build: (v) =>
+      financialStatementsDoc(
+        { bs, plItems: condensedIncomeItems(pl), sga, mfgItems: mfg.used ? mfg.items : null, equity, notes: companyNotes({ accounts, period, journals, assets, notes }) },
+        { head: docHead({ settings, period, printedAt }), at, range, parts: used.map(([k]) => k).filter((k) => v[`part_${k}`]), bsFormat: v.format, showZero: v.zero, unit: normalizeUnit(v) },
+      ),
+  });
+
   put(
     outlet,
-    h('p', { class: 'muted small', text: `${settings.businessName}　${formatPeriod(period)}` }),
     openingWarning(openingDiff(period, accounts)),
     unit.el,
     h('div', { class: 'chip-row no-print' }, parts.map(([, title], i) => h('button', { type: 'button', class: 'chip', text: title.replace('販売費及び一般管理費内訳書', '販管費内訳'), onclick: () => sections[i].scrollIntoView({ behavior: 'smooth', block: 'start' }) }))),
@@ -162,7 +162,7 @@ export async function render({ app, outlet }) {
     h(
       'div',
       { class: 'panel small muted no-print' },
-      h('p', { text: '会社法の計算書類（貸借対照表・損益計算書・株主資本等変動計算書・個別注記表）と、法人税の申告に添付する販売費及び一般管理費の内訳・製造原価報告書をまとめています。印刷ボタンで1冊に印刷できます。' }),
+      h('p', { text: '会社法の計算書類（貸借対照表・損益計算書・株主資本等変動計算書・個別注記表）と、法人税の申告に添付する販売費及び一般管理費の内訳・製造原価報告書をまとめています。印刷ボタンで、帳票を選んで1冊に印刷できます（帳票ごとに改ページ）。' }),
       h('p', { text: '個別注記表は、会計監査人を置かない非公開会社が表示する項目（重要な会計方針・会計方針の変更・表示方法の変更・誤謬の訂正・株主資本等変動計算書・その他）を並べています（会社計算規則 第98条第2項）。該当が無い項目は空欄にすると出しません。' }),
       h('p', { text: '株主資本等変動計算書は科目を縦に並べる様式です。評価・換算差額等・新株予約権には対応していません。' }),
     ),

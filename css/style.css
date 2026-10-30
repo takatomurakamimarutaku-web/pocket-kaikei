@@ -1275,3 +1275,74 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .unit-round { flex: 0 0 auto; width: auto; min-height: 36px; }
 .unit-note { display: block; margin-top: 4px; }
 .unit-note:empty { display: none; }
+
+/* 決算書（損益計算書・貸借対照表・製造原価報告書）：紙の決算書と同じ配置（js/views/fs-view.js）
+ * 内訳の金額は左の列、区分の合計・段階利益は右の列。罫線は見出しの上下と、合計の金額の上の線・二重線だけ */
+.fs-paper { margin-bottom: var(--sp-4); padding: 18px 14px 20px; background: var(--surface); border: 1px solid var(--card-border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.fs-head { display: grid; gap: 6px; margin-bottom: 10px; }
+.fs-ptitle.is-long { letter-spacing: 0.08em; text-indent: 0.08em; }
+.fs-ptitle { margin: 0; text-align: center; font-size: 1.12rem; font-weight: 800; letter-spacing: 0.3em; text-indent: 0.3em; text-decoration-line: underline; text-decoration-style: double; text-decoration-thickness: 1px; text-underline-offset: 0.4em; }
+.fs-period { margin: 4px 0 0; text-align: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.fs-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 8px; font-size: 0.8rem; }
+.fs-company { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.fs-unit { color: var(--muted); white-space: nowrap; font-size: 0.74rem; }
+.fs-paper .fs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.8rem; line-height: 1.4; font-variant-numeric: tabular-nums; table-layout: fixed; }
+.fs-c-amt { width: 6.3em; }
+.fs-paper .fs-table th, .fs-paper .fs-table td { padding: 3px 4px; border: 0; vertical-align: baseline; }
+.fs-paper .fs-table thead th { padding: 5px 4px; font-size: 0.72rem; font-weight: 700; color: var(--muted); text-align: center; letter-spacing: 0.4em; border-top: 1.5px solid var(--text); border-bottom: 1px solid var(--text); }
+.fs-paper .fs-table tbody th { text-align: left; font-weight: 400; overflow-wrap: anywhere; }
+.fs-paper .fs-table td { text-align: right; white-space: nowrap; }
+.fs-pl tbody tr:last-child > * { border-bottom: 1.5px solid var(--text); padding-bottom: 6px; }
+.fs-paper .fs-table .lv1 { padding-left: 1.1em; }
+.fs-paper .fs-table .lv2 { padding-left: 2.1em; }
+.fs-paper .fs-table .lv3 { padding-left: 3.1em; }
+.fs-r-heading > *, .fs-r-heading2 > *, .fs-r-heading3 > * { font-weight: 700 !important; }
+.fs-pl .fs-r-heading > * { padding-top: 9px; }
+.fs-r-profit > *, .fs-r-net > * { font-weight: 700 !important; }
+.fs-paper .fs-pl .fs-r-profit th, .fs-paper .fs-pl .fs-r-net th { padding-left: 1.2em; }
+.fs-paper .fs-table .fs-r-calc th { padding-left: 2.1em; }
+.fs-r-note > * { font-size: 0.76rem; color: var(--muted); }
+.fs-r-total > *, .fs-r-grand > * { font-weight: 700 !important; }
+.fs-paper .fs-table td.fs-over { border-top: 1px solid color-mix(in srgb, var(--text) 60%, transparent); }
+.fs-paper .fs-table td.fs-double { border-top: 1px solid color-mix(in srgb, var(--text) 60%, transparent); border-bottom: 3px double color-mix(in srgb, var(--text) 75%, transparent); }
+.fs-r-net > * { padding-top: 5px; padding-bottom: 5px; }
+.fs-r-part th { padding: 10px 4px 6px !important; text-align: center !important; font-weight: 800; letter-spacing: 0.35em; }
+.fs-bs { display: grid; gap: 14px; }
+.fs-side { display: flex; flex-direction: column; min-width: 0; }
+.fs-side + .fs-side { padding-top: 6px; border-top: 1px solid var(--border); }
+.fs-side .fs-table:first-child { border-top: 1.5px solid var(--text); }
+.fs-grand-table { margin-top: auto; }
+.fs-r-grand > * { padding-top: 8px !important; padding-bottom: 4px !important; border-top: 1px solid var(--separator) !important; }
+.fs-r-grand td.fs-double { border-top-color: color-mix(in srgb, var(--text) 60%, transparent) !important; }
+
+/* 株主資本等変動計算書：見出しは2段（当期変動額の下に当期純利益・その他の変動）。スマホでは横にスクロール */
+.fs-paper .fs-equity-table { min-width: 38em; }
+.fs-paper .fs-equity-table thead th { letter-spacing: 0.05em; white-space: nowrap; }
+.fs-paper .fs-equity-table thead tr + tr th { border-top: 0; }
+.fs-paper .fs-equity-table thead th[colspan] { border-bottom: 1px solid var(--separator); }
+.fs-paper .fs-equity-table .fs-r-net > * { border-bottom: 1.5px solid var(--text); }
+
+/* 残高試算表：貸借対照表・損益計算書・製造原価の科目に分け、区分の合計・部の合計と段階利益（売上総損益金額など）を出す */
+.tb-section { margin-bottom: var(--sp-3); }
+.tb-caption { margin: var(--sp-3) 2px 8px; font-size: 0.95rem; font-weight: 800; }
+.tb-trial { width: 100%; font-variant-numeric: tabular-nums; }
+.tb-trial thead th:not(:first-child) { min-width: 6.4em; }
+.tb-trial tbody th { font-weight: 500; }
+.tb-trial a { border-bottom: 0; }
+.tb-trial td { white-space: nowrap; }
+.tb-trial .tb-group th { padding-top: 10px; padding-bottom: 4px; font-size: 0.74rem; font-weight: 700; color: var(--primary-strong); letter-spacing: 0.04em; background: var(--surface) !important; box-shadow: 1px 0 0 var(--separator) !important; }
+.tb-trial .tb-subtotal th, .tb-trial .tb-subtotal td { color: var(--text); font-weight: 700; font-size: 0.76rem; border-top: 1px solid color-mix(in srgb, var(--text) 22%, transparent); }
+.tb-trial .tb-subtotal th { padding-left: 1em; }
+.tb-trial .tb-calc th { padding-left: 1em; color: var(--muted); }
+.tb-trial .tb-total th, .tb-trial .tb-total td { font-weight: 800; background: var(--surface-2); border-top: 1px solid color-mix(in srgb, var(--text) 40%, transparent); }
+.tb-trial .tb-total th { background: var(--surface-2) !important; }
+/* 段階利益：区分の合計と見分けられるよう、緑の薄い地に太字。最後（当期純損益金額・所得金額）は二重線 */
+.tb-trial .tb-profit th, .tb-trial .tb-profit td, .tb-trial .tb-net th, .tb-trial .tb-net td { font-weight: 800; background: color-mix(in srgb, var(--primary) 7%, var(--surface)); border-top: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); }
+.tb-trial .tb-profit th, .tb-trial .tb-net th { background: color-mix(in srgb, var(--primary) 7%, var(--surface)) !important; }
+.tb-trial .tb-net th, .tb-trial .tb-net td { border-top: 3px double color-mix(in srgb, var(--text) 45%, transparent); }
+/* スマホ：借方・貸方の列を隠す（勘定科目・繰越・残高）。繰越の列が無い表は2・3列目が借方・貸方 */
+.tb-compact:not(.tb-no-open) tr > :nth-child(3), .tb-compact:not(.tb-no-open) tr > :nth-child(4) { display: none; }
+.tb-compact.tb-no-open tr > :nth-child(2), .tb-compact.tb-no-open tr > :nth-child(3) { display: none; }
+.tb-grand { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 10px; align-items: baseline; margin: 0 0 var(--sp-2); padding: 10px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); font-variant-numeric: tabular-nums; font-weight: 800; }
+.tb-grand-label { font-size: 0.76rem; color: var(--muted); font-weight: 700; }
+.tb-grand .num { text-align: right; }
