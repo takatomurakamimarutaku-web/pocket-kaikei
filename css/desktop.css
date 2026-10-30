@@ -151,6 +151,9 @@ body:has(.sidebar[hidden]) { padding-left: 0; }
 .jc-head .jc-attach { margin: 0; }
 .jc-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
 .jc-memo { grid-column: 3; grid-row: 1; padding-top: 1px; white-space: normal; }
+.jc-colhead { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px solid var(--separator); font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.jc-colhead-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 2px 10px; }
+.jc-colhead-side { display: flex; justify-content: space-between; padding-left: 11px; }
 
 /* ---- 表：広い画面では文字を少し小さくして行を詰めない ---- */
 .view table { font-size: 0.875rem; }
