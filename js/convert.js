@@ -8,8 +8,9 @@
 // - 弥生会計 Next「インポートの事前準備」：1回5,000行まで、複合仕訳は100行まで
 // - 弥生会計 オンライン サポート情報「インポートする際の制限事項」：Shift_JIS のみ、1ファイル1.0MB・1,000行まで、
 //   複合仕訳は20行まで、項目の中の半角カンマはダブルクォートで囲んでも不可、製造原価の科目は不可
-// - マネーフォワード クラウド会計「弥生会計の仕訳インポート」：弥生インポート形式を読む。科目・補助科目・部門は取り込み時に追加か変換
+// - マネーフォワード・freee は各社の仕訳インポート形式（convert-formats.js）で渡す
 import { yayoiRows } from './yayoi.js';
+import { mfGroups, MF_HEADER, freeeGroups, FREEE_HEADER } from './convert-formats.js';
 import { encodeShiftJis } from './sjis.js';
 import { toCsv, BOM, trialBalanceCsv, assetsCsv } from './csv.js';
 import { trialBalance } from './ledger.js';
@@ -23,12 +24,15 @@ import { linesToRows } from './journal.js';
  * maxRows：1ファイルの行数の上限（超えたら仕訳の途中で切らずにファイルを分ける）。maxBytes：1ファイルの大きさの上限
  * maxLines：1つの仕訳（伝票）の行数の上限。nameMax：科目名などの長さの上限（Shift_JIS のバイト数）
  * noComma：項目の中の半角カンマを全角にする。noMfg：製造原価の科目を使えない。opening：期首残高を弥生の形式で渡すか一覧で渡すか
+ * format：仕訳の形式（yayoi・mf・freee）
+ * freee：1ファイル50,000行・64MB、1仕訳400行まで（freee ヘルプセンター「CSVインポートで移行する方法」「仕訳データのインポート」）
  */
 export const CONVERT_TARGETS = {
-  yayoi: { label: '弥生会計（デスクトップ）・やよいの青色申告', maxRows: Infinity, maxBytes: Infinity, maxLines: Infinity, nameMax: 24, noComma: false, noMfg: false, opening: 'yayoi' },
-  next: { label: '弥生会計 Next', maxRows: 5000, maxBytes: Infinity, maxLines: 100, nameMax: 24, noComma: false, noMfg: false, opening: 'yayoi' },
-  online: { label: '弥生会計 オンライン・やよいの青色申告 オンライン', maxRows: 1000, maxBytes: 1_000_000, maxLines: 20, nameMax: 24, noComma: true, noMfg: true, opening: 'yayoi' },
-  mf: { label: 'マネーフォワード クラウド会計・確定申告', maxRows: Infinity, maxBytes: Infinity, maxLines: Infinity, nameMax: 60, noComma: false, noMfg: false, opening: 'list' },
+  yayoi: { label: '弥生会計（デスクトップ）・やよいの青色申告', maxRows: Infinity, maxBytes: Infinity, maxLines: Infinity, nameMax: 24, noComma: false, noMfg: false, opening: 'yayoi', format: 'yayoi' },
+  next: { label: '弥生会計 Next', maxRows: 5000, maxBytes: Infinity, maxLines: 100, nameMax: 24, noComma: false, noMfg: false, opening: 'yayoi', format: 'yayoi' },
+  online: { label: '弥生会計 オンライン・やよいの青色申告 オンライン', maxRows: 1000, maxBytes: 1_000_000, maxLines: 20, nameMax: 24, noComma: true, noMfg: true, opening: 'yayoi', format: 'yayoi' },
+  mf: { label: 'マネーフォワード クラウド会計・確定申告', maxRows: Infinity, maxBytes: Infinity, maxLines: Infinity, nameMax: 60, noComma: false, noMfg: false, opening: 'list', format: 'mf' },
+  freee: { label: 'freee会計', maxRows: 50000, maxBytes: 64_000_000, maxLines: 400, nameMax: 60, noComma: false, noMfg: false, opening: 'list', format: 'freee' },
 };
 
 // 弥生の期首残高データに入れられない科目（移行先が自動で計算する）
@@ -138,8 +142,8 @@ export function convertChecks(journals, { target, accountById, subById, departme
   }
   if (mfg.size) errors.push(`製造原価の科目（${[...mfg].join('・')}）を使った仕訳は${t.label}に取り込めません`);
   if (longNames.size) warnings.push(`名前が長いため、移行先で途中から切れることがあります（全角${Math.floor(t.nameMax / 2)}文字まで）：${[...longNames].slice(0, 8).join('、')}${longNames.size > 8 ? ' ほか' : ''}`);
-  if (journals.some((j) => j.lines.some((l) => TAX_BY_CODE[l.taxCategory]?.transitional)) && target === 'mf') {
-    warnings.push('インボイスのない仕入（経過措置）は「区分80%」「区分70%」の形で書き出します。マネーフォワードで税区分の対応を確かめてください');
+  if (target === 'freee' && journals.some((j) => j.date >= '2028-10-01' && j.lines.some((l) => TAX_BY_CODE[l.taxCategory]?.transitional))) {
+    warnings.push('2028年10月1日以後のインボイスのない仕入は「課対仕入(控50)10%」などの形で書き出します。freee の税区分の名前と合っているか確かめてください');
   }
   return { errors, warnings };
 }
@@ -195,13 +199,24 @@ export function buildConvertPack({ target, settings, period, accounts, subAccoun
   if (t.opening === 'yayoi') files.push(sjisFile('01_期首残高_弥生インポート形式.csv', openingRows, unmappable));
   else files.push(utf8File('01_期首残高の一覧.csv', openingListCsv(openingRows, opening.skipped)));
 
-  // 仕訳（移行先の上限でファイルを分ける）
-  let rows = yayoiRows(journals, { accountById, subById, period, departmentById });
-  if (t.noComma) rows = rows.map((r) => r.map((v, i) => (TEXT_COLS.includes(i) ? noComma(v) : v)));
-  const parts = splitYayoiGroups(groupYayoiRows(rows), t);
+  // 仕訳（移行先の上限でファイルを分ける。伝票の途中では切らない）
+  const ctx = { accountById, subById, period, departmentById };
+  let groups;
+  if (t.format === 'mf') groups = mfGroups(journals, ctx);
+  else if (t.format === 'freee') groups = freeeGroups(journals, ctx);
+  else {
+    let rows = yayoiRows(journals, ctx);
+    if (t.noComma) rows = rows.map((r) => r.map((v, i) => (TEXT_COLS.includes(i) ? noComma(v) : v)));
+    groups = groupYayoiRows(rows);
+  }
+  const parts = splitYayoiGroups(groups, t);
+  const formatName = { yayoi: '弥生インポート形式', mf: 'マネーフォワード形式', freee: 'freee形式' }[t.format];
   parts.forEach((part, i) => {
-    const suffix = parts.length > 1 ? `_${i + 1}of${parts.length}` : '';
-    files.push(sjisFile(`02_仕訳_弥生インポート形式${suffix}.csv`, part, unmappable));
+    const name = `02_仕訳_${formatName}${parts.length > 1 ? `_${i + 1}of${parts.length}` : ''}.csv`;
+    // マネーフォワードは見出しの行が要る（Shift_JIS）。freee は見出しの行（[表題行]）が要り、UTF-8（BOM）で渡す
+    if (t.format === 'mf') files.push(sjisFile(name, [MF_HEADER, ...part], unmappable));
+    else if (t.format === 'freee') files.push(utf8File(name, toCsv([FREEE_HEADER, ...part])));
+    else files.push(sjisFile(name, part, unmappable));
   });
 
   // 参考：科目の一覧・固定資産台帳・期末の残高試算表（照合用）
@@ -244,12 +259,20 @@ export function convertGuide({ target, settings, period, files, journalFiles, sk
     step('インポートの画面で「01_期首残高_弥生インポート形式.csv」を取り込みます。ない科目・補助科目は「追加」か「置換」を選びます。');
   } else if (target === 'online') {
     step('［弥生データのインポート］で「01_期首残高_弥生インポート形式.csv」を取り込みます。');
-  } else {
+  } else if (target === 'mf') {
     step('［各種設定］→［事業者］で、消費税の経理方式が「税込」になっているか確かめます。');
     step('［開始残高］の画面で「01_期首残高の一覧.csv」を見ながら開始残高を入力します（マネーフォワードが読めるのは弥生会計の残高試算表の形式のため、手で入力します）。');
+  } else {
+    step('「03_勘定科目と補助科目の一覧.csv」を見て、freee に現金・預金・クレジットカードの口座を作ります（freee は口座がないと取り込めません）。');
+    step('事業所の設定で、消費税の経理方式が「税込」になっているか、インボイスのない仕入の経過措置の税区分（「課対仕入(控80)10%」など）を使う設定になっているか確かめます。');
+    step('［開始残高］の画面で「01_期首残高の一覧.csv」を見ながら開始残高を入力します。');
   }
+  const names = journalNames.map((f) => `「${f}」`).join('');
+  const split = journalFiles > 1 ? `一度に読める行数に合わせて${journalFiles}個に分けてあります。番号の順に全部取り込んでください。` : '';
   if (target === 'mf') {
-    step(`［各種設定］→［他社ソフトデータの移行］→［弥生会計］の仕訳のステップで${journalNames.map((f) => `「${f}」`).join('')}を取り込みます。科目・補助科目・部門の名前が違うときは「追加」か「変換」を選びます。`);
+    step(`［会計帳簿］→［仕訳帳］の［インポート］→［仕訳帳］で${names}を取り込みます。科目・補助科目・部門の名前が違うときは「追加」か「変換」を選びます。インボイスのない仕入は「インボイス」の列に「80％控除」などを入れてあります。`);
+  } else if (target === 'freee') {
+    step(`［取引入力］→［振替伝票］の［インポート］で、freee のテンプレートの形式の仕訳として${names}を取り込みます。${split}勘定科目・補助科目（口座・取引先・品目）・税区分の対応を選んで登録します。`);
   } else {
     step(`${target === 'online' ? '［弥生データのインポート］' : target === 'next' ? 'インポートの画面' : '［ファイル］→［インポート］'}で${journalNames.map((f) => `「${f}」`).join('')}を取り込みます。${journalFiles > 1 ? `一度に読める行数に合わせて${journalFiles}個に分けてあります。番号の順に全部取り込んでください。` : ''}`);
   }
