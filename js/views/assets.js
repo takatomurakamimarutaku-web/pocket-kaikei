@@ -1,10 +1,11 @@
 // 固定資産台帳：この会計期間の期首帳簿価額・償却費・期末帳簿価額
-import { h, put, emptyState, amountCell, saveFile } from '../ui.js';
+import { h, put, emptyState, amountCell, saveFile, stackTable } from '../ui.js';
 import { assetRegister, smeUsage, depreciationSchedule, methodLabel, CATEGORY_BY_ID } from '../depreciation.js';
 import { formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 import { registerByAccount } from '../asset-tools.js';
 import { assetsCsv, csvFileName } from '../csv.js';
+import { assetRegisterDoc } from '../print-reports.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 
@@ -22,12 +23,14 @@ export async function render({ app, outlet }) {
   const sme = smeUsage(assets, period);
   const DISPOSAL = { sell: '売却', retire: '除却' };
   const byAccount = registerByAccount(register);
+  // 印刷：固定資産台帳の様式（資産ごとに1行、科目計・合計）
+  app.printDoc = ({ head }) => (register.length ? assetRegisterDoc(register, { accountById, individual, head }) : null);
   const csv = () => saveFile(new Blob([assetsCsv(register, { accountById, individual })], { type: 'text/csv' }), csvFileName('assets'));
   const summary = () =>
     h(
       'div',
       { class: 'table-wrap' },
-      h(
+      stackTable(h(
         'table',
         { class: 'report asset-sum' },
         h('caption', { text: '科目別の合計' }),
@@ -44,7 +47,7 @@ export async function render({ app, outlet }) {
               h('tr', {}, h('th', { text: '計' }), ...['cost', 'opening', 'amount', 'closing'].map((k) => amountCell('td', byAccount.reduce((t, s) => t + s[k], 0)))),
             )
           : null,
-      ),
+      )),
     );
 
   // 資本的支出・一部の売却除却の関係（元の資産の名前）
