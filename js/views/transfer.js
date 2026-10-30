@@ -1,6 +1,7 @@
-// 会計ソフトとの受け渡し：ほかの会計ソフトの仕訳 CSV の取り込みと、弥生会計のインポート形式での書き出し
+// 会計ソフトとの受け渡し：ほかの会計ソフトの仕訳 CSV の取り込みと、弥生会計のインポート形式での書き出し、
+// ほかの会計ソフトへ移るための移行パック（ZIP）
 // ファイルは端末の中で読み書きするだけで、外部へ送信しない
-import { h, put, field, showToast, errorBox, taxSelect, saveFile } from '../ui.js';
+import { h, put, field, showToast, errorBox, taxSelect, saveFile, confirmDialog } from '../ui.js';
 import { decodeBytes, parseCsv } from '../bank-import.js';
 import { detectFormat, parseEntries, namesIn, suggestAccounts, suggestTax, buildImport, journalSignature, IMPORT_FORMATS } from '../journal-import.js';
 import { yayoiCsv } from '../yayoi.js';
@@ -14,6 +15,8 @@ import { TAX_BY_CODE } from '../tax.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { BOM } from '../csv.js';
+import { CONVERT_TARGETS, convertChecks, buildConvertPack } from '../convert.js';
+import { createZip } from '../zip.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
 const META_KEY = 'journalImport';
@@ -292,6 +295,49 @@ export async function render({ app, outlet }) {
     if (result !== 'cancelled') showToast(`${journals.length}件の仕訳を書き出しました`);
   }
 
+  // ---- 移行パック ----
+  const targetSelect = h('select', { id: 'tc-target' }, Object.entries(CONVERT_TARGETS).map(([value, t]) => h('option', { value, text: t.label })));
+  async function exportPack() {
+    const target = targetSelect.value;
+    const t = CONVERT_TARGETS[target];
+    const checks = convertChecks(journals, { target, accountById, subById, departmentById, period });
+    const list = (items) => h('ul', {}, items.map((x) => h('li', { text: x })));
+    const warn = (title, items) => h('div', { class: 'notice small ws-warn' }, h('p', { class: 'ws-warn-title', text: title }), items.length ? list(items) : null);
+    if (checks.errors.length) {
+      await confirmDialog({
+        title: '移行パックを書き出せません',
+        body: h('div', { class: 'tc-dialog' }, warn(`${t.label}に取り込めない仕訳があります。直してから書き出してください`, checks.errors.slice(0, 10))),
+        buttons: [{ label: '閉じる', value: false, variant: 'primary' }],
+      });
+      return;
+    }
+    const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
+    const pack = buildConvertPack({ target, settings, period, accounts, subAccounts, journals, departments: data.departments, assets, periods });
+    const ok = await confirmDialog({
+      title: '移行パックを書き出す',
+      body: h(
+        'div',
+        { class: 'tc-dialog' },
+        h('p', { class: 'small', text: `${t.label}へ移るためのファイル${pack.files.length}個を ZIP にまとめます。最初に「00_移行の手順.txt」を開いてください。` }),
+        h('ul', { class: 'small bd-etax-files' }, pack.files.map((f) => h('li', {}, h('span', { class: 'bd-etax-name', text: f.name })))),
+        pack.journalFiles > 1 ? h('p', { class: 'small', text: `仕訳${pack.journalCount}件は、一度に読める行数に合わせて${pack.journalFiles}個のファイルに分けました。` }) : null,
+        checks.warnings.length ? warn('確かめてください', checks.warnings) : null,
+        pack.unmappable.length ? warn(`Shift_JIS にない文字（${pack.unmappable.slice(0, 10).join(' ')}${pack.unmappable.length > 10 ? ' ほか' : ''}）は「?」にしました。科目名や摘要を直すと、そのまま移せます`, []) : null,
+      ),
+      buttons: [
+        { label: 'キャンセル', value: false },
+        { label: '書き出す', value: true, variant: 'primary' },
+      ],
+    });
+    if (!ok) return;
+    const now = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+    const zip = createZip(pack.files, stamp);
+    const result = await saveFile(new Blob([zip], { type: 'application/zip' }), `pocket-kaikei-convert-${target}-${period.startDate.slice(0, 4)}-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}.zip`);
+    if (result !== 'cancelled') showToast('移行パックを書き出しました');
+  }
+
   put(
     outlet,
     h('p', { class: 'muted small', text: 'ほかの会計ソフトから移るときや、税理士さんに帳簿を渡すときに使います。ファイルはこの端末の中で読み書きするだけで、外部へは送信しません。' }),
@@ -323,6 +369,19 @@ export async function render({ app, outlet }) {
       ]),
       exportNote,
       h('button', { type: 'button', class: 'btn btn-block', text: '弥生会計の形式で書き出す', onclick: exportYayoi }),
+    ),
+    h(
+      'section',
+      { class: 'panel' },
+      h('h2', { class: 'section-title', text: 'ほかの会計ソフトへ移る（移行パック）' }),
+      h('p', { class: 'small', text: `今の会計期間（${formatPeriod(period)}）の期首残高・仕訳と、移行先で科目や固定資産を入力するための一覧、移行の手順書を1つの ZIP にまとめます。` }),
+      field('移行先', targetSelect),
+      h('ul', { class: 'muted small plain-list ti-points' }, [
+        h('li', { text: '期首残高と仕訳は、移行先が読める弥生会計のインポート形式（Shift_JIS）で入れます。マネーフォワードは期首残高だけ手入力です。' }),
+        h('li', { text: '弥生会計 オンラインは1回に読める行数が少ないため、仕訳のファイルを分け、摘要などの「,」は全角にします。' }),
+        h('li', { text: '固定資産台帳・期末の残高試算表は、移行先での入力と照合に使う一覧です（取り込むファイルではありません）。' }),
+      ]),
+      h('button', { type: 'button', class: 'btn btn-block', text: '移行パックを書き出す', onclick: exportPack }),
     ),
   );
 }
