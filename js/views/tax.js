@@ -1,6 +1,9 @@
 // 消費税集計（税込経理。割り戻しの参考値）：税区分別・科目別税区分・月別推移・税区分のチェック
 // 弥生会計の「消費税集計表」「科目別税区分表」、勘定奉行の科目別・税区分別の集計と確認を参考にした
-import { h, put, amountCell, saveFile, segmented } from '../ui.js';
+import { h, put, amountCell, saveFile, segmented, stackTable } from '../ui.js';
+
+/** スマホの2段表示で金額の前に出す見出し */
+const TAX_LABELS = ['', '税込金額', '税抜（参考）', '消費税等（参考）'];
 import { summarizeTax, CORE_TAX_CODES, TAX_BY_CODE } from '../tax.js';
 import { taxByAccount, taxMonthly, taxChecks } from '../tax-reports.js';
 import { isAdjusting } from '../monthly.js';
@@ -46,7 +49,7 @@ export async function render({ app, outlet, query }) {
     return h(
       'div',
       { class: 'table-wrap' },
-      h(
+      stackTable(h(
         'table',
         { class: 'report taxsum' },
         h('caption', { text: title }),
@@ -59,7 +62,7 @@ export async function render({ app, outlet, query }) {
           ),
         ),
         h('tfoot', {}, h('tr', {}, h('th', { text: '計' }), amountCell('td', total.gross), h('td'), amountCell('td', total.tax))),
-      ),
+      ), TAX_LABELS),
     );
   }
   function summary({ from, to }) {
@@ -88,7 +91,7 @@ export async function render({ app, outlet, query }) {
     }
     const sums = r.byCode.map((x) => h('tr', {}, h('th', { class: 'mt-acc', text: x.label }), amountCell('td', x.gross), amountCell('td', x.net), amountCell('td', x.tax, { blankZero: true })));
     return [
-      h('div', { class: 'table-wrap' }, h('table', { class: 'report taxsum tax-account' }, h('caption', { text: '科目別税区分集計表' }), h('thead', {}, head), h('tbody', {}, rows), h('tbody', {}, h('tr', { class: 'tb-group' }, h('th', { colspan: 4, text: '税区分ごとの合計' })), sums))),
+      h('div', { class: 'table-wrap' }, stackTable(h('table', { class: 'report taxsum tax-account' }, h('caption', { text: '科目別税区分集計表' }), h('thead', {}, head), h('tbody', {}, rows), h('tbody', {}, h('tr', { class: 'tb-group' }, h('th', { colspan: 4, text: '税区分ごとの合計' })), sums)), TAX_LABELS)),
       h('p', { class: 'muted small', text: '損益の科目は「対象外」も表示します（課税の経費が対象外になっていないかの確認用）。科目名を押すと元帳を開きます。' }),
       csvButton(() => taxByAccountCsv(r), 'tax-by-account'),
     ];

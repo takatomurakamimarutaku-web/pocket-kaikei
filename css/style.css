@@ -543,6 +543,20 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
   .ledger tfoot th { grid-column: 1 / 4; }
   .ledger tfoot td { grid-row: 2; text-align: right; }
 }
+/* スマホ：列の多い集計表（ui.js の stackTable）は1行目に見出しの列、2行目以降に数字を見出しつきで並べる */
+@media (max-width: 599px) {
+  .stack-sm { min-width: 0; }
+  .stack-sm thead { display: none; }
+  .stack-sm tr { display: grid; grid-template-columns: repeat(var(--stack-cols, 3), minmax(0, 1fr)); gap: 2px 10px; padding: 8px 10px; border-bottom: 1px solid var(--separator); }
+  .report.stack-sm th, .report.stack-sm td { display: block; position: static; width: auto; padding: 0; border: 0; background: none; box-shadow: none; }
+  .stack-sm tr > :first-child { grid-column: 1 / -1; text-align: left; }
+  .stack-sm td.num { text-align: right; font-size: 0.86rem; }
+  .stack-sm td:empty { display: none; }
+  .stack-sm td[data-label]::before { content: attr(data-label); display: block; font-size: 0.68rem; font-weight: 700; color: var(--muted); text-align: right; }
+  .stack-sm :is(tfoot tr, tr.st-total, tr.tb-subtotal) { background: var(--row-accent); font-weight: 700; }
+  .stack-sm tr.tb-group { background: var(--row-accent); box-shadow: inset 3px 0 0 var(--primary); }
+  .report.stack-sm tr.tb-group > th { box-shadow: none; background: none; }
+}
 /* スマホ：補助科目の残高一覧は1行目に補助科目と残高、2行目に繰越・借方・貸方 */
 @media (max-width: 599px) {
   .sl-summary thead { display: none; }
