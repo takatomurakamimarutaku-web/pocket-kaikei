@@ -92,10 +92,25 @@ body:has(.sidebar[hidden]) { padding-left: 0; }
   max-width: var(--form-max);
 }
 
+/* 指標・取引先の一覧も読みやすい幅に（指標と数字、取引先と残高を離しすぎない） */
+.view:is([data-route="/reports/analysis"], [data-route="/receivables"], [data-route="/receivables/party"]) { max-width: var(--form-max); }
+/* 申告書・決算書の様式（欄の番号｜項目｜金額）も読みやすい幅に */
+.view:is([data-route="/reports/blue-return"], [data-route="/reports/blue-return-re"], [data-route="/reports/white-return"], [data-route="/reports/income-tax"], [data-route="/reports/enterprise-tax"], [data-route="/reports/tax-return"]) { max-width: var(--form-max); }
+/* ただし減価償却費の計算（列の多い表）を開いているときは幅いっぱいに */
+.view:is([data-route="/reports/blue-return"], [data-route="/reports/blue-return-re"], [data-route="/reports/white-return"]):has(.br-wide) { max-width: none; }
+/* 資金繰り表のグラフは大きくしすぎない（表は月が多いので幅いっぱいのまま） */
+.view[data-route="/reports/cash-plan"] .chart { max-width: 720px; }
+/* 売掛金・買掛金：要約は4つを1列に、基準日の欄は日付の幅に */
+.view[data-route="/receivables"] .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#ar-asof { max-width: 220px; }
+
 /* 月の多い表（月次推移など）は画面の幅いっぱいに */
 .view:is([data-route="/reports/trial-monthly"], [data-route="/reports/monthly"], [data-route="/reports/departments"], [data-route="/reports/cash-plan"], [data-route="/reports/budget"]) {
   max-width: none;
 }
+
+/* 予算と実績は科目｜予算｜実績｜差異の4列なので、読みやすい幅に（上の「幅いっぱい」より後に書いて上書きする） */
+.view[data-route="/reports/budget"] { max-width: var(--form-max); }
 
 /* 期間・科目の選択は横に伸ばしすぎない */
 .range-bar, .ledger-pick { max-width: 640px; }
@@ -151,6 +166,9 @@ body:has(.sidebar[hidden]) { padding-left: 0; }
 .jc-head .jc-attach { margin: 0; }
 .jc-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
 .jc-memo { grid-column: 3; grid-row: 1; padding-top: 1px; white-space: normal; }
+.jc-colhead { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px solid var(--separator); font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.jc-colhead-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 2px 10px; }
+.jc-colhead-side { display: flex; justify-content: space-between; padding-left: 11px; }
 
 /* ---- 表：広い画面では文字を少し小さくして行を詰めない ---- */
 .view table { font-size: 0.875rem; }

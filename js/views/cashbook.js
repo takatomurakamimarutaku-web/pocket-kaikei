@@ -1,5 +1,5 @@
 // 現金出納帳・預金出納帳：口座（補助科目）ごとの入金・出金・残高。ここから入金・出金を記録できる
-import { h, put, amountCell, emptyState, saveFile } from '../ui.js';
+import { h, put, emptyState, saveFile } from '../ui.js';
 import { ledgerCsv, csvFileName } from '../csv.js';
 import { generalLedger, carriedLabel, firstNegativeDate } from '../ledger.js';
 import { compareAccounts } from '../accounts.js';
@@ -7,7 +7,7 @@ import { isCashAccount } from '../quick.js';
 import { monthsInPeriod, monthRange, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { ledgerBookDoc, docHead } from '../print-forms.js';
-import { monthRangeOptions, printRange } from './report-common.js';
+import { monthRangeOptions, printRange, labelCell, ledgerBodyRows } from './report-common.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -132,18 +132,21 @@ export async function render({ app, outlet, query }) {
               h(
                 'tbody',
                 {},
-                h('tr', { class: 'carried' }, h('td'), h('td', { text: carriedLabel(period, from) }), h('td'), h('td'), amountCell('td', lg.carried)),
-                lg.rows.map((r) =>
-                  h(
-                    'tr',
-                    { class: 'tap-row', tabindex: 0, role: 'link', 'aria-label': `${r.date} ${r.counterpart} の仕訳を開く`, onclick: () => open(r), onkeydown: (e) => e.key === 'Enter' && open(r) },
-                    h('td', { class: 'nowrap', text: r.date.slice(5).replace('-', '/') }),
-                    h('td', {}, h('span', { class: 'lg-counter', text: r.counterpart }), r.memo ? h('span', { class: 'lg-memo', text: r.memo }) : null),
-                    amountCell('td', r.debit, { blankZero: true }),
-                    amountCell('td', r.credit, { blankZero: true }),
-                    amountCell('td', r.balance),
-                  ),
-                ),
+                h('tr', { class: 'carried' }, h('td'), h('td', { text: carriedLabel(period, from) }), h('td', { class: 'lg-blank' }), h('td', { class: 'lg-blank' }), labelCell(lg.carried, '残高')),
+                ledgerBodyRows(lg, {
+                  labels: ['入金', '出金'],
+                  monthly: isAll,
+                  row: (r) =>
+                    h(
+                      'tr',
+                      { class: 'tap-row lg-row', tabindex: 0, role: 'link', 'aria-label': `${r.date} ${r.counterpart} の仕訳を開く`, onclick: () => open(r), onkeydown: (e) => e.key === 'Enter' && open(r) },
+                      h('td', { class: 'nowrap lg-date', text: r.date.slice(5).replace('-', '/') }),
+                      h('td', { class: 'lg-desc' }, h('span', { class: 'lg-counter', text: r.counterpart }), r.memo ? h('span', { class: 'lg-memo', text: r.memo }) : null),
+                      labelCell(r.debit, '入金', { blankZero: true }),
+                      labelCell(r.credit, '出金', { blankZero: true }),
+                      labelCell(r.balance, '残高'),
+                    ),
+                }),
               ),
             ),
           )

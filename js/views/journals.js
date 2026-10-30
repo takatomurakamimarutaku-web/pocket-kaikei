@@ -118,7 +118,7 @@ export async function render({ app, outlet, query }) {
     meta.textContent = `${hasCriteria(crit) ? '詳しい検索：会計期間の全体から ' : ''}${items.length}件・借方合計 ${formatYen(total)}円`;
     put(list, 
       ...(items.length
-        ? items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0, departmentById, showInputNo: order === 'input' }))
+        ? [journalColumnHead(), ...items.map((j) => journalCard(j, accountById, subById, { attachments: attachCount.get(j.id) || 0, departmentById, showInputNo: order === 'input' }))]
         : [emptyState(journals.length ? '条件に合う仕訳はありません' : 'まだ仕訳がありません', journals.length ? null : h('a', { href: '#/entry', class: 'btn btn-primary', text: '取引を入力する' }))]),
     );
   }
@@ -192,6 +192,22 @@ export async function render({ app, outlet, query }) {
  * 仕訳1件のカード（振替伝票の行を並べる）。attachments：添付した証憑の件数
  * showInputNo：入力No も出す（入力順のとき。伝票No と入力No が違う仕訳はいつも出す）
  */
+/** 仕訳帳の列の見出し（PC の表の形のときだけ見せる。スマホのカードでは隠す） */
+function journalColumnHead() {
+  return h(
+    'div',
+    { class: 'jc-colhead', 'aria-hidden': 'true' },
+    h('span', { text: '日付／伝票No.' }),
+    h(
+      'span',
+      { class: 'jc-colhead-row' },
+      h('span', { class: 'jc-colhead-side' }, h('span', { text: '借方科目' }), h('span', { text: '金額' })),
+      h('span', { class: 'jc-colhead-side' }, h('span', { text: '貸方科目' }), h('span', { text: '金額' })),
+      h('span', { text: '摘要' }),
+    ),
+  );
+}
+
 export function journalCard(j, accountById, subById, { attachments = 0, departmentById = new Map(), showInputNo = false } = {}) {
   const sideCell = (s) => {
     if (!s.accountId) return h('div', { class: 'jc-side jc-empty' });

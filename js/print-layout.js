@@ -415,11 +415,19 @@ export function layoutDocument(doc) {
     y = bottom;
   }
 
-  for (const b of doc.blocks) {
+  // 幅を指定した表（用紙の中央に置く表）の左端。直前の見出しと直後の注記はこの左端にそろえる
+  const tableLeft = (b) => (b?.type === 'table' && b.width && b.width < avail ? left + (avail - b.width) / 2 : null);
+  let noteLeft = null; // 中央に置いた表の後に続く注記の左端
+  doc.blocks.forEach((b, bi) => {
     if (b.type === 'cover') {
       drawCover(b);
-      continue;
+      return;
     }
+    if (b.type !== 'text') noteLeft = b.type === 'table' ? tableLeft(b) : null;
+    layoutBlock(b, tableLeft(doc.blocks[bi + 1]), b.type === 'text' ? noteLeft : null);
+  });
+
+  function layoutBlock(b, nextLeft, prevLeft) {
     if (b.type === 'heading') {
       if (b.caption) {
         caption = b.text;
@@ -435,16 +443,17 @@ export function layoutDocument(doc) {
         page.period = pagePeriod;
         pageUnit = b.unit;
         page.unit = pageUnit;
-        continue;
+        return;
       }
       if (y + 7 + HEAD_H + LINE_H * 2 > bottom) newPage(true);
-      text(left, y + 4.2, b.text, 10, { bold: true });
+      text(nextLeft ?? left, y + 4.2, b.text, 10, { bold: true });
       y += 6.5;
     } else if (b.type === 'text') {
       const size = b.size || 7.5;
-      for (const l of wrapText(b.text, size, avail)) {
+      const x = prevLeft ?? left;
+      for (const l of wrapText(b.text, size, avail - (x - left) * 2)) {
         if (y + size * PT * 1.6 > bottom) newPage(true);
-        text(left, y + size * PT * 1.1, l, size);
+        text(x, y + size * PT * 1.1, l, size);
         y += size * PT * 1.6;
       }
       y += 1.5;

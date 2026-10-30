@@ -12,6 +12,8 @@ const format = (unit, v) => (v == null ? '—' : unit === 'permille' ? formatPer
 
 export async function render({ app, outlet }) {
   const { settings, period, accounts, journals } = await app.load();
+  // 印刷は画面の表から作る。指標は％・か月・円が混ざるので、右上の「単位：円」は書かない
+  app.printDoc = () => ({ unit: '' });
   const entityType = settings.entityType;
   const white = isWhite(settings);
   const { pl } = buildStatements({ entityType, accounts, period, journals });

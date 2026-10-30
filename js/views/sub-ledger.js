@@ -1,10 +1,10 @@
 // 補助元帳：1つの科目の補助科目（取引先・口座など）ごとの元帳。補助科目の残高一覧と、すべての補助科目を続けて表示・印刷・CSV 出力
-import { h, put, amountCell, emptyState, saveFile } from '../ui.js';
+import { h, put, emptyState, saveFile } from '../ui.js';
 import { subLedgers, generalLedger, carriedLabel, NO_SUB } from '../ledger.js';
 import { ledgerCsv, csvFileName } from '../csv.js';
 import { compareAccounts } from '../accounts.js';
 import { formatPeriod } from '../period.js';
-import { monthRangePicker, ledgerSection } from './report-common.js';
+import { monthRangePicker, ledgerSection, labelCell } from './report-common.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -67,14 +67,14 @@ export async function render({ app, outlet, query }) {
               'tr',
               {},
               h('th', { scope: 'row' }, h('button', { type: 'button', class: 'link', text: lg.subName, onclick: () => sections[i].scrollIntoView({ behavior: 'smooth', block: 'start' }) })),
-              amountCell('td', lg.carried),
-              amountCell('td', lg.debit, { blankZero: true }),
-              amountCell('td', lg.credit, { blankZero: true }),
-              amountCell('td', lg.closing),
+              labelCell(lg.carried, '繰越'),
+              labelCell(lg.debit, '借方', { blankZero: true }),
+              labelCell(lg.credit, '貸方', { blankZero: true }),
+              labelCell(lg.closing, '残高'),
             ),
           ),
         ),
-        h('tfoot', {}, h('tr', {}, h('th', { text: '合計' }), amountCell('td', total.carried), amountCell('td', total.debit), amountCell('td', total.credit), amountCell('td', total.closing))),
+        h('tfoot', {}, h('tr', {}, h('th', { text: '合計' }), labelCell(total.carried, '繰越'), labelCell(total.debit, '借方'), labelCell(total.credit, '貸方'), labelCell(total.closing, '残高'))),
       ),
     );
   }

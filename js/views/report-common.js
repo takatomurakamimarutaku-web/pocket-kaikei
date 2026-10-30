@@ -138,20 +138,81 @@ export async function loadPrevious(app, period) {
   return { period: prev, journals: await app.db.listJournals(prev.id) };
 }
 
+/** 金額のセルに見出し（スマホの2段表示で金額の前に出す）を付ける */
+export function labelCell(n, label, opts) {
+  const el = amountCell('td', n, opts);
+  el.dataset.label = label;
+  return el;
+}
+
 /**
- * 元帳の表（総勘定元帳・補助元帳）。繰越の行・取引の行（日付・伝票No・相手科目・摘要・借方・貸方・残高）・期間計
- * 日付の下の No. は伝票No.（見出しに書く。列の幅を取らないよう短くする）
+ * 元帳・出納帳の表の行：取引の行（row(r) で作る）と、月が変わるところに「N月計」（借方・貸方・月末残高）と「累計」の行
  * @param {object} lg ledger.generalLedger の結果
- * @param {{ period, from, title?: string, meta?: string, id?: string, showEmpty?: boolean }} opts
- *   title：見出し（続けて表示するとき）。meta：件数の行の先頭に付ける文字
+ * @param {{ row: (r) => Element, monthly?: boolean, labels?: [string, string] }} opts labels：借方・貸方の見出し（出納帳は入金・出金）
  */
-export function ledgerSection(lg, { period, from, title = '', meta = '', id = null, showEmpty = true }) {
+export function ledgerBodyRows(lg, { row, monthly = true, labels = ['借方', '貸方'] }) {
+  const [dl, cl] = labels;
+  const rows = [];
+  let month = '';
+  let md = 0;
+  let mc = 0;
+  let cd = 0;
+  let cc = 0;
+  let last = lg.carried;
+  const monthEnd = () => {
+    if (!month || !monthly) return;
+    rows.push(h('tr', { class: 'lg-month' }, h('td'), h('td', { text: `${Number(month.slice(5))}月計` }), labelCell(md, dl), labelCell(mc, cl), labelCell(last, '残高')));
+    rows.push(h('tr', { class: 'lg-cum' }, h('td'), h('td', { text: '累計' }), labelCell(cd, dl), labelCell(cc, cl), h('td')));
+  };
+  for (const r of lg.rows) {
+    const m = r.date.slice(0, 7);
+    if (m !== month) {
+      monthEnd();
+      month = m;
+      md = 0;
+      mc = 0;
+    }
+    md += r.debit;
+    mc += r.credit;
+    cd += r.debit;
+    cc += r.credit;
+    last = r.balance;
+    rows.push(row(r));
+  }
+  monthEnd();
+  return rows;
+}
+
+/**
+ * 元帳の1科目（総勘定元帳・補助元帳）：上に繰越・借方合計・貸方合計・残高の要約、表は月ごとに「月計」と「累計」の行を入れる
+ * （弥生会計・勘定奉行の元帳と同じ並び）。スマホでは1件を2段（日付・相手科目／金額・残高）にして横にはみ出さない
+ * @param {object} lg ledger.generalLedger の結果
+ * @param {{ period, from, title?: string, meta?: string, id?: string, showEmpty?: boolean, monthly?: boolean }} opts
+ *   title：見出し（続けて表示するとき）。meta：件数の行の先頭に付ける文字。monthly：月計・累計の行
+ */
+export function ledgerSection(lg, { period, from, title = '', meta = '', id = null, showEmpty = true, monthly = true }) {
   const side = lg.account.normalSide === 'debit' ? '借方残' : '貸方残';
+  const cell = labelCell;
+  const rows = ledgerBodyRows(lg, {
+    monthly,
+    row: (r) =>
+      h(
+        'tr',
+        { class: 'lg-row' },
+        h('td', { class: 'nowrap lg-date' }, h('a', { href: `#/journal/${encodeURIComponent(r.journal.id)}/edit`, text: r.date.slice(5).replace('-', '/') }), h('span', { class: 'lg-no', text: `No.${r.voucherNo ?? r.no}` })),
+        h('td', { class: 'lg-desc' }, h('span', { class: 'lg-counter', text: r.counterpart }), r.memo ? h('span', { class: 'lg-memo', text: r.memo }) : null),
+        cell(r.debit, '借方', { blankZero: true }),
+        cell(r.credit, '貸方', { blankZero: true }),
+        cell(r.balance, '残高'),
+      ),
+  });
+  const stat = (label, n) => h('div', { class: 'lg-stat' }, h('span', { class: 'lg-stat-label', text: label }), amountCell('span', n));
   return h(
     'section',
     { class: 'lg-section', id },
     title ? h('h2', { class: 'section-title', text: title }) : null,
     h('p', { class: 'list-meta', text: `${meta}${side}・${lg.rows.length}件` }),
+    h('div', { class: 'lg-stats' }, stat(carriedLabel(period, from), lg.carried), stat('借方合計', lg.debit), stat('貸方合計', lg.credit), stat('残高', lg.closing)),
     h(
       'div',
       { class: 'table-wrap' },
@@ -159,23 +220,8 @@ export function ledgerSection(lg, { period, from, title = '', meta = '', id = nu
         'table',
         { class: 'report ledger' },
         h('thead', {}, h('tr', {}, ['日付／伝票No.', '相手科目／摘要', '借方', '貸方', '残高'].map((t) => h('th', { scope: 'col', text: t })))),
-        h(
-          'tbody',
-          {},
-          h('tr', { class: 'carried' }, h('td'), h('td', { text: carriedLabel(period, from) }), h('td'), h('td'), amountCell('td', lg.carried)),
-          lg.rows.map((r) =>
-            h(
-              'tr',
-              {},
-              h('td', { class: 'nowrap' }, h('a', { href: `#/journal/${encodeURIComponent(r.journal.id)}/edit`, text: r.date.slice(5).replace('-', '/') }), h('span', { class: 'lg-no', text: `No.${r.voucherNo ?? r.no}` })),
-              h('td', {}, h('span', { class: 'lg-counter', text: r.counterpart }), r.memo ? h('span', { class: 'lg-memo', text: r.memo }) : null),
-              amountCell('td', r.debit, { blankZero: true }),
-              amountCell('td', r.credit, { blankZero: true }),
-              amountCell('td', r.balance),
-            ),
-          ),
-        ),
-        h('tfoot', {}, h('tr', {}, h('th', { colspan: 2, text: '期間計' }), amountCell('td', lg.debit), amountCell('td', lg.credit), amountCell('td', lg.closing))),
+        h('tbody', {}, h('tr', { class: 'carried' }, h('td'), h('td', { text: carriedLabel(period, from) }), h('td', { class: 'lg-blank' }), h('td', { class: 'lg-blank' }), cell(lg.carried, '残高')), rows),
+        h('tfoot', {}, h('tr', {}, h('th', { colspan: 2, text: '合計' }), cell(lg.debit, '借方'), cell(lg.credit, '貸方'), cell(lg.closing, '残高'))),
       ),
     ),
     lg.rows.length || !showEmpty ? null : emptyState('この期間の取引はありません', null, { face: null }),

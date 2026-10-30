@@ -162,6 +162,9 @@ test('総勘定元帳：科目ごとの見出し・繰越・月計・合計。�
   assert.deepEqual(kinds, ['carried', 'line', 'line', 'subtotal', 'line', 'subtotal', 'total']);
   assert.equal(rows[3].cells[3].text, '1月計');
   assert.deepEqual(rows[3].cells.slice(5, 7), ['10,000', '3,000']);
+  // 月計の行の残高は月末の残高（50,000＋10,000−3,000）
+  assert.equal(rows[3].cells[7], '57,000');
+  assert.equal(rows[5].cells[7], '62,000');
   assert.deepEqual(rows.at(-1).cells.slice(1), [fmt(lg.debit), fmt(lg.credit), fmt(lg.closing)]);
   assert.equal(lg.closing, 62000);
   // 全科目：科目ごとに改ページ（見出しの数＝元帳の数）
@@ -302,6 +305,20 @@ test('元帳の印刷条件：累計の行・税区分の列なし・改ペー�
   const cum = t.rows.filter((r) => textOf(r.cells[3]) === '累計').at(-1);
   assert.equal(cum.cells[4], '15,000');
   assert.equal(t.carry.balance, 6);
+});
+
+test('元帳の印刷：長い摘要は切らずに2行に折り返す', () => {
+  const b = makeBook('individual');
+  const memo = '10月分 部品売上 東和機工株式会社 第3工場向け 精密シャフト加工 追加発注分';
+  const journals = [b.j('2026-01-05', [['現金', 10000]], [['売上高', 10000]], memo)];
+  const lg = generalLedger({ accountId: b.byName['現金'].id, accounts: b.accounts, period: b.period, journals });
+  const row = ledgerBookDoc([lg], { head: {}, carriedLabel: '前期繰越' }).blocks[1].rows[1];
+  const cell = row.cells.find((c) => Array.isArray(c?.text));
+  assert.ok(cell, '摘要が2行になる');
+  assert.equal(cell.text.join(''), memo);
+  // 短い摘要は1行のまま
+  const short = generalLedger({ accountId: b.byName['現金'].id, accounts: b.accounts, period: b.period, journals: [b.j('2026-01-05', [['現金', 1]], [['売上高', 1]], '売上')] });
+  assert.ok(ledgerBookDoc([short], { head: {}, carriedLabel: '前期繰越' }).blocks[1].rows[1].cells.includes('売上'));
 });
 
 test('仕訳日記帳の印刷条件：月計と月ごとの改ページ', () => {
