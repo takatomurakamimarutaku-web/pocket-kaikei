@@ -185,6 +185,8 @@ const printBtn = document.getElementById('print');
 const printHead = document.getElementById('print-head');
 
 async function start() {
+  // 起動できた印（js/boot-guard.js が見る）
+  document.documentElement.setAttribute('data-started', '');
   let db, device, book, lock;
   try {
     // 帳簿の一覧と画面ロックは端末の設定（帳簿とは別のデータベース）。今の帳簿のデータベースを開く

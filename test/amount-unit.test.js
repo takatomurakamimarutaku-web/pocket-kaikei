@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toUnit, formatAmount, unitCaption, normalizeUnit, YEN_UNIT, MAX_AMOUNT } from '../js/money.js';
-import { trialBalanceDoc, statementDoc, balanceSheetAccountDoc } from '../js/print-forms.js';
+import { trialBalanceDoc, balanceSheetReportDoc, balanceSheetAccountDoc } from '../js/print-forms.js';
 import { trialBalance } from '../js/ledger.js';
 import { buildStatements } from '../js/statements.js';
 import { makeBook } from './helpers.js';
@@ -82,13 +82,15 @@ test('決算書の印刷：報告式・勘定式とも単位を換算し、資�
   const b = book();
   const { bs } = buildStatements({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals: [] });
   assert.equal(bs.totalAssets, bs.totalLiabilitiesAndEquity);
-  const acc = balanceSheetAccountDoc(bs, { head: {}, rightLabel: '負債・純資産の部', unit: M });
+  const acc = balanceSheetAccountDoc(bs, { head: {}, entityType: 'corporation', unit: M });
   const last = acc.blocks[0].rows.at(-1).cells;
   assert.equal(last[1].text, '21');
   assert.equal(last[3].text, '21');
   assert.equal(acc.unit, '（単位：百万円・百万円未満切り捨て）');
-  const rep = statementDoc([{ caption: '資産の部', items: bs.assets }], { head: {}, title: '貸借対照表', unit: K });
-  const cashRow = rep.blocks[1].rows.find((r) => r.cells[0].text === '現金');
+  const rep = balanceSheetReportDoc(bs, { head: {}, entityType: 'corporation', unit: K });
+  const cashRow = rep.blocks[0].rows.find((r) => r.cells[0].text === '現金');
   assert.equal(cashRow.cells[1], '12,345');
+  const grand = rep.blocks[0].rows.filter((r) => ['資産合計', '負債・純資産合計'].includes(r.cells[0].text)).map((r) => r.cells[2].text);
+  assert.deepEqual(grand, ['21,111', '21,111'], '資産合計と負債・純資産合計は同じ円の金額を換算するのでそろう');
   assert.equal(rep.unit, '（単位：千円・千円未満切り捨て）');
 });

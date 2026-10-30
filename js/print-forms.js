@@ -3,13 +3,16 @@
 //   仕訳日記帳：A4横。日付・伝票No.・借方（科目／補助・税区分・金額）・貸方（同）・摘要。1件の仕訳はページをまたがない
 //   総勘定元帳・出納帳：A4縦。科目ごとに改ページ。前期（前月）繰越・取引・月計・累計・合計。頁の繰越行
 //   合計残高試算表：中央に勘定科目、左に借方残高・借方合計、右に貸方合計・貸方残高（残高試算表の様式も選べる）
-//   貸借対照表：勘定式（左右2段）または報告式。損益計算書：報告式。どちらも罫線を使わない決算書の体裁
+//   貸借対照表：勘定式（左右2段）または報告式。損益計算書：報告式。どちらも罫線を使わない決算書の体裁（行は fs-rows.js で画面と共通）
 
 import { fmt, periodText } from './print-layout.js';
-import { GROUP_BY_ID, groupLabel } from './accounts.js';
 import { TAX_BY_CODE } from './tax.js';
 import { linesToRows, voucherOf } from './journal.js';
 import { toUnit, unitCaption, YEN_UNIT } from './money.js';
+import { incomeStatementRows, balanceSheetRows, singleAmount } from './fs-rows.js';
+import { trialRows, totalsOf } from './trial-rows.js';
+
+export { totalsOf };
 
 const md = (date) => `${date.slice(5, 7)}/${date.slice(8, 10)}`;
 const blank = (n) => (n ? fmt(n) : '');
@@ -182,86 +185,49 @@ export function ratioText(n, base) {
 }
 
 /**
- * 合計残高の金額（借方合計・貸方合計は繰越残高を含む累計。残高は借方・貸方のどちらか）
- * @param {{ account, opening, debit, credit }} r trialBalance の行（opening は残高側の金額）
- */
-export function totalsOf(r) {
-  const openDc = r.account.normalSide === 'debit' ? r.opening : -r.opening;
-  const debitTotal = r.debit + Math.max(openDc, 0);
-  const creditTotal = r.credit + Math.max(-openDc, 0);
-  const dc = debitTotal - creditTotal;
-  return { debitTotal, creditTotal, debitBalance: Math.max(dc, 0), creditBalance: Math.max(-dc, 0) };
-}
-
-/**
- * 試算表（貸借対照表の科目と損益計算書の科目に分ける）
+ * 試算表（貸借対照表・損益計算書・製造原価の科目に分ける。行は trial-rows.js）
  * format：'total'＝合計残高試算表（借方残高｜借方合計｜勘定科目｜貸方合計｜貸方残高）、'balance'＝残高試算表（繰越・借方・貸方・残高・構成比）
+ * 損益計算書の科目には段階利益（売上総損益金額など）の行を入れる。合計残高試算表では利益を貸方残高、損失を借方残高の欄に書く
  * @param {object} tb ledger.js の trialBalance の結果
- * @param {{ head, entityType, carriedLabel: string, showZero?: boolean, subs?: boolean, format?: 'total'|'balance', ratio?: boolean, title?: string }} opts
+ * @param {{ head, entityType, white?: boolean, carriedLabel: string, showZero?: boolean, subs?: boolean, format?: 'total'|'balance', ratio?: boolean, title?: string }} opts
  */
-export function trialBalanceDoc(tb, { head, entityType, carriedLabel, showZero = false, subs = false, format = 'total', ratio = true, title, unit = YEN_UNIT }) {
+export function trialBalanceDoc(tb, { head, entityType, white = false, carriedLabel, showZero = false, subs = false, format = 'total', ratio = true, title, unit = YEN_UNIT }) {
   const { f: fmt, b: blank } = unitFormat(unit);
   const isTotal = format === 'total';
-  const sectionOf = (r) => GROUP_BY_ID[r.account.group]?.section ?? 'pl';
-  const signed = (r) => (r.account.normalSide === GROUP_BY_ID[r.account.group].side ? 1 : -1);
-  const moved = (r) => r.opening || r.debit || r.credit || r.closing;
-  const grand = { debitTotal: 0, creditTotal: 0, debitBalance: 0, creditBalance: 0 };
-  const make = (isBs) => {
-    const list = tb.rows.filter((r) => (sectionOf(r) === 'pl') !== isBs && (showZero || moved(r)));
-    // 構成比の分母：貸借対照表は資産合計、損益計算書は売上高（個人は売上(収入)金額）の合計
-    const base = list.filter((r) => (isBs ? sectionOf(r) === 'bs_asset' : r.account.group === 'sales')).reduce((s, r) => s + signed(r) * r.closing, 0);
+  const t = trialRows(tb, { entityType, white, showZero });
+  const center = (text) => (isTotal ? { text, align: 'center' } : text);
+  // 合計残高試算表の金額の欄：残高だけの行は side の残高（マイナスなら反対の側）に書く。
+  // 売上原価の中の当期製品製造原価（calc）は区分の合計に借方合計・借方残高として足すので、両方の欄に書く
+  const sideCells = (amount, side, withTotal) => {
+    const debit = side === 'debit' ? amount >= 0 : amount < 0;
+    const v = fmt(Math.abs(amount));
+    const tv = withTotal ? v : '';
+    return debit ? [v, tv, '', ''] : ['', '', tv, v];
+  };
+  const make = ({ rows: list, base }) => {
+    const pct = (n) => (ratio ? ratioText(n, base) : '');
+    const sumCells = (label, s) => (isTotal ? [blank(s.debitBalance), blank(s.debitTotal), label, blank(s.creditTotal), blank(s.creditBalance)] : [label, fmt(s.opening), blank(s.debit), blank(s.credit), fmt(s.closing), pct(s.closing)]);
+    const accountCells = (label, r, sign) => (isTotal ? sumCells(label, { ...r, ...totalsOf(r) }) : [label, fmt(r.opening), blank(r.debit), blank(r.credit), fmt(r.closing), pct(sign * r.closing)]);
+    const amountCells = (label, amount, side, withTotal = false) => {
+      if (!isTotal) return [label, '', '', '', fmt(amount), pct(amount)];
+      const [db, dt, ct, cb] = sideCells(amount, side, withTotal);
+      return [db, dt, label, ct, cb];
+    };
     const rows = [];
-    let group = null;
-    let sub = null;
-    let sec = null;
-    let secSum = null;
-    const zero = () => ({ opening: 0, debit: 0, credit: 0, closing: 0, debitTotal: 0, creditTotal: 0, debitBalance: 0, creditBalance: 0 });
-    const line = (label, t, opts = {}) =>
-      isTotal
-        ? [blank(t.debitBalance), blank(t.debitTotal), label, blank(t.creditTotal), blank(t.creditBalance)]
-        : [label, fmt(t.opening), blank(t.debit), blank(t.credit), fmt(t.closing), ratio ? ratioText(opts.ratioOf ?? t.closing, base) : ''];
-    const flushGroup = () => sub && rows.push({ kind: 'subtotal', cells: line(isTotal ? { text: `${groupLabel(sub.group, entityType)}計`, align: 'center' } : `${groupLabel(sub.group, entityType)} 計`, sub) });
-    const SECTION_TOTAL = { bs_asset: '資産合計', bs_liability: '負債合計', bs_equity: entityType === 'individual' ? '資本合計' : '純資産合計' };
-    const flushSection = () => secSum && SECTION_TOTAL[sec] && rows.push({ kind: 'total', cells: line(isTotal ? { text: SECTION_TOTAL[sec], align: 'center' } : SECTION_TOTAL[sec], secSum) });
     for (const r of list) {
-      const s = sectionOf(r);
-      if (r.account.group !== group) {
-        flushGroup();
-        if (s !== sec) {
-          flushSection();
-          sec = s;
-          secSum = zero();
+      if (r.kind === 'group') rows.push({ kind: 'group', cells: isTotal ? ['', '', { text: `【${r.label}】` }, '', ''] : [{ text: `【${r.label}】`, span: 6 }] });
+      else if (r.kind === 'account') {
+        rows.push({ cells: accountCells({ text: r.label, indent: 3 }, r.row, r.sign) });
+        if (subs && r.row.subs.length) {
+          for (const s2 of r.row.subs) {
+            if (!showZero && !(s2.opening || s2.debit || s2.credit || s2.closing)) continue;
+            rows.push({ cells: accountCells({ text: s2.subAccount ? s2.subAccount.name : '補助なし', indent: 7 }, { ...s2, account: r.row.account }, r.sign), sub: true });
+          }
         }
-        group = r.account.group;
-        sub = { ...zero(), group };
-        rows.push({ kind: 'group', cells: isTotal ? ['', '', { text: `【${groupLabel(group, entityType)}】` }, '', ''] : [{ text: `【${groupLabel(group, entityType)}】`, span: 6 }] });
-      }
-      // 区分の小計：残高試算表は区分の向きで足す（評価勘定は差し引く）。合計残高試算表は借方・貸方をそのまま足す
-      const sign = signed(r);
-      const t = totalsOf(r);
-      for (const x of [sub, secSum, grand]) {
-        if (x !== grand) {
-          x.opening += sign * r.opening;
-          x.debit += r.debit;
-          x.credit += r.credit;
-          x.closing += sign * r.closing;
-        }
-        x.debitTotal += t.debitTotal;
-        x.creditTotal += t.creditTotal;
-        x.debitBalance += t.debitBalance;
-        x.creditBalance += t.creditBalance;
-      }
-      rows.push({ cells: line({ text: r.account.name, indent: 3 }, { ...r, ...t }, { ratioOf: sign * r.closing }) });
-      if (subs && r.subs.length) {
-        for (const s2 of r.subs) {
-          if (!showZero && !(s2.opening || s2.debit || s2.credit || s2.closing)) continue;
-          const st = totalsOf({ ...s2, account: r.account });
-          rows.push({ cells: line({ text: s2.subAccount ? s2.subAccount.name : '補助なし', indent: 7 }, { ...s2, ...st }, { ratioOf: sign * s2.closing }), sub: true });
-        }
-      }
+      } else if (r.kind === 'subtotal' || r.kind === 'total') rows.push({ kind: r.kind, cells: sumCells(center(r.label), r.sum) });
+      else if (r.kind === 'calc') rows.push({ cells: amountCells({ text: r.label, indent: 3 }, r.amount, r.side, true) });
+      else rows.push({ kind: r.strong ? 'total' : 'subtotal', cells: amountCells(center(r.label), r.amount, r.side) });
     }
-    flushGroup();
-    flushSection();
     return rows;
   };
   const columns = isTotal
@@ -280,143 +246,256 @@ export function trialBalanceDoc(tb, { head, entityType, carriedLabel, showZero =
         { label: '残高', align: 'right', w: 27 },
         { label: '構成比', align: 'right', w: 15 },
       ];
-  const bsRows = make(true);
-  const plRows = make(false);
-  const ok = tb.totals.debit === tb.totals.credit;
-  plRows.push({
+  const parts = [
+    ['貸借対照表', t.bs],
+    ['損益計算書', t.pl],
+    ['製造原価', t.mfg],
+  ].filter(([, p], i) => i === 0 || p.rows.length);
+  const tables = parts.map(([caption, p]) => [caption, make(p)]);
+  // 最後に、全科目の借方・貸方の合計（貸借の一致を確かめる行）。段階利益の行と続かないよう別の表にする
+  const g = t.grand;
+  const grandRow = {
     kind: 'total',
-    cells: isTotal
-      ? [fmt(grand.debitBalance), fmt(grand.debitTotal), { text: '合計', align: 'center' }, fmt(grand.creditTotal), fmt(grand.creditBalance)]
-      : ['借方・貸方の合計', '', fmt(tb.totals.debit), fmt(tb.totals.credit), '', ''],
-  });
+    cells: isTotal ? [fmt(g.debitBalance), fmt(g.debitTotal), { text: '合計', align: 'center' }, fmt(g.creditTotal), fmt(g.creditBalance)] : ['借方・貸方の合計', '', fmt(tb.totals.debit), fmt(tb.totals.credit), '', ''],
+  };
+  tables.push(['全科目の合計', [grandRow], columns.map((c) => ({ ...c, label: '' }))]);
+  const ok = tb.totals.debit === tb.totals.credit;
   return {
     title: title ?? (isTotal ? '合計残高試算表' : '残高試算表'),
     ...head,
     unit: unitCaption(unit),
     orientation: 'portrait',
-    blocks: [
-      { type: 'heading', text: '貸借対照表' },
-      { type: 'table', columns, rows: bsRows },
-      { type: 'heading', text: '損益計算書' },
-      { type: 'table', columns, rows: plRows },
-      ok ? null : { type: 'text', text: '※ 借方と貸方の合計が一致していません。' },
-    ].filter(Boolean),
+    blocks: [...tables.flatMap(([caption, rows, cols = columns]) => [{ type: 'heading', text: caption }, { type: 'table', columns: cols, rows }]), ok ? null : { type: 'text', text: '※ 借方と貸方の合計が一致していません。' }].filter(Boolean),
+  };
+}
+
+// 決算書の体裁（罫線を使わない表）の文字と行の高さ：試算表・元帳（8pt）より大きくし、行の間を空けて読みやすくする
+const FS_TABLE = { style: 'open', font: 9.5, headFont: 9, rowH: 5.9, headH: 7 };
+// 字下げ（mm）：段（level）ごと。段階利益は科目より深く下げて目立たせる
+const FS_INDENT = { part: 0, heading: 0, heading2: 3.5, heading3: 7, line: [0, 4, 7.5, 11], note: [0, 8, 11.5, 15], calc: [0, 8, 10, 12], profit: 12, net: 12, total: 4, grand: 0 };
+const indentOf = (r) => {
+  const v = FS_INDENT[r.kind];
+  return Array.isArray(v) ? v[Math.min(r.level, v.length - 1)] : (v ?? 0);
+};
+const boldKinds = new Set(['part', 'heading', 'heading2', 'heading3', 'profit', 'net', 'total', 'grand']);
+
+/** 決算書の行（fs-rows.js）の科目の欄 */
+function fsLabel(r) {
+  if (r.kind === 'heading') return `【${r.label}】`;
+  if (r.kind === 'note') return `（${r.label}）`;
+  return r.label;
+}
+
+/**
+ * 損益計算書・製造原価報告書（報告式）。科目｜金額（内訳）｜金額（合計）の3列で、表は用紙の中央に置く
+ * @param {Array} items statements.js の items（または condensedIncomeItems）
+ * @param {{ head, title: string, entityType: string, showZero?: boolean, unit?, orientation? }} opts
+ */
+export function incomeStatementDoc(items, { head, title, entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation, formal: true, blocks: [incomeStatementBlock(items, { entityType, showZero, unit, orientation })] };
+}
+
+/** 損益計算書の表（決算書をまとめて印刷するときにも使う） */
+export function incomeStatementBlock(items, { entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  const { f } = unitFormat(unit);
+  const rows = incomeStatementRows(items, { entityType, showZero }).map((r) => ({
+    keepNext: r.kind === 'heading' && r.outer == null,
+    cells: [
+      { text: fsLabel(r), indent: indentOf(r), bold: boldKinds.has(r.kind) },
+      r.inner == null ? '' : r.paren ? `(${f(r.inner)})` : f(r.inner),
+      r.outer == null ? '' : { text: f(r.outer), bold: boldKinds.has(r.kind), rule: r.rule },
+    ],
+  }));
+  return {
+    type: 'table',
+    ...FS_TABLE,
+    width: orientation === 'landscape' ? 200 : 144,
+    columns: [
+      { label: '科　　　目', grow: 1, min: 60 },
+      { label: '金　　　額', align: 'right', w: 34, headSpan: 2 },
+      { label: '', align: 'right', w: 34 },
+    ],
+    rows,
   };
 }
 
 /**
- * 決算書の1区分を行にする（科目・区分の計・段階利益）。金額は2列：科目は左、区分の計と段階利益は右
- * @returns {Array} 行（cells は [科目, 内訳の金額, 計の金額]）
+ * 貸借対照表（報告式）：資産の部・負債の部・純資産の部を上から並べる。区分の合計は区分の見出しの右の列、科目は左の列
+ * @param {object} bs statements.js の balanceSheet の結果
  */
-function statementRows(items, showZero, fmt) {
-  const rows = [];
-  for (const it of items) {
-    if (it.type === 'subtotal') {
-      if (it.heading && !showZero && !it.amount) continue;
-      if (it.plain) rows.push({ cells: [{ text: it.label, indent: 4 }, fmt(it.amount), ''] });
-      else rows.push({ cells: [{ text: it.label, bold: true, indent: it.heading ? 2 : 0 }, '', { text: fmt(it.amount), bold: true, rule: it.strong ? 'double' : 'over' }] });
-      continue;
-    }
-    const lines = it.lines.filter((l) => showZero || l.amount);
-    if (!showZero && !lines.length && !it.total) continue;
-    const ind = it.level === 2 ? 2 : 0;
-    rows.push({ cells: [{ text: `【${it.label}】`, bold: true, indent: ind }, '', ''] });
-    for (const l of lines) {
-      rows.push({ cells: [{ text: l.account.name, indent: ind + 4 }, fmt(l.amount), ''] });
-      if (l.note) rows.push({ cells: [{ text: `（${l.note.label}　${fmt(l.note.amount)}）`, indent: ind + 8 }, '', ''] });
-    }
-    rows.push({ cells: [{ text: `${it.label}合計`, indent: ind + 2 }, '', { text: fmt(it.total), rule: 'over' }] });
-  }
-  return rows;
+export function balanceSheetReportDoc(bs, { head, title = '貸借対照表', entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation, formal: true, blocks: [balanceSheetReportBlock(bs, { entityType, showZero, unit, orientation })] };
 }
 
-/**
- * 損益計算書・貸借対照表（報告式）。罫線を使わない決算書の体裁で、科目の金額は左の列、区分の計と段階利益は右の列
- * @param {Array<{ caption: string, items: Array }>} parts statements.js の items
- * @param {{ head, title: string, showZero?: boolean, footer?: string }} opts
- */
-export function statementDoc(parts, { head, title, showZero = false, footer = '', unit = YEN_UNIT, orientation = 'portrait' }) {
+/** 報告式の貸借対照表の表（決算書をまとめて印刷するときにも使う） */
+export function balanceSheetReportBlock(bs, { entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
   const { f } = unitFormat(unit);
-  const columns = [
-    { label: '科　　目', grow: 1, min: 70 },
-    { label: '金　　額', align: 'right', w: 34 },
-    { label: '', align: 'right', w: 34 },
-  ];
-  const blocks = [];
-  for (const part of parts) {
-    if (part.caption) blocks.push({ type: 'heading', text: part.caption });
-    blocks.push({ type: 'table', style: 'open', columns: columns.map((c, i) => (i === 2 ? { ...c, label: '金　　額' } : c)), rows: statementRows(part.items, showZero, f) });
-  }
-  if (footer) blocks.push({ type: 'text', text: footer });
-  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation, blocks };
-}
-
-/** 勘定式の片側：区分の見出し（区分の計を右に）・科目。最後の合計（strong）は別に返す */
-function accountSide(items, showZero, fmt) {
-  const rows = [];
-  let total = null;
-  for (const it of items) {
-    if (it.type === 'subtotal') {
-      if (it.strong) {
-        total = it;
-        continue;
-      }
-      if (it.heading && !showZero && !it.amount) continue;
-      rows.push([{ text: it.heading ? `【${it.label}】` : it.label, bold: true, indent: it.plain ? 4 : 0 }, { text: fmt(it.amount), bold: true, rule: it.heading || it.plain ? null : 'over' }]);
-      continue;
-    }
-    const lines = it.lines.filter((l) => showZero || l.amount);
-    if (!showZero && !lines.length && !it.total) continue;
-    const ind = it.level === 2 ? 2 : 0;
-    rows.push([{ text: `【${it.label}】`, bold: true, indent: ind }, { text: fmt(it.total), bold: true }]);
-    for (const l of lines) {
-      rows.push([{ text: l.account.name, indent: ind + 4 }, fmt(l.amount)]);
-      if (l.note) rows.push([{ text: `（${l.note.label}）`, indent: ind + 8 }, `(${fmt(l.note.amount)})`]);
-    }
-  }
-  return { rows, total };
+  const b = balanceSheetRows(bs, { entityType, showZero });
+  const toRow = (r) =>
+    r.kind === 'part'
+      ? { keepNext: true, cells: [{ text: spaced(r.label), span: 3, align: 'center', bold: true }] }
+      : {
+          keepNext: r.kind === 'heading' && r.outer == null,
+          cells: [
+            { text: fsLabel(r), indent: indentOf(r), bold: boldKinds.has(r.kind) },
+            r.inner == null ? '' : r.paren ? `(${f(r.inner)})` : f(r.inner),
+            r.outer == null ? '' : { text: f(r.outer), bold: boldKinds.has(r.kind), rule: r.rule },
+          ],
+        };
+  const grand = (t) => ({ cells: [{ text: t.label, bold: true }, '', { text: f(t.amount), bold: true, rule: 'double' }] });
+  const rows = [...b.assets.map(toRow), grand(b.assetTotal), { cells: ['', '', ''] }, ...b.liabilities.map(toRow), grand(b.liabilityTotal)];
+  return { type: 'table', ...FS_TABLE, width: orientation === 'landscape' ? 200 : 144, columns: [{ label: '科　　　目', grow: 1, min: 60 }, { label: '金　　　額', align: 'right', w: 34, headSpan: 2 }, { label: '', align: 'right', w: 34 }], rows };
 }
 
 /**
- * 貸借対照表（勘定式）：左に資産の部、右に負債・純資産の部。最後の行で資産合計と負債・純資産合計をそろえる
- * @param {{ assets: Array, liabilities: Array }} bs statements.js の balanceSheet の結果
- * @param {{ head, title?: string, showZero?: boolean, rightLabel: string }} opts
+ * 貸借対照表（勘定式）：左に資産の部、右に負債の部・純資産の部。区分の合計は区分の見出しの行に書き、
+ * 最後の行で資産合計と負債・純資産合計をそろえて二重線を引く
+ * @param {object} bs statements.js の balanceSheet の結果
+ * @param {{ head, title?: string, entityType: string, showZero?: boolean, unit?, orientation? }} opts
  */
-export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', showZero = false, rightLabel = '負債・純資産の部', unit = YEN_UNIT, orientation = 'portrait' }) {
-  const { f: fmt } = unitFormat(unit);
-  const L = accountSide(bs.assets, showZero, fmt);
-  const R = accountSide(bs.liabilities, showZero, fmt);
-  const n = Math.max(L.rows.length, R.rows.length);
-  const rows = [{ cells: [{ text: spaced('資産の部'), span: 2, align: 'center', bold: true }, { text: [...rightLabel.replace('の部', '')].join(' ') + ' の 部', span: 2, align: 'center', bold: true }] }];
-  for (let i = 0; i < n; i++) rows.push({ cells: [...(L.rows[i] || ['', '']), ...(R.rows[i] || ['', ''])] });
+export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation, formal: true, blocks: [balanceSheetAccountBlock(bs, { entityType, showZero, unit, orientation })] };
+}
+
+/** 勘定式の貸借対照表の表（決算書をまとめて印刷するときにも使う） */
+export function balanceSheetAccountBlock(bs, { entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  const { f } = unitFormat(unit);
+  const b = balanceSheetRows(bs, { entityType, showZero });
+  const half = orientation === 'landscape' ? 125 : 93;
+  const strong = (r) => boldKinds.has(r.kind) || (r.kind === 'calc' && r.level === 0);
+  const side = (r) => {
+    if (!r) return ['', ''];
+    if (r.kind === 'part') return [{ text: spaced(r.label), span: 2, align: 'center', bold: true }];
+    const v = singleAmount(r);
+    return [
+      { text: fsLabel(r), indent: indentOf(r) * 0.8, bold: strong(r) },
+      v == null ? '' : { text: r.paren ? `(${f(v)})` : f(v), bold: strong(r), rule: r.kind === 'total' ? 'over' : null },
+    ];
+  };
+  const n = Math.max(b.assets.length, b.liabilities.length);
+  const rows = [];
+  for (let i = 0; i < n; i++) rows.push({ cells: [...side(b.assets[i]), ...side(b.liabilities[i])] });
   rows.push({
     cells: [
-      { text: L.total?.label ?? '資産合計', bold: true },
-      { text: fmt(L.total?.amount ?? 0), bold: true, rule: 'double' },
-      { text: R.total?.label ?? '', bold: true },
-      { text: fmt(R.total?.amount ?? 0), bold: true, rule: 'double' },
+      { text: b.assetTotal.label, bold: true },
+      { text: f(b.assetTotal.amount), bold: true, rule: 'double' },
+      { text: b.liabilityTotal.label, bold: true },
+      { text: f(b.liabilityTotal.amount), bold: true, rule: 'double' },
     ],
   });
   return {
-    title: spaced(title),
-    ...head,
-    unit: unitCaption(unit),
-    orientation,
-    blocks: [
-      {
-        type: 'table',
-        style: 'open',
-        split: 2,
-        columns: [
-          { label: '科　　目', grow: 1, min: 40 },
-          { label: '金　　額', align: 'right', w: 28 },
-          { label: '科　　目', grow: 1, min: 40 },
-          { label: '金　　額', align: 'right', w: 28 },
-        ],
-        rows,
-      },
+    type: 'table',
+    ...FS_TABLE,
+    font: 9,
+    rowH: 5.6,
+    width: half * 2,
+    split: 2,
+    // 左右の幅は同じにする（科目の名前の長さで片側だけ広がらないように）
+    columns: [
+      { label: '科　　　目', w: half - 31 },
+      { label: '金　　　額', align: 'right', w: 31 },
+      { label: '科　　　目', w: half - 31 },
+      { label: '金　　　額', align: 'right', w: 31 },
     ],
+    rows,
   };
+}
+
+/** 販売費及び一般管理費内訳書などの内訳の表：科目｜金額、最後に合計（二重線） */
+export function breakdownBlock(lines, total, { showZero = false, unit = YEN_UNIT, orientation = 'portrait', totalLabel = '合　　計' } = {}) {
+  const { f } = unitFormat(unit);
+  const rows = lines.filter((l) => showZero || l.amount).map((l) => ({ cells: [{ text: l.account.name, indent: 4 }, f(l.amount)] }));
+  rows.push({ cells: [{ text: totalLabel, bold: true, indent: 12 }, { text: f(total), bold: true, rule: 'double' }] });
+  return { type: 'table', ...FS_TABLE, width: orientation === 'landscape' ? 160 : 120, columns: [{ label: '科　　　目', grow: 1, min: 60 }, { label: '金　　　額', align: 'right', w: 36 }], rows };
+}
+
+/**
+ * 株主資本等変動計算書の表（科目を縦に並べ、当期首残高・当期変動額・当期末残高の列）
+ * @param {object} equity financial.js の equityStatement の結果
+ */
+export function equityStatementBlock(equity, { unit = YEN_UNIT, orientation = 'portrait' } = {}) {
+  const { f, b: blank } = unitFormat(unit);
+  const cells = (label, v, { indent = 0, bold = false, rule = null } = {}) => [{ text: label, indent, bold }, ...[f(v.opening), blank(v.netIncome), blank(v.other), f(v.closing)].map((t, i) => (i === 3 || rule ? { text: t, bold, rule: t ? rule : null } : t))];
+  const rows = [{ keepNext: true, cells: [{ text: '株主資本', bold: true }, '', '', '', ''] }];
+  for (const s of equity.sections) {
+    const grouped = s.id !== 'capital' && s.id !== 'other';
+    if (grouped) rows.push({ keepNext: true, cells: [{ text: s.label, indent: 4, bold: true }, '', '', '', ''] });
+    for (const r of s.rows) {
+      // 繰越利益剰余金は「その他利益剰余金」の下に書く（貸借対照表の純資産の部と同じ区分。会社計算規則 第76条）
+      if (r.account.role === 'retained_earnings') rows.push({ keepNext: true, cells: [{ text: 'その他利益剰余金', indent: 8, bold: true }, '', '', '', ''] }, { cells: cells(r.account.name, r, { indent: 12 }) });
+      else rows.push({ cells: cells(r.account.name, r, { indent: grouped ? 8 : 4 }) });
+    }
+    if (grouped && s.rows.length > 1) rows.push({ cells: cells(`${s.label}合計`, s.total, { indent: 8, bold: true, rule: 'over' }) });
+  }
+  rows.push({ cells: cells('株主資本合計', equity.total, { indent: 4, bold: true, rule: 'over' }) });
+  rows.push({ cells: cells('純資産合計', equity.total, { bold: true, rule: 'double' }) });
+  const w = orientation === 'landscape' ? 31 : 27;
+  return {
+    type: 'table',
+    ...FS_TABLE,
+    font: 9,
+    width: orientation === 'landscape' ? 230 : 178,
+    headGroups: [{ label: '当期変動額', from: 2, span: 2 }],
+    columns: [
+      { label: '科　　目', grow: 1, min: 50 },
+      { label: '当期首残高', align: 'right', w },
+      { label: '当期純利益', align: 'right', w },
+      { label: 'その他の変動', align: 'right', w },
+      { label: '当期末残高', align: 'right', w },
+    ],
+    rows,
+  };
+}
+
+/**
+ * 個別注記表の文（financial.js の companyNotes の結果）
+ * @param {Array<{ title, items: Array<{ heading?, text }> }>} sections
+ */
+export function companyNotesBlocks(sections) {
+  const out = [];
+  sections.forEach((s, i) => {
+    out.push({ type: 'heading', text: `${i + 1}．${s.title}` });
+    if (!s.items.length) out.push({ type: 'text', text: '　該当事項はありません。', size: 9 });
+    s.items.forEach((it, j) => {
+      const lines = it.text.split('\n');
+      if (it.heading) out.push({ type: 'text', text: `（${j + 1}）${it.heading}`, size: 9 }, { type: 'text', text: lines.map((l) => `　　${l}`).join('\n'), size: 9 });
+      else out.push({ type: 'text', text: lines.map((l) => `　${l}`).join('\n'), size: 9 });
+    });
+  });
+  return out;
+}
+
+// 決算書（法人）を1冊にするときの帳票：[キー, 表題]
+export const FINANCIAL_PARTS = [
+  ['bs', '貸借対照表'],
+  ['pl', '損益計算書'],
+  ['sga', '販売費及び一般管理費内訳書'],
+  ['mfg', '製造原価報告書'],
+  ['equity', '株主資本等変動計算書'],
+  ['notes', '個別注記表'],
+];
+
+/**
+ * 決算書（法人）を1冊にする：貸借対照表・損益計算書・販売費及び一般管理費内訳書・製造原価報告書・株主資本等変動計算書・個別注記表
+ * 帳票ごとに改ページし、各ページに表題と期間（貸借対照表は「…現在」）を出す。体裁は1つずつ印刷するときと同じ
+ * @param {{ bs, plItems: Array, sga: { lines, total }, mfgItems: Array|null, equity, notes: Array }} data
+ * @param {{ head, at: string, range: string, parts?: string[], bsFormat?: 'account'|'report', showZero?: boolean, unit?, orientation? }} opts
+ *   at：貸借対照表の日付の行（令和9年3月31日 現在）。range：期間の行（自…至…）。parts：印刷する帳票のキー
+ */
+export function financialStatementsDoc(data, { head, at, range, parts = FINANCIAL_PARTS.map(([k]) => k), bsFormat = 'account', showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  const o = { entityType: 'corporation', showZero, unit, orientation };
+  const caption = (key, title, period, extra = {}) => ({ type: 'heading', text: title, caption: true, title: title.length <= 7 ? spaced(title) : title, period, ...extra });
+  const blocks = [];
+  for (const [key, title] of FINANCIAL_PARTS) {
+    if (!parts.includes(key)) continue;
+    if (key === 'bs') blocks.push(caption(key, title, at), bsFormat === 'report' ? balanceSheetReportBlock(data.bs, o) : balanceSheetAccountBlock(data.bs, o));
+    if (key === 'pl') blocks.push(caption(key, title, range), incomeStatementBlock(data.plItems, o));
+    if (key === 'sga') blocks.push(caption(key, title, range), breakdownBlock(data.sga.lines, data.sga.total, o));
+    if (key === 'mfg' && data.mfgItems) blocks.push(caption(key, title, range), incomeStatementBlock(data.mfgItems, o));
+    if (key === 'equity') blocks.push(caption(key, title, range), equityStatementBlock(data.equity, o));
+    if (key === 'notes') blocks.push(caption(key, title, range, { unit: '' }), ...companyNotesBlocks(data.notes));
+  }
+  return { title: '決算報告書', ...head, unit: unitCaption(unit), orientation, formal: true, blocks };
 }
 
 const firstLine = (c) => {
