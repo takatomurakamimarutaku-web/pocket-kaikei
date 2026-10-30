@@ -502,6 +502,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .lg-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--surface); min-width: 0; }
 .lg-stat-label { font-size: 0.72rem; font-weight: 700; color: var(--muted); }
 .lg-stat .num { font-size: 0.95rem; font-weight: 800; text-align: left; }
+.cf-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 720px; }
 .ledger .lg-month td { font-weight: 700; background: var(--row-accent); border-top: 1px solid color-mix(in srgb, var(--text) 25%, transparent); }
 .ledger .lg-cum td { font-size: 0.76rem; color: var(--muted); }
 .ledger .lg-month td:nth-child(2), .ledger .lg-cum td:nth-child(2) { text-align: right; padding-right: 1.2em; }

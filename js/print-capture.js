@@ -4,6 +4,9 @@
 const SKIP = '.no-print, .chara, .chara-say, button, input, textarea, label.check, .segmented, .range-bar, .month-bar, .ledger-pick, .search-bar, .toggles, .chip-row, .option-bar, .report-tools, .actions, .notice, .emptystate, .empty-state, details:not([open])';
 const HEADING = 'h1, h2, h3, h4, .section-title, .fs-title';
 const PAGE = '.br-page, .fs-section';
+/** 列の少ない表の金額の列の幅と、科目の列の幅（mm） */
+const NUM_W = 30;
+const COMPACT_LABEL_W = 92;
 const NUM_RE = /^[△\-+]?[\d,]+(\.\d+)?%?$|^—$/;
 
 function hidden(el) {
@@ -96,8 +99,12 @@ export function captureTable(table) {
     rows.push({ cells, kind });
   }
   if (!rows.length) return null;
-  const columns = labels.map((l, i) => ({ label: l.slice(-2).join('\n'), align: numCol[i] ? 'right' : undefined, max: numCol[i] ? 40 : 80 }));
-  return { type: 'table', columns, rows };
+  // 列の少ない表（科目｜金額、指標｜当期｜前期 など）は用紙いっぱいに広げない：科目と金額が離れすぎないよう、
+  // 金額の列の幅をそろえ、表の幅を列の数で決めて中央に置く（決算書の体裁と同じ考え方）
+  const nums = numCol.filter(Boolean).length;
+  const compact = n <= 4 && nums >= 1 && nums < n;
+  const columns = labels.map((l, i) => ({ label: l.slice(-2).join('\n'), align: numCol[i] ? 'right' : undefined, max: numCol[i] ? 40 : 80, ...(compact && numCol[i] ? { w: NUM_W } : {}) }));
+  return { type: 'table', columns, rows, ...(compact ? { width: COMPACT_LABEL_W + NUM_W * nums } : {}) };
 }
 
 /**
