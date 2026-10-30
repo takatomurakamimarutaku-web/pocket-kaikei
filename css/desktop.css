@@ -88,7 +88,7 @@ body:has(.sidebar[hidden]) { padding-left: 0; }
   [data-route="/settings"], [data-route="/account/new"], [data-route="/account/:id"], [data-route="/asset/new"], [data-route="/asset/:id"], [data-route="/asset/:id/dispose"],
   [data-route="/backup"], [data-route="/lock"], [data-route="/books"], [data-route="/opening"], [data-route="/employee/new"], [data-route="/payroll/employees/new"], [data-route="/payroll/employees/:id"],
   [data-route="/invoices/settings"], [data-route="/payroll/settings"], [data-route="/changelog"],
-  [data-route="/reports/pl"], [data-route="/reports/bs"], [data-route="/reports/cash-flow"], [data-route="/reports/manufacturing"], [data-route="/reports/financial"]) {
+  [data-route="/reports/trial"], [data-route="/reports/pl"], [data-route="/reports/bs"], [data-route="/reports/cash-flow"], [data-route="/reports/manufacturing"], [data-route="/reports/financial"]) {
   max-width: var(--form-max);
 }
 
@@ -161,3 +161,20 @@ body:has(.sidebar[hidden]) { padding-left: 0; }
 
 /* ---- スクロールバー（Windows で太く目立つため細く） ---- */
 html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+
+/* ---- 決算書：紙の決算書の幅と余白。貸借対照表は勘定式（左に資産、右に負債・純資産）---- */
+.fs-paper { padding: 26px 32px 30px; }
+.fs-ptitle { font-size: 1.3rem; }
+.fs-period, .fs-meta { font-size: 0.86rem; }
+.fs-paper .fs-table { font-size: 0.9rem; }
+.fs-c-amt { width: 8.4em; }
+.fs-paper .fs-pl .fs-r-profit th, .fs-paper .fs-pl .fs-r-net th { padding-left: 2.8em; }
+.fs-pl { max-width: 660px; margin: 0 auto; }
+.fs-paper:has(.fs-pl) .fs-head { max-width: 660px; margin-left: auto; margin-right: auto; }
+.fs-bs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; border-top: 1.5px solid var(--text); }
+.fs-side .fs-table:first-child { border-top: 0; }
+.fs-side:first-child { padding-right: 18px; }
+.fs-side + .fs-side { padding: 0 0 0 18px; border-top: 0; border-left: 1px solid var(--text); }
+/* 残高試算表：貸借対照表・損益計算書・製造原価の表で列の幅をそろえる */
+.tb-trial { table-layout: fixed; }
+.tb-trial thead th:first-child { width: 34%; }

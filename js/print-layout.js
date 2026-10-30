@@ -82,11 +82,11 @@ export function periodText(from, to) {
 const cellOf = (c) => (c !== null && typeof c === 'object' && !Array.isArray(c) ? c : { text: c });
 const linesOf = (t) => (Array.isArray(t) ? t.map((x) => String(x ?? '')) : String(t ?? '').split('\n'));
 
-/** 行の高さ（mm）：セルの行数の最大 */
-function rowHeight(row) {
+/** 行の高さ（mm）：セルの行数の最大。lineH：1行の高さ */
+function rowHeight(row, lineH = LINE_H) {
   let n = 1;
   for (const c of row.cells) n = Math.max(n, linesOf(cellOf(c).text).length);
-  return n * LINE_H + (n > 1 ? 0.6 : 0);
+  return n * lineH + (n > 1 ? 0.6 : 0);
 }
 
 /**
@@ -94,17 +94,18 @@ function rowHeight(row) {
  * @param {Array<{label, align?, w?, grow?, min?}>} columns
  * @param {Array<{cells}>} rows
  * @param {number} avail 使える幅
+ * @param {{ font?: number, headFont?: number }} [size] 表の文字の大きさ（pt）
  * @returns {{ widths: number[], over: number }} over：最小幅でも足りない幅（0 なら収まった）
  */
-export function columnWidths(columns, rows, avail) {
-  const content = columns.map((col) => Math.max(...linesOf(col.label).map((l) => textWidth(l, HEAD_FONT))));
+export function columnWidths(columns, rows, avail, { font = FONT, headFont = HEAD_FONT } = {}) {
+  const content = columns.map((col) => Math.max(...linesOf(col.label).map((l) => textWidth(l, headFont))));
   for (const r of rows) {
     let i = 0;
     for (const raw of r.cells) {
       const c = cellOf(raw);
       const span = c.span || 1;
       // 複数の列にまたがるセル（区分の見出しなど）は列の幅を決めない
-      if (span === 1 && i < columns.length) for (const l of linesOf(c.text)) content[i] = Math.max(content[i], textWidth(l, FONT) + (c.indent || 0));
+      if (span === 1 && i < columns.length) for (const l of linesOf(c.text)) content[i] = Math.max(content[i], textWidth(l, font) + (c.indent || 0));
       i += span;
     }
   }
@@ -139,7 +140,7 @@ function chooseOrientation(orientation, blocks) {
   const avail = PAPER.portrait.w - MARGIN.x * 2;
   for (const b of blocks) {
     if (b.type !== 'table') continue;
-    if (columnWidths(b.columns, b.rows, avail).over > 0) return 'landscape';
+    if (columnWidths(b.columns, b.rows, Math.min(b.width ?? avail, avail), { font: b.font, headFont: b.headFont }).over > 0) return 'landscape';
   }
   return 'portrait';
 }
@@ -157,8 +158,11 @@ function chooseOrientation(orientation, blocks) {
  *                     kind?: 'group'|'subtotal'|'total'|'carried', keep?: string, nums?: object, breakAfter?: boolean }>,
  *       carry?: { label: number, sum: number[], balance?: number },
  *       style?: 'grid'|'open',   open：決算書の体裁（縦罫・塗りなし）
+ *       width?: number, font?: number, headFont?: number, rowH?: number,  表の幅（mm。用紙の中央に置く）・文字（pt）・1行の高さ（mm）
  *       headGroups?: Array<{ label, from, span }>,  見出しを2段にして上の段で列をまとめる
  *       split?: number|number[] }>  勘定式の左右の境・様式のマス目の区切り（この列の左に太い縦線）
+ *   formal?: boolean  決算書の体裁：作成日・アプリ名を出さず、表の左上に事業者名、右上に単位。ページ番号は2ページ以上のときだけ
+ *   見出し（caption）に period を付けると、そのページの期間の行にする（決算書をまとめて印刷するとき）。unit はそのページの単位（'' で書かない）
  * }} doc
  * @returns {Array<{ w, h, orientation, items: Array }>} items：{t:'text', x, y, size, text, align, bold, scale} | {t:'line', x1, y1, x2, y2, w} | {t:'rect', x, y, w, h, gray}
  */
@@ -192,6 +196,10 @@ export function layoutDocument(doc) {
   let y = 0;
   let caption = '';
   let pageTitle = null; // caption の見出しに title があれば、そのページの表題にする（申告書の別表ごとの名前）
+  let pagePeriod = null; // caption の見出しに period があれば、そのページの期間の行にする
+  let pageUnit; // caption の見出しに unit があれば、そのページの単位（'' なら書かない。個別注記表など）
+  const formal = Boolean(doc.formal);
+  const TOP = formal ? 41 : TABLE_TOP; // 表の始まり（決算書は表題・期間・事業者名の下を広く空ける）
 
   const text = (x, yy, s, size, opts = {}) => page.items.push({ t: 'text', x, y: yy, size, text: printable(s), align: opts.align || 'left', bold: Boolean(opts.bold), scale: opts.scale ?? 1 });
   const line = (x1, y1, x2, y2, w = 0.1) => page.items.push({ t: 'line', x1, y1, x2, y2, w });
@@ -203,15 +211,31 @@ export function layoutDocument(doc) {
 
   function newPage(cont = false) {
     setPaper();
-    page = { w: paper.w, h: paper.h, orientation, items: [], caption: cont && caption ? `${caption}（続き）` : caption, title: pageTitle };
+    // 表の続きのページは、前のページと同じ表の幅に事業者名・単位をそろえる
+    const frame = cont ? page?.frame : undefined;
+    page = { w: paper.w, h: paper.h, orientation, items: [], caption: cont && caption ? `${caption}（続き）` : caption, title: pageTitle, period: pagePeriod, unit: pageUnit, frame };
     pages.push(page);
-    y = TABLE_TOP;
+    y = TOP;
   }
   newPage();
 
   // 1つの表を描く（ページをまたぐときは見出し行を繰り返す）
   function drawTable(block) {
-    const { widths } = columnWidths(block.columns, block.rows, avail);
+    // 表ごとの文字の大きさ・行の高さ・幅（幅を指定した表は用紙の中央に置く）
+    const font = block.font ?? FONT;
+    const headFont = block.headFont ?? HEAD_FONT;
+    const lineH = block.rowH ?? LINE_H;
+    const headH = block.headH ?? HEAD_H;
+    const rh = (row) => rowHeight(row, lineH);
+    const tableW = Math.min(block.width ?? avail, avail);
+    const tl = left + (avail - tableW) / 2;
+    if (!page.frame) page.frame = { left: tl, right: tl + tableW };
+    const { widths } = columnWidths(block.columns, block.rows, tableW, { font, headFont });
+    drawTableAt(block, { font, headFont, lineH, headH, rh, widths, left: tl, right: tl + tableW, avail: tableW });
+  }
+
+  // 表を描く（left・right・avail はこの表の左端・右端・幅）
+  function drawTableAt(block, { font, headFont, lineH, headH, rh, widths, left, right, avail }) {
     const xs = [left];
     for (const w of widths) xs.push(xs.at(-1) + w);
     xs[xs.length - 1] = right;
@@ -233,21 +257,21 @@ export function layoutDocument(doc) {
       const groups = block.headGroups || [];
       // 見出しの文字が3行以上の列があれば、その分だけ見出しの段を高くする
       const lines = Math.max(1, ...block.columns.map((c) => linesOf(c.label).length));
-      const lowH = Math.max(HEAD_H, lines * HEAD_FONT * PT * 1.15 + 1.6);
-      const hh = groups.length ? HEAD_H + lowH : lowH;
+      const lowH = Math.max(headH, lines * headFont * PT * 1.15 + 1.6);
+      const hh = groups.length ? headH + lowH : lowH;
       if (!open) rect(left, y, avail, hh, 0.9);
       const groupOf = (i) => groups.find((g) => i >= g.from && i < g.from + g.span);
       const label = (x0, x1, top, h, s) => {
         const labels = linesOf(s);
-        const size = HEAD_FONT;
+        const size = headFont;
         labels.forEach((l, k) => {
           const yy = top + h / 2 + (k - (labels.length - 1) / 2) * size * PT * 1.15 + size * PT * 0.35;
           fitted((x0 + x1) / 2, yy, l, size, x1 - x0 - PAD, { align: 'center' });
         });
       };
       for (const g of groups) {
-        label(xs[g.from], xs[g.from + g.span], y, HEAD_H, g.label);
-        line(xs[g.from], y + HEAD_H, xs[g.from + g.span], y + HEAD_H, 0.1);
+        label(xs[g.from], xs[g.from + g.span], y, headH, g.label);
+        line(xs[g.from], y + headH, xs[g.from + g.span], y + headH, 0.1);
       }
       // headSpan：見出しだけ複数の列にまたがる（社外流出③の「※」と金額など）
       const covered = new Set();
@@ -255,14 +279,14 @@ export function layoutDocument(doc) {
         if (covered.has(i)) return;
         const span = Math.min(col.headSpan || 1, block.columns.length - i);
         for (let k = 1; k < span; k++) covered.add(i + k);
-        const top = groups.length && groupOf(i) ? y + HEAD_H : y;
+        const top = groups.length && groupOf(i) ? y + headH : y;
         label(xs[i], xs[i + span], top, y + hh - top, col.label);
       });
       if (groups.length && !open) {
         for (let i = 1; i < block.columns.length; i++) {
           if (covered.has(i)) continue;
           const g = groupOf(i);
-          line(xs[i], g && i > g.from ? y + HEAD_H : y, xs[i], y + hh, 0.1);
+          line(xs[i], g && i > g.from ? y + headH : y, xs[i], y + hh, 0.1);
         }
       }
       line(left, y, right, y, 0.3);
@@ -279,7 +303,7 @@ export function layoutDocument(doc) {
       line(right, tableTop, right, y, 0.3);
     }
     function drawRow(row, { vlines = true } = {}) {
-      const hh = rowHeight(row);
+      const hh = rh(row);
       const rowBold = row.kind === 'subtotal' || row.kind === 'total' || row.kind === 'group' || row.bold;
       if (!open && row.kind === 'group') rect(left, y, avail, hh, 0.96);
       if (!open && (row.kind === 'total' || row.kind === 'carry')) rect(left, y, avail, hh, 0.95);
@@ -301,9 +325,9 @@ export function layoutDocument(doc) {
         }
         ls.forEach((l, k) => {
           if (!l) return;
-          const yy = y + LINE_H * k + LINE_H / 2 + FONT * PT * 0.36;
+          const yy = y + lineH * k + lineH / 2 + font * PT * 0.36;
           const ax = align === 'right' ? x1 - PAD : align === 'center' ? (x0 + x1) / 2 : x0 + PAD + (c.indent || 0);
-          fitted(ax, yy, l, k > 0 && ls.length > 1 && c.subSmall !== false ? FONT - 0.5 : FONT, x1 - x0 - PAD * 2 - (c.indent || 0), { align, bold });
+          fitted(ax, yy, l, k > 0 && ls.length > 1 && c.subSmall !== false ? font - 0.5 : font, x1 - x0 - PAD * 2 - (c.indent || 0), { align, bold });
         });
         if (vlines && !open && i > 0 && !block.columns[i].joinLeft) line(x0, y, x0, y + hh, 0.1);
         i += span;
@@ -326,20 +350,20 @@ export function layoutDocument(doc) {
       drawRow({ cells, kind: 'carry' });
     }
 
-    const reserve = carry ? LINE_H : 0;
+    const reserve = carry ? lineH : 0;
     drawHeader();
     const rows = block.rows;
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
       // 同じ keep の行（1件の仕訳など）は同じページに置く（1ページに入りきらないときは分ける）
-      let need = rowHeight(row);
+      let need = rh(row);
       if (row.keep != null && (r === 0 || rows[r - 1].keep !== row.keep)) {
         let gh = 0;
-        for (let k = r; k < rows.length && rows[k].keep === row.keep; k++) gh += rowHeight(rows[k]);
-        if (gh <= bottom - TABLE_TOP - HEAD_H - reserve * 2) need = gh;
+        for (let k = r; k < rows.length && rows[k].keep === row.keep; k++) gh += rh(rows[k]);
+        if (gh <= bottom - TOP - headH - reserve * 2) need = gh;
       }
       // 区分の見出しの行は、次の行と同じページに置く
-      if (row.kind === 'group' && rows[r + 1]) need += rowHeight(rows[r + 1]);
+      if ((row.kind === 'group' || row.keepNext) && rows[r + 1]) need += rh(rows[r + 1]);
       if (y + need + reserve > bottom) {
         if (carry) carryRow('次頁へ繰越');
         closeTable();
@@ -372,13 +396,17 @@ export function layoutDocument(doc) {
       if (b.caption) {
         caption = b.text;
         const o = orientOf.get(b);
-        if (page.items.length || y > TABLE_TOP || o !== orientation) {
+        if (page.items.length || y > TOP || o !== orientation) {
           orientation = o;
           newPage();
         }
         page.caption = caption;
         pageTitle = b.title ?? null;
         page.title = pageTitle;
+        pagePeriod = b.period ?? null;
+        page.period = pagePeriod;
+        pageUnit = b.unit;
+        page.unit = pageUnit;
         continue;
       }
       if (y + 7 + HEAD_H + LINE_H * 2 > bottom) newPage(true);
@@ -393,7 +421,7 @@ export function layoutDocument(doc) {
       }
       y += 1.5;
     } else if (b.type === 'table') {
-      if (y + HEAD_H + LINE_H * 2 > bottom && y > TABLE_TOP) newPage(true);
+      if (y + HEAD_H + LINE_H * 2 > bottom && y > TOP) newPage(true);
       drawTable(b);
     }
   }
@@ -407,17 +435,34 @@ export function layoutDocument(doc) {
     p.items = [];
     const cx = p.w / 2;
     const top = MARGIN.top;
+    const title = p.title || doc.title;
+    const period = p.period ?? doc.period;
+    if (formal) {
+      // 決算書：中央に表題（二重下線）と期間。表の左上に事業者名、右上に単位（表の幅にそろえる）
+      const frame = p.frame ?? { left, right };
+      const titleSize = 16;
+      const tw = Math.min(textWidth(title, titleSize), p.w - 80);
+      fitted(cx, top + 11, title, titleSize, p.w - 80, { align: 'center', bold: true });
+      line(cx - tw / 2 - 4, top + 13.2, cx + tw / 2 + 4, top + 13.2, 0.3);
+      line(cx - tw / 2 - 4, top + 14, cx + tw / 2 + 4, top + 14, 0.3);
+      if (period) text(cx, top + 20.5, period, 9.5, { align: 'center' });
+      if (doc.company) fitted(frame.left, TOP - 2.6, doc.company, 10, (frame.right - frame.left) * 0.7);
+      const unit = p.unit ?? doc.unit;
+      if (unit !== '') text(frame.right, TOP - 2.4, unit ?? '（単位：円）', 8.5, { align: 'right' });
+      p.items.push(...items);
+      if (pages.length > 1) text(cx, p.h - MARGIN.bottom - 1, `- ${i + 1} -`, 8.5, { align: 'center' });
+      return;
+    }
     if (doc.company) fitted(left, top + 3, doc.company, 9, cx - left - 40);
     if (doc.printedAt) text(right, top + 3, `作成日 ${warekiText(doc.printedAt)}`, 7.5, { align: 'right' });
     const titleSize = 15;
-    const title = p.title || doc.title;
     const tw = Math.min(textWidth(title, titleSize), p.w - 120);
     fitted(cx, top + 9.5, title, titleSize, p.w - 120, { align: 'center', bold: true });
     line(cx - tw / 2 - 3, top + 11.4, cx + tw / 2 + 3, top + 11.4, 0.25);
     line(cx - tw / 2 - 3, top + 12.1, cx + tw / 2 + 3, top + 12.1, 0.25);
-    if (doc.period) text(cx, top + 17, doc.period, 8.5, { align: 'center' });
-    if (p.caption) fitted(left, TABLE_TOP - 2, p.caption, 10.5, avail - 30, { bold: true });
-    if (doc.unit !== '') text(right, TABLE_TOP - 1.6, doc.unit ?? '（単位：円）', 7.5, { align: 'right' });
+    if (period) text(cx, top + 17, period, 8.5, { align: 'center' });
+    if (p.caption) fitted(left, TOP - 2, p.caption, 10.5, avail - 30, { bold: true });
+    if (doc.unit !== '') text(right, TOP - 1.6, doc.unit ?? '（単位：円）', 7.5, { align: 'right' });
     p.items.push(...items);
     text(cx, p.h - MARGIN.bottom - 1, `${i + 1} / ${pages.length}`, 8, { align: 'center' });
     text(right, p.h - MARGIN.bottom - 1, 'Pocket会計', 6.5, { align: 'right' });
