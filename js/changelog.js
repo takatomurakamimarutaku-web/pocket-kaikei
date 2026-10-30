@@ -9,7 +9,7 @@
 
 export const CHANGELOG = [
   {
-    version: '0.65.0',
+    version: '0.63.0',
     date: '2026-10-30',
     title: '残高試算表と月次推移試算表を貸借対照表・損益計算書に分け、製造原価報告書を決算書の様式に',
     items: [
