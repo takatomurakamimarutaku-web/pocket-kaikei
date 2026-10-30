@@ -20,6 +20,7 @@
 //   opening・closing は区分の向きで足す（評価勘定は差し引く）。借方・貸方とその合計・残高はそのまま足す
 import { GROUP_BY_ID, groupLabel, isMfgGroup } from './accounts.js';
 import { incomeStatement, manufacturingReport } from './statements.js';
+import { NEUTRAL_PROFIT } from './fs-rows.js';
 
 /**
  * 合計残高の金額（借方合計・貸方合計は繰越残高を含む累計。残高は借方・貸方のどちらか）
@@ -33,8 +34,6 @@ export function totalsOf(r) {
   return { debitTotal, creditTotal, debitBalance: Math.max(dc, 0), creditBalance: Math.max(-dc, 0) };
 }
 
-// 法人の段階利益（試算表では利益・損失のどちらにもなるので「損益」）
-const TRIAL_PROFIT = { 売上総利益: '売上総損益金額', 営業利益: '営業損益金額', 経常利益: '経常損益金額', 税引前当期純利益: '税引前当期純損益金額', 当期純利益: '当期純損益金額' };
 const SECTIONS = ['bs_asset', 'bs_liability', 'bs_equity'];
 
 const sectionOf = (r) => GROUP_BY_ID[r.account.group]?.section ?? 'pl';
@@ -131,7 +130,8 @@ function incomePart(tb, { entityType, white, showZero }) {
   const rows = [];
   for (const it of items) {
     if (it.type === 'subtotal') {
-      const label = entityType === 'individual' ? it.label : (TRIAL_PROFIT[it.label] ?? it.label);
+      // 法人の段階利益（試算表では利益・損失のどちらにもなるので「損益」）
+      const label = entityType === 'individual' ? it.label : (NEUTRAL_PROFIT[it.label] ?? it.label);
       rows.push({ kind: 'profit', label, amount: it.amount, side: 'credit', strong: Boolean(it.strong) });
       continue;
     }

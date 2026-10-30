@@ -162,6 +162,8 @@ function chooseOrientation(orientation, blocks) {
  *       headGroups?: Array<{ label, from, span }>,  見出しを2段にして上の段で列をまとめる
  *       split?: number|number[] }>  勘定式の左右の境・様式のマス目の区切り（この列の左に太い縦線）
  *   formal?: boolean  決算書の体裁：作成日・アプリ名を出さず、表の左上に事業者名、右上に単位。ページ番号は2ページ以上のときだけ
+ *   period2?: string  決算書の体裁で、期間の下に書く2行目（前期と比べる表の前期の期間）
+ *   blocks の { type: 'cover', number?, title, from, to, company?, address? }：表紙（1ページ。表題〔字間を空けたもの〕・期間・事業者名だけを書き、ページ番号を数えない）
  *   見出し（caption）に period を付けると、そのページの期間の行にする（決算書をまとめて印刷するとき）。unit はそのページの単位（'' で書かない）
  * }} doc
  * @returns {Array<{ w, h, orientation, items: Array }>} items：{t:'text', x, y, size, text, align, bold, scale} | {t:'line', x1, y1, x2, y2, w} | {t:'rect', x, y, w, h, gray}
@@ -199,7 +201,8 @@ export function layoutDocument(doc) {
   let pagePeriod = null; // caption の見出しに period があれば、そのページの期間の行にする
   let pageUnit; // caption の見出しに unit があれば、そのページの単位（'' なら書かない。個別注記表など）
   const formal = Boolean(doc.formal);
-  const TOP = formal ? 41 : TABLE_TOP; // 表の始まり（決算書は表題・期間・事業者名の下を広く空ける）
+  // 表の始まり（決算書は表題・期間・事業者名の下を広く空ける。期間の2行目〔前期の期間〕があればその分も下げる）
+  const TOP = formal ? (doc.period2 ? 46 : 41) : TABLE_TOP;
 
   const text = (x, yy, s, size, opts = {}) => page.items.push({ t: 'text', x, y: yy, size, text: printable(s), align: opts.align || 'left', bold: Boolean(opts.bold), scale: opts.scale ?? 1 });
   const line = (x1, y1, x2, y2, w = 0.1) => page.items.push({ t: 'line', x1, y1, x2, y2, w });
@@ -391,7 +394,32 @@ export function layoutDocument(doc) {
     y += 3;
   }
 
+  // 表紙：中央に期数・表題・期間、下に事業者名・所在地（市販の会計ソフトの決算報告書の表紙にならう）
+  function drawCover(b) {
+    if (page.items.length || y > TOP) newPage();
+    page.cover = true;
+    const cx = paper.w / 2;
+    const at = (r) => paper.h * r;
+    if (b.number) text(cx, at(0.3), b.number, 16, { align: 'center' });
+    const title = b.title;
+    const tw = textWidth(title, 26);
+    text(cx, at(0.37), title, 26, { align: 'center', bold: true });
+    line(cx - tw / 2 - 6, at(0.37) + 3.2, cx + tw / 2 + 6, at(0.37) + 3.2, 0.35);
+    line(cx - tw / 2 - 6, at(0.37) + 4.1, cx + tw / 2 + 6, at(0.37) + 4.1, 0.35);
+    // 自・至の2行は左をそろえて、まとめて中央に置く
+    const lines = [`自　${warekiText(b.from)}`, `至　${warekiText(b.to)}`];
+    const lx = cx - Math.max(...lines.map((l) => textWidth(l, 12))) / 2;
+    lines.forEach((l, i) => text(lx, at(0.46) + i * 8, l, 12));
+    if (b.company) fitted(cx, at(0.74), b.company, 16, paper.w - 50, { align: 'center', bold: true });
+    if (b.address) fitted(cx, at(0.74) + 9, b.address, 10.5, paper.w - 50, { align: 'center' });
+    y = bottom;
+  }
+
   for (const b of doc.blocks) {
+    if (b.type === 'cover') {
+      drawCover(b);
+      continue;
+    }
     if (b.type === 'heading') {
       if (b.caption) {
         caption = b.text;
@@ -426,8 +454,11 @@ export function layoutDocument(doc) {
     }
   }
 
-  // ページの見出しとページ番号（全ページ数が決まってから描く）
-  pages.forEach((p, i) => {
+  // ページの見出しとページ番号（全ページ数が決まってから描く）。表紙は見出しを書かず、ページ番号も数えない
+  const numbered = pages.filter((p) => !p.cover);
+  pages.forEach((p) => {
+    if (p.cover) return;
+    const i = numbered.indexOf(p);
     page = p;
     orientation = p.orientation;
     setPaper();
@@ -446,11 +477,12 @@ export function layoutDocument(doc) {
       line(cx - tw / 2 - 4, top + 13.2, cx + tw / 2 + 4, top + 13.2, 0.3);
       line(cx - tw / 2 - 4, top + 14, cx + tw / 2 + 4, top + 14, 0.3);
       if (period) text(cx, top + 20.5, period, 9.5, { align: 'center' });
+      if (doc.period2) fitted(cx, top + 25.5, doc.period2, 8.5, p.w - 60, { align: 'center' });
       if (doc.company) fitted(frame.left, TOP - 2.6, doc.company, 10, (frame.right - frame.left) * 0.7);
       const unit = p.unit ?? doc.unit;
       if (unit !== '') text(frame.right, TOP - 2.4, unit ?? '（単位：円）', 8.5, { align: 'right' });
       p.items.push(...items);
-      if (pages.length > 1) text(cx, p.h - MARGIN.bottom - 1, `- ${i + 1} -`, 8.5, { align: 'center' });
+      if (numbered.length > 1) text(cx, p.h - MARGIN.bottom - 1, `- ${i + 1} -`, 8.5, { align: 'center' });
       return;
     }
     if (doc.company) fitted(left, top + 3, doc.company, 9, cx - left - 40);
@@ -464,7 +496,7 @@ export function layoutDocument(doc) {
     if (p.caption) fitted(left, TOP - 2, p.caption, 10.5, avail - 30, { bold: true });
     if (doc.unit !== '') text(right, TOP - 1.6, doc.unit ?? '（単位：円）', 7.5, { align: 'right' });
     p.items.push(...items);
-    text(cx, p.h - MARGIN.bottom - 1, `${i + 1} / ${pages.length}`, 8, { align: 'center' });
+    text(cx, p.h - MARGIN.bottom - 1, `${i + 1} / ${numbered.length}`, 8, { align: 'center' });
     text(right, p.h - MARGIN.bottom - 1, 'Pocket会計', 6.5, { align: 'right' });
   });
   return pages;

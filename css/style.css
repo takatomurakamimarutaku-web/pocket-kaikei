@@ -1244,6 +1244,7 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .pp-options-body { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 6px 0 4px; }
 .pp-select { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; min-width: 0; max-width: 100%; }
 .pp-select select { max-width: 100%; }
+.pp-number { width: 7em; max-width: 100%; font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
 .pp-opt-label { color: var(--muted); font-size: 0.78rem; }
 .pp-check { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; }
 .pp-sheet { width: min(100%, 820px); aspect-ratio: 210 / 297; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); flex: none; }
@@ -1321,6 +1322,22 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .fs-paper .fs-equity-table thead tr + tr th { border-top: 0; }
 .fs-paper .fs-equity-table thead th[colspan] { border-bottom: 1px solid var(--separator); }
 .fs-paper .fs-equity-table .fs-r-net > * { border-bottom: 1.5px solid var(--text); }
+
+/* 前期と比べる表（比較損益計算書・比較貸借対照表）：科目｜当期｜前期｜増減額（｜増減率）。スマホでは増減率を増減額の下に小さく書く */
+.fs-period2 { margin-top: 0; font-size: 0.74rem; color: var(--muted); }
+/* スマホ：金額の列は金額の幅に合わせ（折り返さない）、残りを科目の列にする。入りきらない桁の金額は横にスクロール */
+.fs-cmp-wrap { overflow-x: auto; }
+.fs-paper .fs-cmp { font-size: 0.72rem; table-layout: auto; }
+.fs-paper .fs-cmp .fs-c-amt { width: auto; }
+.fs-paper .fs-cmp td { padding-left: 6px; }
+.fs-paper .fs-cmp .lv2 { padding-left: 1.8em; }
+.fs-paper .fs-cmp .lv3 { padding-left: 2.4em; }
+.fs-paper .fs-cmp thead th { letter-spacing: 0.08em; white-space: nowrap; }
+.fs-cmp th.fs-c-rate, .fs-cmp td.fs-rate { display: none; }
+.fs-rate-inline { display: block; font-size: 0.64rem; font-weight: 400; color: var(--muted); line-height: 1.2; }
+.fs-cmp tbody tr:last-child > * { border-bottom: 1.5px solid var(--text); padding-bottom: 6px; }
+.fs-cmp .fs-r-heading > * { padding-top: 8px; }
+.fs-paper .fs-cmp .fs-r-profit th, .fs-paper .fs-cmp .fs-r-net th { padding-left: 1.2em; }
 
 /* 残高試算表：貸借対照表・損益計算書・製造原価の科目に分け、区分の合計・部の合計と段階利益（売上総損益金額など）を出す */
 .tb-section { margin-bottom: var(--sp-3); }

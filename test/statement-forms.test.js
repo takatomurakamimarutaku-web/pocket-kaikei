@@ -1,12 +1,15 @@
-// 帳票の様式：決算書の表示の行（fs-rows.js）・残高試算表の行（trial-rows.js）・決算書を1冊にする印刷
+// 帳票の様式：決算書の表示の行（fs-rows.js）・残高試算表の行（trial-rows.js）・決算書を1冊にする印刷・前期と比べる表・表紙
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { corporateProfit, incomeStatementRows, balanceSheetRows, singleAmount } from '../js/fs-rows.js';
 import { trialRows } from '../js/trial-rows.js';
-import { buildStatements, manufacturingReport, closingRows } from '../js/statements.js';
+import { buildStatements, manufacturingReport, closingRows, balanceSheet } from '../js/statements.js';
 import { trialBalance } from '../js/ledger.js';
-import { trialBalanceDoc, financialStatementsDoc, FINANCIAL_PARTS } from '../js/print-forms.js';
+import { trialBalanceDoc, financialStatementsDoc, FINANCIAL_PARTS, compareStatementDoc, coverBlock, periodNumberText } from '../js/print-forms.js';
 import { layoutDocument } from '../js/print-layout.js';
+import { buildPdf } from '../js/print-pdf.js';
+import { compareIncomeRows, compareBalanceRows, openingRows } from '../js/compare.js';
+import { createPeriod } from '../js/models.js';
 import { sgaBreakdown, condensedIncomeItems, equityStatement, companyNotes } from '../js/financial.js';
 import { makeBook } from './helpers.js';
 
@@ -52,7 +55,7 @@ test('損益計算書の行：科目は左の列、区分の合計は最後の�
       ['line', '期末商品棚卸高', 30_000, 220_000],
     ],
   );
-  assert.deepEqual(find(rows, '売上総利益金額'), { kind: 'profit', label: '売上総利益金額', level: 1, inner: null, outer: 180_000, rule: 'over' });
+  assert.deepEqual(find(rows, '売上総利益金額'), { kind: 'profit', label: '売上総利益金額', level: 1, inner: null, outer: 180_000, rule: 'over', base: '売上総利益' });
   // 販売費及び一般管理費：2科目。合計は最後の科目の行の右の列
   const sga = rows.filter((r) => r.kind === 'line' && ['消耗品費', '旅費交通費'].includes(r.label));
   assert.equal(sga.length, 2);
@@ -258,4 +261,107 @@ test('決算書を1冊にする印刷：帳票ごとに改ページし、各ペ�
   // 印刷する帳票を選べる
   const only = financialStatementsDoc(data, { head: {}, at: '', range: '', parts: ['pl'] });
   assert.deepEqual(only.blocks.filter((x) => x.caption).map((x) => x.text), ['損益計算書']);
+});
+
+// 前期と比べる表：前期（2025年）は売上 100,000・仕入 150,000（売上総損失）、当期は tradingBook
+function compareBooks() {
+  const t = tradingBook();
+  const prevPeriod = createPeriod({ startDate: '2025-01-01', endDate: '2025-12-31' });
+  const prevJournals = [t.b.j('2025-03-01', [['現金', 100_000]], [['売上高', 100_000]]), t.b.j('2025-03-02', [['仕入高', 150_000]], [['現金', 150_000]]), t.b.j('2025-03-03', [['通信費', 8_000]], [['現金', 8_000]])];
+  const prev = buildStatements({ entityType: 'corporation', accounts: t.b.accounts, period: prevPeriod, journals: prevJournals });
+  return { ...t, prevPl: prev.pl };
+}
+
+test('比較損益計算書の行：決算書と同じ並び。区分の合計は「〇〇合計」の行、段階利益は損益（損失はマイナス）、前期にだけある科目も出す', () => {
+  const { pl, prevPl } = compareBooks();
+  const rows = compareIncomeRows(pl.items, prevPl.items, { entityType: 'corporation' });
+  const at = (label) => rows.findIndex((r) => r.label === label);
+  // 売上原価：期首商品棚卸高・仕入高 → 合計 → 期末商品棚卸高（正の数）→ 売上原価合計
+  assert.ok(at('期首商品棚卸高') < at('仕入高') && at('仕入高') < at('合計') && at('合計') < at('期末商品棚卸高') && at('期末商品棚卸高') < at('売上原価合計'));
+  const pick = (label) => {
+    const r = find(rows, label);
+    return [r.current, r.previous, r.diff, r.rate];
+  };
+  assert.deepEqual(pick('合計'), [250_000, 150_000, 100_000, 667]);
+  assert.deepEqual(pick('期末商品棚卸高'), [30_000, 0, 30_000, null], '期末の棚卸高は差し引く額として正の数。前期0なら増減率は出さない');
+  assert.deepEqual(pick('売上原価合計'), [220_000, 150_000, 70_000, 467]);
+  assert.equal(find(rows, '売上原価合計').rule, 'over');
+  // 段階利益：法人は「売上総損益金額」など。前期の損失はマイナスのまま。利益と損失が入れ替わったら増減率は出さない
+  assert.deepEqual(pick('売上総損益金額'), [180_000, -50_000, 230_000, null]);
+  const net = find(rows, '当期純損益金額');
+  assert.equal(net.kind, 'net');
+  assert.equal(net.rule, 'double');
+  assert.deepEqual([net.current, net.previous], [pl.netIncome, prevPl.netIncome]);
+  // 前期にだけ金額のある科目（通信費）も出し、科目が1つだけの区分（売上高）は合計の行を作らない
+  assert.deepEqual(pick('通信費'), [0, 8_000, -8_000, -1000]);
+  assert.ok(!find(rows, '売上高合計'));
+  assert.deepEqual(pick('販売費及び一般管理費合計'), [15_000, 8_000, 7_000, 875]);
+  // 当期・前期とも0の科目は出さない（0円の科目も出すときは出す）
+  assert.ok(!find(rows, '広告宣伝費'));
+  assert.ok(find(compareIncomeRows(pl.items, prevPl.items, { entityType: 'corporation', showZero: true }), '広告宣伝費'));
+  // 前期の帳簿が無ければ前期・増減は空欄
+  const alone = compareIncomeRows(pl.items, null, { entityType: 'corporation' });
+  assert.ok(alone.every((r) => r.previous === null && r.diff === null && r.rate === null));
+  assert.equal(find(alone, '当期純損益金額').current, pl.netIncome);
+});
+
+test('比較貸借対照表の行：前期末は期首残高。資産合計＝負債・純資産合計が当期・前期の両方で成り立つ。前期の「うち当期純利益」は比べない', () => {
+  const { b, bs } = tradingBook();
+  const prevBs = balanceSheet('corporation', openingRows({ accounts: b.accounts, period: b.period }), 0);
+  const rows = compareBalanceRows(bs, prevBs, { entityType: 'corporation' });
+  assert.deepEqual(rows.filter((r) => r.kind === 'part').map((r) => r.label), ['資産の部', '負債の部', '純資産の部']);
+  const assets = find(rows, '資産合計');
+  const right = find(rows, '負債・純資産合計');
+  assert.deepEqual([assets.current, assets.previous], [bs.totalAssets, prevBs.totalAssets]);
+  assert.deepEqual([right.current, right.previous], [assets.current, assets.previous]);
+  assert.equal(right.rule, 'double');
+  assert.deepEqual([find(rows, '現金').current, find(rows, '現金').previous], [1_185_000, 1_000_000]);
+  // 純資産の部は決算書と同じ区分（株主資本 › 資本剰余金・利益剰余金 › その他利益剰余金）
+  assert.ok(['株主資本', '資本剰余金', '利益剰余金', 'その他利益剰余金'].every((l) => find(rows, l)));
+  const note = rows.find((r) => r.kind === 'note');
+  assert.deepEqual([note.current, note.previous, note.diff], [bs.liabilities.find((x) => x.groups?.includes('equity')).lines.find((l) => l.note).note.amount, null, null]);
+});
+
+test('前期と比べる表の印刷：科目・当期・前期・増減額・増減率の5列。前期の期間を2行目に書き、資産合計の次の部は1行空ける', () => {
+  const { b, bs, pl, prevPl } = compareBooks();
+  const head = { company: '株式会社テスト', period: '自 令和8年1月1日　至 令和8年12月31日' };
+  const doc = compareStatementDoc(compareIncomeRows(pl.items, prevPl.items, { entityType: 'corporation' }), { head, title: '比較損益計算書', labels: ['当期', '前期'], period2: '（前期　自 令和7年1月1日　至 令和7年12月31日）' });
+  assert.equal(doc.title, '比 較 損 益 計 算 書');
+  assert.equal(doc.formal, true);
+  const table = doc.blocks[0];
+  assert.deepEqual(table.columns.map((c) => c.label), ['科　　　目', '当期', '前期', '増 減 額', '増減率']);
+  const gross = table.rows.find((r) => r.cells[0].text === '売上総損益金額');
+  assert.deepEqual(gross.cells.slice(1).map((c) => c.text ?? c), ['180,000', '△50,000', '230,000', '—']);
+  const pages = layoutDocument(doc);
+  const texts = pages[0].items.filter((i) => i.t === 'text').map((i) => i.text);
+  assert.ok(texts.includes('（前期　自 令和7年1月1日　至 令和7年12月31日）'));
+  assert.ok(buildPdf(pages).length > 0);
+  // 比較貸借対照表：資産合計の次（負債の部の見出しの前）に空の行
+  const prevBs = balanceSheet('corporation', openingRows({ accounts: b.accounts, period: b.period }), 0);
+  const bsDoc = compareStatementDoc(compareBalanceRows(bs, prevBs, { entityType: 'corporation' }), { head, title: '比較貸借対照表', labels: ['当期末', '前期末'] });
+  const rows = bsDoc.blocks[0].rows;
+  const i = rows.findIndex((r) => r.cells[0].text === '負 債 の 部');
+  assert.deepEqual(rows[i - 1].cells, ['', '', '', '', '']);
+  assert.equal(rows[i - 2].cells[0].text, '資産合計');
+});
+
+test('決算報告書の表紙：期数・表題・期間・会社名・所在地の1ページ。表紙は見出しを書かず、ページ番号を数えない', () => {
+  assert.deepEqual(['5', 12, '', '0', '1.5', 'x', 1000].map(periodNumberText), ['第 5 期', '第 12 期', '', '', '', '', '']);
+  const { b, journals, pl, bs } = tradingBook();
+  const data = { bs, plItems: condensedIncomeItems(pl), sga: sgaBreakdown(pl), mfgItems: null, equity: equityStatement({ accounts: b.accounts, period: b.period, journals, netIncome: pl.netIncome }), notes: companyNotes({ accounts: b.accounts, period: b.period, journals }) };
+  const doc = financialStatementsDoc(data, { head: { company: '株式会社テスト' }, at: '令和8年12月31日 現在', range: '自 令和8年1月1日　至 令和8年12月31日', parts: ['bs', 'pl'], cover: { number: '3', from: '2026-01-01', to: '2026-12-31', address: '東京都千代田区1-1' } });
+  assert.deepEqual(doc.blocks[0], coverBlock({ number: '3', from: '2026-01-01', to: '2026-12-31', company: '株式会社テスト', address: '東京都千代田区1-1' }));
+  const pages = layoutDocument(doc);
+  assert.equal(pages.length, 3);
+  assert.equal(pages[0].cover, true);
+  const texts = (p) => p.items.filter((x) => x.t === 'text').map((x) => x.text);
+  assert.deepEqual(texts(pages[0]), ['第 3 期', '決 算 報 告 書', '自　令和8年1月1日', '至　令和8年12月31日', '株式会社テスト', '東京都千代田区1-1']);
+  assert.ok(texts(pages[1]).includes('- 1 -'), '表紙の次のページを1ページ目と数える');
+  assert.ok(texts(pages[2]).includes('- 2 -'));
+  assert.ok(buildPdf(pages).length > 0);
+  // 表紙と帳票1つなら、帳票のページに番号を書かない（1ページだけのとき）
+  const one = layoutDocument(financialStatementsDoc(data, { head: { company: '株式会社テスト' }, at: '', range: '', parts: ['pl'], cover: { from: '2026-01-01', to: '2026-12-31' } }));
+  assert.equal(one.length, 2);
+  assert.ok(!texts(one[0]).includes('第  期') && !texts(one[0]).some((t) => t.startsWith('第')), '期数が空なら書かない');
+  assert.ok(!texts(one[1]).some((t) => /^- \d+ -$/.test(t)));
 });

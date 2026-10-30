@@ -15,6 +15,9 @@
 //   level：字下げの段（0〜3）。inner：左の列の金額、outer：右の列の金額（無ければ null）。rule：右の列の金額の上の線（over）・二重線（double）
 import { isContra } from './accounts.js';
 
+// 期の途中・前期と比べる表の段階利益の名前（利益と損失のどちらにもなるので「損益」と書き、マイナスは△）
+export const NEUTRAL_PROFIT = { 売上総利益: '売上総損益金額', 営業利益: '営業損益金額', 経常利益: '経常損益金額', 税引前当期純利益: '税引前当期純損益金額', 当期純利益: '当期純損益金額' };
+
 // 会社計算規則の段階利益の名前：[利益のとき, 損失のとき]
 const CORP_PROFIT = {
   売上総利益: ['売上総利益金額', '売上総損失金額'],
@@ -54,24 +57,28 @@ function groupLines(it, { showZero, level, individual }) {
       const sum = lines.slice(0, firstContra).reduce((s, x) => s + x.amount, 0);
       out.push(row('calc', individual ? '小計' : '合計', level + 1, sum));
     }
-    const amount = withCalc && i >= firstContra ? -l.amount : l.amount;
-    out.push(row('line', l.account.name, level, amount));
+    const amount = withCalc && i >= firstContra ? 0 - l.amount : l.amount;
+    out.push({ ...row('line', l.account.name, level, amount), id: l.account.id });
     if (l.note) out.push({ ...row('note', l.note.label, level + 1, l.note.amount), paren: true });
   });
   const items = out.filter((r) => r.kind === 'line');
   if (items.length === 1 && !withCalc) {
     items[0].outer = it.total;
     items[0].inner = null;
-  } else if (items.length) items.at(-1).outer = it.total;
+  } else if (items.length) {
+    items.at(-1).outer = it.total;
+    // 前期と比べる表（金額を期ごとに1列にする）で、区分の合計を別の行にするときの名前（個人の売上原価は青色申告決算書の「差引原価」）
+    items.at(-1).sumLabel = isCost && individual ? '差引原価' : `${it.label}合計`;
+  }
   return out;
 }
 
 /**
  * 損益計算書・製造原価報告書の行
  * @param {Array} items statements.js の incomeStatement・manufacturingReport の items（または financial.js の condensedIncomeItems）
- * @param {{ entityType: string, showZero?: boolean }} opts
+ * @param {{ entityType: string, showZero?: boolean, neutral?: boolean }} opts neutral：法人の段階利益を「売上総損益金額」などにし、損失はマイナスのまま（前期と比べる表）
  */
-export function incomeStatementRows(items, { entityType, showZero = false }) {
+export function incomeStatementRows(items, { entityType, showZero = false, neutral = false }) {
   const individual = entityType === 'individual';
   const rows = [];
   for (const it of items) {
@@ -91,8 +98,8 @@ export function incomeStatementRows(items, { entityType, showZero = false }) {
         if (showZero || rows.at(-1)?.kind === 'calc') rows.push(row('calc', it.label, 2, null, it.amount, 'over'));
         continue;
       }
-      const p = individual ? { label: it.label, amount: it.amount } : corporateProfit(it.label, it.amount);
-      rows.push(row(it.strong ? 'net' : 'profit', p.label, 1, null, p.amount, it.strong ? 'double' : 'over'));
+      const p = individual ? { label: it.label, amount: it.amount } : neutral ? { label: NEUTRAL_PROFIT[it.label] ?? it.label, amount: it.amount } : corporateProfit(it.label, it.amount);
+      rows.push({ ...row(it.strong ? 'net' : 'profit', p.label, 1, null, p.amount, it.strong ? 'double' : 'over'), base: it.label });
       continue;
     }
     const visible = it.lines.some((l) => showZero || l.amount);
@@ -112,7 +119,7 @@ function corporateEquityRows(group, { showZero }) {
   const lines = group.lines.filter((l) => showZero || l.amount || l.account.role === 'retained_earnings' || l.account.role === 'capital_stock');
   const of = (kind) => lines.filter((l) => equityKind(l.account) === kind);
   const sum = (list) => list.reduce((s, l) => s + l.amount, 0);
-  const lineRows = (list, level) => list.flatMap((l) => [row('line', l.account.name, level, l.amount), ...(l.note ? [{ ...row('note', l.note.label, level + 1, l.note.amount), paren: true }] : [])]);
+  const lineRows = (list, level) => list.flatMap((l) => [{ ...row('line', l.account.name, level, l.amount), id: l.account.id }, ...(l.note ? [{ ...row('note', l.note.label, level + 1, l.note.amount), paren: true }] : [])]);
   const out = [row('heading', '株主資本', 0, null, group.total)];
   out.push(...lineRows(of('capital'), 1));
   const surplus = of('capital_surplus');
@@ -164,13 +171,13 @@ export function balanceSheetRows(bs, { entityType, showZero = false }) {
       }
       // 個人の事業主貸は見出しを付けずに科目を書く（青色申告決算書の貸借対照表の並び）
       if (it.groups?.includes('owner_drawings')) {
-        out.push(...lines.map((l) => row('line', l.account.name, 0, l.amount)));
+        out.push(...lines.map((l) => ({ ...row('line', l.account.name, 0, l.amount), id: l.account.id })));
         continue;
       }
       const level = it.level === 2 ? 1 : 0;
       out.push(row(level ? 'heading2' : 'heading', it.label, level, null, it.total));
       for (const l of lines) {
-        out.push(row('line', l.account.name, level + 1, l.amount));
+        out.push({ ...row('line', l.account.name, level + 1, l.amount), id: l.account.id });
         if (l.note) out.push({ ...row('note', l.note.label, level + 2, l.note.amount), paren: true });
       }
     }
