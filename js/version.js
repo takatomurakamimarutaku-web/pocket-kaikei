@@ -1,2 +1,2 @@
 // 利用者に見せるバージョン。リリースのたびに上げる
-export const APP_VERSION = '0.60.1';
+export const APP_VERSION = '0.61.0';

@@ -138,18 +138,32 @@ export async function render({ app, outlet }) {
   paintAmounts();
 
   // 印刷：帳票を選んで1冊に（帳票ごとに改ページ。体裁は貸借対照表・損益計算書を1つずつ印刷するときと同じ）
+  // 表紙：期数（設定に持たないので印刷のときに入れる。空欄なら書かない）・期間・会社名・所在地（請求書の設定の住所）
   const used = FINANCIAL_PARTS.filter(([k]) => k !== 'mfg' || mfg.used);
+  const address = (settings.invoice?.address || '').trim();
   app.printDoc = ({ printedAt }) => ({
     options: [
+      { key: 'cover', label: '表紙', type: 'check', value: true },
+      { key: 'number', label: '表紙の期数（第○期。空欄なら書かない）', type: 'number', min: 1, max: 999, placeholder: '例：5', value: '' },
+      address ? { key: 'address', label: '表紙に所在地を書く（請求書の設定の住所）', type: 'check', value: true } : null,
       ...used.map(([k, t]) => ({ key: `part_${k}`, label: t, type: 'check', value: true })),
       { key: 'format', label: '貸借対照表の様式', type: 'select', choices: [['account', '勘定式（左右に並べる）'], ['report', '報告式（上下に並べる）']], value: 'account' },
       { key: 'zero', label: '0円の科目も出す', type: 'check', value: false },
       ...unitPrintOptions(unit.value()),
-    ],
+    ].filter(Boolean),
     build: (v) =>
       financialStatementsDoc(
         { bs, plItems: condensedIncomeItems(pl), sga, mfgItems: mfg.used ? mfg.items : null, equity, notes: companyNotes({ accounts, period, journals, assets, notes }) },
-        { head: docHead({ settings, period, printedAt }), at, range, parts: used.map(([k]) => k).filter((k) => v[`part_${k}`]), bsFormat: v.format, showZero: v.zero, unit: normalizeUnit(v) },
+        {
+          head: docHead({ settings, period, printedAt }),
+          at,
+          range,
+          parts: used.map(([k]) => k).filter((k) => v[`part_${k}`]),
+          bsFormat: v.format,
+          showZero: v.zero,
+          unit: normalizeUnit(v),
+          cover: v.cover ? { number: v.number, from: period.startDate, to: period.endDate, address: v.address ? address : '' } : null,
+        },
       ),
   });
 

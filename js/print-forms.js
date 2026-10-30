@@ -11,6 +11,7 @@ import { linesToRows, voucherOf } from './journal.js';
 import { toUnit, unitCaption, YEN_UNIT } from './money.js';
 import { incomeStatementRows, balanceSheetRows, singleAmount } from './fs-rows.js';
 import { trialRows, totalsOf } from './trial-rows.js';
+import { formatPermille } from './compare.js';
 
 export { totalsOf };
 
@@ -320,6 +321,54 @@ export function incomeStatementBlock(items, { entityType, showZero = false, unit
 }
 
 /**
+ * 前期と比べる表（比較損益計算書・比較貸借対照表）：科目｜当期｜前期｜増減額｜増減率。決算書と同じ体裁（罫線を使わない表）
+ * @param {Array} rows compare.js の compareIncomeRows・compareBalanceRows の行
+ * @param {{ head, title: string, labels: [string, string], period?: string, period2?: string, unit?, orientation? }} opts
+ *   period：期間の行（「自…至…」「…現在」）。period2：2行目（前期の期間）
+ */
+export function compareStatementDoc(rows, { head, title, labels, period = head.period, period2 = null, unit = YEN_UNIT, orientation = 'portrait' }) {
+  const { f } = unitFormat(unit);
+  const money = (n, r) => (n == null ? '' : { text: r.paren ? `(${f(n)})` : f(n), bold: boldKinds.has(r.kind), rule: r.rule });
+  const body = rows.flatMap((r, i) =>
+    r.kind === 'part'
+      ? [
+          // 資産合計（二重線）の次の部の見出しは1行空ける
+          ...(rows[i - 1]?.kind === 'grand' ? [{ cells: ['', '', '', '', ''] }] : []),
+          { keepNext: true, cells: [{ text: spaced(r.label), span: 5, align: 'center', bold: true }] },
+        ]
+      : {
+          keepNext: r.kind.startsWith('heading') && r.current == null,
+          cells: [{ text: fsLabel(r), indent: indentOf(r), bold: boldKinds.has(r.kind) }, money(r.current, r), money(r.previous, r), money(r.diff, r), r.diff == null ? '' : formatPermille(r.rate)],
+        },
+  );
+  const wide = orientation === 'landscape';
+  return {
+    title: spaced(title),
+    ...head,
+    period,
+    period2,
+    unit: unitCaption(unit),
+    orientation,
+    formal: true,
+    blocks: [
+      {
+        type: 'table',
+        ...FS_TABLE,
+        width: wide ? 230 : 186,
+        columns: [
+          { label: '科　　　目', grow: 1, min: 56 },
+          { label: labels[0], align: 'right', w: wide ? 38 : 31 },
+          { label: labels[1], align: 'right', w: wide ? 38 : 31 },
+          { label: '増 減 額', align: 'right', w: wide ? 38 : 31 },
+          { label: '増減率', align: 'right', w: wide ? 22 : 19 },
+        ],
+        rows: body,
+      },
+    ],
+  };
+}
+
+/**
  * 貸借対照表（報告式）：資産の部・負債の部・純資産の部を上から並べる。区分の合計は区分の見出しの右の列、科目は左の列
  * @param {object} bs statements.js の balanceSheet の結果
  */
@@ -475,17 +524,32 @@ export const FINANCIAL_PARTS = [
   ['notes', '個別注記表'],
 ];
 
+/** 期数の表示（1〜999 の整数なら「第5期」、それ以外は書かない） */
+export function periodNumberText(n) {
+  const v = Number(n);
+  return Number.isInteger(v) && v >= 1 && v <= 999 ? `第 ${v} 期` : '';
+}
+
+/**
+ * 決算報告書の表紙：期数・表題・期間（自・至）・事業者名・所在地
+ * @param {{ number?: number|string, from: string, to: string, company?: string, address?: string, title?: string }} p number：期数（空なら書かない）
+ */
+export function coverBlock({ number = '', from, to, company = '', address = '', title = '決算報告書' }) {
+  return { type: 'cover', number: periodNumberText(number), title: spaced(title), from, to, company, address };
+}
+
 /**
  * 決算書（法人）を1冊にする：貸借対照表・損益計算書・販売費及び一般管理費内訳書・製造原価報告書・株主資本等変動計算書・個別注記表
  * 帳票ごとに改ページし、各ページに表題と期間（貸借対照表は「…現在」）を出す。体裁は1つずつ印刷するときと同じ
  * @param {{ bs, plItems: Array, sga: { lines, total }, mfgItems: Array|null, equity, notes: Array }} data
  * @param {{ head, at: string, range: string, parts?: string[], bsFormat?: 'account'|'report', showZero?: boolean, unit?, orientation? }} opts
  *   at：貸借対照表の日付の行（令和9年3月31日 現在）。range：期間の行（自…至…）。parts：印刷する帳票のキー
+ *   cover：表紙（{ number, from, to, address }。事業者名は head.company。null なら付けない）
  */
-export function financialStatementsDoc(data, { head, at, range, parts = FINANCIAL_PARTS.map(([k]) => k), bsFormat = 'account', showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+export function financialStatementsDoc(data, { head, at, range, parts = FINANCIAL_PARTS.map(([k]) => k), bsFormat = 'account', showZero = false, unit = YEN_UNIT, orientation = 'portrait', cover = null }) {
   const o = { entityType: 'corporation', showZero, unit, orientation };
   const caption = (key, title, period, extra = {}) => ({ type: 'heading', text: title, caption: true, title: title.length <= 7 ? spaced(title) : title, period, ...extra });
-  const blocks = [];
+  const blocks = cover ? [coverBlock({ ...cover, company: head.company })] : [];
   for (const [key, title] of FINANCIAL_PARTS) {
     if (!parts.includes(key)) continue;
     if (key === 'bs') blocks.push(caption(key, title, at), bsFormat === 'report' ? balanceSheetReportBlock(data.bs, o) : balanceSheetAccountBlock(data.bs, o));

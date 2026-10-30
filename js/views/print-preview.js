@@ -47,7 +47,8 @@ const env = () => ({
 });
 
 /**
- * 印刷条件の欄。options：[{ key, label, type: 'select'|'check', choices?: [[value, label]], value }]
+ * 印刷条件の欄。options：[{ key, label, type: 'select'|'check'|'number', choices?: [[value, label]], value, min?, max?, placeholder? }]
+ * number は整数の欄（期数など。空欄も選べる）
  * 条件を変えると onChange(values) を呼ぶ
  */
 function optionsPanel(options, onChange) {
@@ -60,6 +61,14 @@ function optionsPanel(options, onChange) {
         { class: 'pp-check', for: id },
         h('input', { id, type: 'checkbox', checked: Boolean(o.value), onchange: (e) => ((values[o.key] = e.target.checked), onChange({ ...values })) }),
         h('span', { text: o.label }),
+      );
+    }
+    if (o.type === 'number') {
+      return h(
+        'label',
+        { class: 'pp-select', for: id },
+        h('span', { class: 'pp-opt-label', text: o.label }),
+        h('input', { id, type: 'number', inputmode: 'numeric', class: 'pp-number', min: o.min ?? 0, max: o.max ?? '', step: 1, placeholder: o.placeholder ?? '', value: o.value ?? '', oninput: (e) => ((values[o.key] = e.target.value), onChange({ ...values })) }),
       );
     }
     return h(

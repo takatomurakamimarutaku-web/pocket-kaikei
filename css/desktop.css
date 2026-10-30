@@ -175,6 +175,14 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 4
 .fs-side .fs-table:first-child { border-top: 0; }
 .fs-side:first-child { padding-right: 18px; }
 .fs-side + .fs-side { padding: 0 0 0 18px; border-top: 0; border-left: 1px solid var(--text); }
+/* 前期と比べる表：増減率の列を出す */
+.fs-paper .fs-cmp { font-size: 0.9rem; max-width: 860px; margin: 0 auto; table-layout: fixed; }
+.fs-paper:has(.fs-cmp) .fs-head { max-width: 860px; margin-left: auto; margin-right: auto; }
+.fs-paper .fs-cmp .fs-c-amt { width: 8.4em; }
+.fs-cmp th.fs-c-rate, .fs-cmp td.fs-rate { display: table-cell; width: 5.6em; }
+.fs-rate-inline { display: none; }
+.fs-period2 { font-size: 0.8rem; }
+.fs-paper .fs-cmp .fs-r-profit th, .fs-paper .fs-cmp .fs-r-net th { padding-left: 2.8em; }
 /* 残高試算表：貸借対照表・損益計算書・製造原価の表で列の幅をそろえる */
 .tb-trial { table-layout: fixed; }
 .tb-trial thead th:first-child { width: 34%; }
