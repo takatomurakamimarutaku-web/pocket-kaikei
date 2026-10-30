@@ -5,7 +5,7 @@
 //   合計残高試算表：中央に勘定科目、左に借方残高・借方合計、右に貸方合計・貸方残高（残高試算表の様式も選べる）
 //   貸借対照表：勘定式（左右2段）または報告式。損益計算書：報告式。どちらも罫線を使わない決算書の体裁（行は fs-rows.js で画面と共通）
 
-import { fmt, periodText } from './print-layout.js';
+import { fmt, periodText, wrapText } from './print-layout.js';
 import { TAX_BY_CODE } from './tax.js';
 import { linesToRows, voucherOf } from './journal.js';
 import { toUnit, unitCaption, YEN_UNIT } from './money.js';
@@ -115,6 +115,14 @@ export function journalBookDoc({ journals, accountById, subById, departmentById 
   };
 }
 
+// 元帳の摘要の列のおよその幅（mm）。長い摘要は省略せず2行に折り返す（3行目からは縮めて収める）
+const MEMO_W = 52;
+const MEMO_W_WIDE = 64;
+function memoLines(memo, w) {
+  const lines = wrapText(memo || '', 8, w);
+  return lines.length <= 1 ? memo || '' : { text: [lines[0], lines.slice(1).join('')], subSmall: false };
+}
+
 /**
  * 総勘定元帳・補助元帳・出納帳
  * @param {Array} ledgers ledger.js の generalLedger の結果（subName を付けると見出しに出す）
@@ -149,10 +157,11 @@ export function ledgerBookDoc(ledgers, { head, carriedLabel, title = '総勘定�
     let mCredit = 0;
     let cDebit = 0;
     let cCredit = 0;
+    let mBalance = lg.carried;
     const months = new Set(lg.rows.map((r) => r.date.slice(0, 7)));
     const flush = () => {
       if (month === null || !monthly || months.size < 2) return;
-      rows.push({ kind: 'subtotal', cells: pick(['', '', '', { text: `${Number(month.slice(5))}月計`, align: 'center' }, '', blank(mDebit), blank(mCredit), '']) });
+      rows.push({ kind: 'subtotal', cells: pick(['', '', '', { text: `${Number(month.slice(5))}月計`, align: 'center' }, '', fmt(mDebit), fmt(mCredit), fmt(mBalance)]) });
       if (cumulative) rows.push({ cells: pick(['', '', '', { text: '累計', align: 'center' }, '', blank(cDebit), blank(cCredit), '']), sum: false, bold: true });
     };
     for (const r of lg.rows) {
@@ -167,7 +176,8 @@ export function ledgerBookDoc(ledgers, { head, carriedLabel, title = '総勘定�
       mCredit += r.credit;
       cDebit += r.debit;
       cCredit += r.credit;
-      rows.push({ cells: pick([md(r.date), String(r.voucherNo ?? r.no), splitSub(r.counterpart), r.memo, taxLabel(r.taxCategory), blank(r.debit), blank(r.credit), fmt(r.balance)]), nums: { [D]: r.debit, [D + 1]: r.credit, [D + 2]: r.balance } });
+      mBalance = r.balance;
+      rows.push({ cells: pick([md(r.date), String(r.voucherNo ?? r.no), splitSub(r.counterpart), memoLines(r.memo, taxColumn ? MEMO_W : MEMO_W_WIDE), taxLabel(r.taxCategory), blank(r.debit), blank(r.credit), fmt(r.balance)]), nums: { [D]: r.debit, [D + 1]: r.credit, [D + 2]: r.balance } });
     }
     flush();
     rows.push({ kind: 'total', cells: [{ text: '合計', span: D, align: 'center' }, fmt(lg.debit), fmt(lg.credit), fmt(lg.closing)] });

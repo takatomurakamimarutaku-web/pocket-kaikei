@@ -106,7 +106,28 @@ export async function render({ app, outlet, query }) {
     );
   }
 
+  // 前・次の科目へ（取引・残高のある科目だけを順に。弥生会計の元帳の「前の科目」「次の科目」）
+  const stepList = sorted.filter((a) => used.has(a.id));
+  const step = (d) => {
+    const list = stepList.length ? stepList : sorted;
+    const i = list.findIndex((a) => a.id === accountId);
+    const next = list[(i < 0 ? 0 : i + d + list.length) % list.length];
+    accountId = next.id;
+    subId = '';
+    accSelect.value = accountId;
+    paintSubs();
+    update();
+  };
+  const stepBtn = (d, label) => h('button', { type: 'button', class: 'btn btn-step', 'aria-label': label, text: d < 0 ? '‹' : '›', onclick: () => step(d) });
+  const prevBtn = stepBtn(-1, '前の科目');
+  const nextBtn = stepBtn(1, '次の科目');
+  const syncStep = () => (prevBtn.hidden = nextBtn.hidden = accountId === ALL);
+  accSelect.addEventListener('change', syncStep);
+  prevBtn.addEventListener('click', syncStep);
+  nextBtn.addEventListener('click', syncStep);
+  syncStep();
+
   paintSubs();
-  put(outlet, h('div', { class: 'ledger-pick' }, accSelect, subSelect), picker.el, body);
+  put(outlet, h('div', { class: 'ledger-pick' }, prevBtn, accSelect, nextBtn, subSelect), picker.el, body);
   paint();
 }
