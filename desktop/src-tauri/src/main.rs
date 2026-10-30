@@ -13,8 +13,10 @@ fn main() {
                 .title("Pocket会計")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(360.0, 560.0)
-                // アプリ内のページ以外（外部サイト）へは移動させない
-                .on_navigation(|url| is_app_url(url))
+                // ノートPCなど画面の大きさがまちまちなので、最初から最大化して開く
+                .maximized(true)
+                // 外部のサイトへは移動させない（アプリ自身・blob・data などはそのまま）
+                .on_navigation(|url| !is_external_url(url))
                 // バックアップ・CSV の書き出し（<a download>）は保存先を選ばせる
                 .on_download(|_webview, event| match event {
                     DownloadEvent::Requested { destination, .. } => {
@@ -45,11 +47,11 @@ fn main() {
         .expect("Pocket会計を起動できませんでした");
 }
 
-/// アプリ自身の URL か（Windows は http://tauri.localhost、そのほかは tauri://localhost）
-fn is_app_url(url: &tauri::Url) -> bool {
-    matches!(url.scheme(), "tauri" | "http" | "https") && url.host_str() == Some("tauri.localhost")
-        || url.scheme() == "tauri" && url.host_str() == Some("localhost")
-        || matches!(url.scheme(), "blob" | "data" | "about")
+/// 外部のウェブサイトか。アプリ自身（Windows は http://tauri.localhost、そのほかは tauri://localhost）と
+/// IPC（ipc.localhost）は外部ではない。http/https 以外（tauri・blob・data・about など）も止めない
+fn is_external_url(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+        && !matches!(url.host_str(), Some("tauri.localhost" | "ipc.localhost" | "localhost"))
 }
 
 /// 保存ダイアログを出す。初期値は WebView2 が決めた保存先（ダウンロードフォルダ＋ファイル名）

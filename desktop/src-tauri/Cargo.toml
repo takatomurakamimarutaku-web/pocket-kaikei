@@ -9,7 +9,8 @@ publish = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# devtools：Windows で真っ白になる件の調査のため、右クリック→「検証」で開発者ツールを開けるようにしている
+tauri = { version = "2", features = ["devtools"] }
 
 [profile.release]
 codegen-units = 1
