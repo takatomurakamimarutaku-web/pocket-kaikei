@@ -57,14 +57,19 @@ export async function render({ app, outlet, route, query }) {
     head,
     h(
       'p',
-      { class: `check-line ${cf.matches ? 'ok' : 'ng'}` },
+      { class: `check-line ${cf.matches ? 'ok no-print' : 'ng'}` },
       cf.matches ? `資金の増減 ${formatYen(cf.net)}円 ＝ 期末残高 − 期首残高` : `資金の増減と残高の差が合いません（差額 ${formatYen(cf.net - (cf.closing - cf.opening))}円）。期首残高の貸借を確かめてください。`,
     ),
+    // 要約：期首残高 → 営業・投資・財務 → 増減 → 期末残高（市販ソフトのキャッシュフローの要約と同じ流れ）
     h(
       'div',
-      { class: 'panel' },
-      h('div', { class: 'kv' }, h('span', { text: '営業活動' }), h('span', { class: `num ${cf.sections[0].total < 0 ? 'neg' : ''}`, text: `${formatYen(cf.sections[0].total)}円` })),
-      h('div', { class: 'kv' }, h('span', { text: 'フリーキャッシュフロー（営業＋投資）' }), h('strong', { class: `num ${cf.freeCashFlow < 0 ? 'neg' : ''}`, text: `${formatYen(cf.freeCashFlow)}円` })),
+      { class: 'lg-stats cf-stats' },
+      cfStat('期首の資金', cf.opening),
+      cfStat('営業活動', cf.sections[0].total),
+      cfStat('投資活動', cf.sections[1].total),
+      cfStat('財務活動', cf.sections[2].total),
+      cfStat('フリーCF（営業＋投資）', cf.freeCashFlow),
+      cfStat('期末の資金', cf.closing),
     ),
     unit.el,
     zero.el,
@@ -166,4 +171,8 @@ async function renderPlan({ outlet, period, accounts, journals, head, app, query
     ),
   );
   paint();
+}
+
+function cfStat(label, n) {
+  return h('div', { class: 'lg-stat' }, h('span', { class: 'lg-stat-label', text: label }), amountCell('span', n));
 }

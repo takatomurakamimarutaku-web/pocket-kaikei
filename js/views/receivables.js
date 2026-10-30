@@ -6,6 +6,7 @@ import { todayString } from '../period.js';
 import { csvFileName } from '../csv.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { agingDoc } from '../print-reports.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
 const short = (d) => (d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}` : '');
@@ -56,6 +57,12 @@ async function renderList({ app, outlet, query }) {
       syncUrl();
       paint();
     },
+  });
+
+  // 印刷：残高一覧表（年齢表つき）。基準日と売掛金・買掛金は画面で選んだもの
+  app.printDoc = ({ settings, printedAt }) => ({
+    options: [{ key: 'settled', label: '残高のない取引先も出す', type: 'check', value: false }],
+    build: (v) => agingDoc(partyBalances(kind, { accounts, subAccounts, journals, period, asOf }), { head: { company: settings?.businessName || '', printedAt }, includeSettled: v.settled }),
   });
 
   function paint() {

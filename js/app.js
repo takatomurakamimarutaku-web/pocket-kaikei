@@ -125,7 +125,7 @@ const routes = [
   { path: '/reports', view: reportsView, title: '帳票', tab: 'reports' },
   { path: '/reports/ledger', view: ledgerView, title: '総勘定元帳', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/sub-ledger', view: subLedgerView, title: '補助元帳', tab: 'reports', back: '#/reports', print: true },
-  { path: '/receivables', view: receivablesView, title: '売掛金・買掛金', tab: 'reports', back: '#/reports' },
+  { path: '/receivables', view: receivablesView, title: '売掛金・買掛金', tab: 'reports', back: '#/reports', print: true },
   { path: '/receivables/party', view: receivablesView, kind: 'party', title: '取引先', tab: 'reports', back: '#/receivables' },
   { path: '/reports/checks', view: checksView, title: '仕訳のチェック', tab: 'reports', back: '#/reports', print: true },
   { path: '/reports/trial', view: trialView, title: '残高試算表', tab: 'reports', back: '#/reports', print: true },

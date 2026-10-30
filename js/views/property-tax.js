@@ -1,12 +1,13 @@
 // 償却資産申告書（固定資産税）：固定資産台帳から申告書（種類別の集計）と種類別明細書（全資産用・減少資産用）を作る
 // 弥生会計・freee の「償却資産申告書」と同じく、台帳の資産を賦課期日（1月1日）で振り分け、評価額は参考として計算する
-import { h, put, amountCell, saveFile, showToast, errorBox } from '../ui.js';
+import { h, put, amountCell, saveFile, showToast, errorBox, stackTable } from '../ui.js';
 import { propertyTaxReturn, ptEligibility, ptKindOf, ptLifeOf, PT_KINDS, eraOf, fiscalYearLabel, defaultPtYear, PT_EXEMPTION } from '../property-tax.js';
 import { propertyTaxCsv, csvFileName } from '../csv.js';
 import { todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
+import { warekiText } from '../print-layout.js';
 
 const era = (d) => {
   const e = eraOf(d);
@@ -20,6 +21,8 @@ export async function render({ app, outlet, query }) {
   let year = /^\d{4}$/.test(query.year || '') ? Number(query.year) : base;
   const body = h('div');
   const errorsEl = h('div');
+  // 印刷：画面の表から作る。期間の行は会計期間ではなく、申告する年度と賦課期日（1月1日現在）
+  app.printDoc = () => ({ period: `${fiscalYearLabel(year)}　賦課期日 ${warekiText(`${year}-01-01`)}現在` });
 
   const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('span', { class: 'kpi-label', text: label }), h('span', { class: 'kpi-value num', text: value }), sub ? h('span', { class: 'kpi-sub', text: sub }) : null);
   const tableWrap = (label, head, rows, cls = '') => h('div', { class: 'table-wrap' }, h('table', { class: `report taxform pt-table ${cls}`, 'aria-label': label }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)));
@@ -39,11 +42,14 @@ export async function render({ app, outlet, query }) {
   function kindsTable(r) {
     const sum = (key) => r.kinds.reduce((s, k) => s + k[key], 0);
     const row = (label, v, cls = '') => h('tr', { class: cls }, h('th', { scope: 'row', text: label }), ['before', 'decrease', 'increase', 'total', 'value'].map((key) => amountCell('td', v[key], { blankZero: true })));
-    return tableWrap(
+    const wrap = tableWrap(
       '申告書（資産の種類ごとの取得価額）',
       ['資産の種類', '前年前に取得したもの（イ）', '前年中に減少したもの（ロ）', '前年中に取得したもの（ハ）', '計（ニ）＝（イ）−（ロ）＋（ハ）', '評価額（参考）'],
       [...r.kinds.map((k) => row(`${k.id}　${k.label}`, k)), row('合計', { before: sum('before'), decrease: sum('decrease'), increase: sum('increase'), total: sum('total'), value: sum('value') }, 'st-total')],
     );
+    // スマホでは種類ごとに2段（見出しは短く）
+    stackTable(wrap.querySelector('table'), ['', '（イ）前年前取得', '（ロ）前年中減少', '（ハ）前年中取得', '（ニ）計', '評価額（参考）']);
+    return wrap;
   }
 
   function itemsTable(r) {

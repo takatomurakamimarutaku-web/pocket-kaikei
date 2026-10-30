@@ -5,7 +5,7 @@
 //   合計残高試算表：中央に勘定科目、左に借方残高・借方合計、右に貸方合計・貸方残高（残高試算表の様式も選べる）
 //   貸借対照表：勘定式（左右2段）または報告式。損益計算書：報告式。どちらも罫線を使わない決算書の体裁（行は fs-rows.js で画面と共通）
 
-import { fmt, periodText } from './print-layout.js';
+import { fmt, periodText, wrapText } from './print-layout.js';
 import { TAX_BY_CODE } from './tax.js';
 import { linesToRows, voucherOf } from './journal.js';
 import { toUnit, unitCaption, YEN_UNIT } from './money.js';
@@ -115,6 +115,14 @@ export function journalBookDoc({ journals, accountById, subById, departmentById 
   };
 }
 
+// 元帳の摘要の列のおよその幅（mm）。長い摘要は省略せず2行に折り返す（3行目からは縮めて収める）
+const MEMO_W = 52;
+const MEMO_W_WIDE = 64;
+function memoLines(memo, w) {
+  const lines = wrapText(memo || '', 8, w);
+  return lines.length <= 1 ? memo || '' : { text: [lines[0], lines.slice(1).join('')], subSmall: false };
+}
+
 /**
  * 総勘定元帳・補助元帳・出納帳
  * @param {Array} ledgers ledger.js の generalLedger の結果（subName を付けると見出しに出す）
@@ -149,10 +157,11 @@ export function ledgerBookDoc(ledgers, { head, carriedLabel, title = '総勘定�
     let mCredit = 0;
     let cDebit = 0;
     let cCredit = 0;
+    let mBalance = lg.carried;
     const months = new Set(lg.rows.map((r) => r.date.slice(0, 7)));
     const flush = () => {
       if (month === null || !monthly || months.size < 2) return;
-      rows.push({ kind: 'subtotal', cells: pick(['', '', '', { text: `${Number(month.slice(5))}月計`, align: 'center' }, '', blank(mDebit), blank(mCredit), '']) });
+      rows.push({ kind: 'subtotal', cells: pick(['', '', '', { text: `${Number(month.slice(5))}月計`, align: 'center' }, '', fmt(mDebit), fmt(mCredit), fmt(mBalance)]) });
       if (cumulative) rows.push({ cells: pick(['', '', '', { text: '累計', align: 'center' }, '', blank(cDebit), blank(cCredit), '']), sum: false, bold: true });
     };
     for (const r of lg.rows) {
@@ -167,7 +176,8 @@ export function ledgerBookDoc(ledgers, { head, carriedLabel, title = '総勘定�
       mCredit += r.credit;
       cDebit += r.debit;
       cCredit += r.credit;
-      rows.push({ cells: pick([md(r.date), String(r.voucherNo ?? r.no), splitSub(r.counterpart), r.memo, taxLabel(r.taxCategory), blank(r.debit), blank(r.credit), fmt(r.balance)]), nums: { [D]: r.debit, [D + 1]: r.credit, [D + 2]: r.balance } });
+      mBalance = r.balance;
+      rows.push({ cells: pick([md(r.date), String(r.voucherNo ?? r.no), splitSub(r.counterpart), memoLines(r.memo, taxColumn ? MEMO_W : MEMO_W_WIDE), taxLabel(r.taxCategory), blank(r.debit), blank(r.credit), fmt(r.balance)]), nums: { [D]: r.debit, [D + 1]: r.credit, [D + 2]: r.balance } });
     }
     flush();
     rows.push({ kind: 'total', cells: [{ text: '合計', span: D, align: 'center' }, fmt(lg.debit), fmt(lg.credit), fmt(lg.closing)] });
@@ -185,38 +195,52 @@ export function ratioText(n, base) {
   return permille < 0 ? `△${s}%` : `${s}%`;
 }
 
+/** 試算表の部（貸借対照表・損益計算書・製造原価）の名前。印刷では部ごとに改ページし、表題を「残高試算表（貸借対照表）」にする */
+export const TRIAL_PARTS = [
+  ['bs', '貸借対照表'],
+  ['pl', '損益計算書'],
+  ['mfg', '製造原価'],
+];
+
 /**
- * 試算表（貸借対照表・損益計算書・製造原価の科目に分ける。行は trial-rows.js）
- * format：'total'＝合計残高試算表（借方残高｜借方合計｜勘定科目｜貸方合計｜貸方残高）、'balance'＝残高試算表（繰越・借方・貸方・残高・構成比）
+ * 試算表（貸借対照表・損益計算書・製造原価の科目に分け、部ごとに改ページする。行は trial-rows.js）
+ * 市販の会計ソフト（弥生会計・freee・マネーフォワード）と同じく、勘定科目を左端に置く
+ * format：'balance'＝残高試算表（勘定科目｜繰越｜借方金額｜貸方金額｜当期残高｜構成比）
+ *         'total'＝合計残高試算表（勘定科目｜合計〔借方・貸方〕｜残高〔借方・貸方〕）
+ * 貸借対照表は純資産に当期純損益金額を入れ、負債・純資産合計で終わる（資産合計と一致する）
  * 損益計算書の科目には段階利益（売上総損益金額など）の行を入れる。合計残高試算表では利益を貸方残高、損失を借方残高の欄に書く
+ * 最後の部の後に全科目の合計（借方・貸方の一致を確かめる行）を書く
  * @param {object} tb ledger.js の trialBalance の結果
- * @param {{ head, entityType, white?: boolean, carriedLabel: string, showZero?: boolean, subs?: boolean, format?: 'total'|'balance', ratio?: boolean, title?: string }} opts
+ * @param {{ head, entityType, white?: boolean, carriedLabel: string, showZero?: boolean, subs?: boolean, format?: 'total'|'balance', ratio?: boolean, title?: string,
+ *           parts?: string[] }} opts parts：印刷する部（'bs'・'pl'・'mfg'。既定はすべて）
  */
-export function trialBalanceDoc(tb, { head, entityType, white = false, carriedLabel, showZero = false, subs = false, format = 'total', ratio = true, title, unit = YEN_UNIT }) {
+export function trialBalanceDoc(tb, { head, entityType, white = false, carriedLabel, showZero = false, subs = false, format = 'balance', ratio = true, title, unit = YEN_UNIT, parts = ['bs', 'pl', 'mfg'] }) {
   const { f: fmt, b: blank } = unitFormat(unit);
   const isTotal = format === 'total';
   const t = trialRows(tb, { entityType, white, showZero });
-  const center = (text) => (isTotal ? { text, align: 'center' } : text);
-  // 合計残高試算表の金額の欄：残高だけの行は side の残高（マイナスなら反対の側）に書く。
-  // 売上原価の中の当期製品製造原価（calc）は区分の合計に借方合計・借方残高として足すので、両方の欄に書く
+  const docTitle = title ?? (isTotal ? '合計残高試算表' : '残高試算表');
+  // 合計残高試算表の金額の欄（借方合計・貸方合計・借方残高・貸方残高）：残高だけの行は side の残高（マイナスなら反対の側）に書く。
+  // 売上原価の中の当期製品製造原価（calc）は区分の合計に借方合計・借方残高として足すので、合計の欄にも書く
   const sideCells = (amount, side, withTotal) => {
     const debit = side === 'debit' ? amount >= 0 : amount < 0;
     const v = fmt(Math.abs(amount));
     const tv = withTotal ? v : '';
-    return debit ? [v, tv, '', ''] : ['', '', tv, v];
+    return debit ? [tv, '', v, ''] : ['', tv, '', v];
   };
-  const make = ({ rows: list, base }) => {
+  const make = (key, { rows: list, base }) => {
     const pct = (n) => (ratio ? ratioText(n, base) : '');
-    const sumCells = (label, s) => (isTotal ? [blank(s.debitBalance), blank(s.debitTotal), label, blank(s.creditTotal), blank(s.creditBalance)] : [label, fmt(s.opening), blank(s.debit), blank(s.credit), fmt(s.closing), pct(s.closing)]);
-    const accountCells = (label, r, sign) => (isTotal ? sumCells(label, { ...r, ...totalsOf(r) }) : [label, fmt(r.opening), blank(r.debit), blank(r.credit), fmt(r.closing), pct(sign * r.closing)]);
-    const amountCells = (label, amount, side, withTotal = false) => {
-      if (!isTotal) return [label, '', '', '', fmt(amount), pct(amount)];
-      const [db, dt, ct, cb] = sideCells(amount, side, withTotal);
-      return [db, dt, label, ct, cb];
+    // 繰越の欄：0は空欄（損益計算書の科目は期首から見ると繰越が無い）。貸借対照表の部の合計だけは0も書く
+    const open = (n, always) => (always ? fmt(n) : blank(n));
+    const sumCells = (label, s, always = false) =>
+      isTotal ? [label, blank(s.debitTotal), blank(s.creditTotal), blank(s.debitBalance), blank(s.creditBalance)] : [label, open(s.opening, always), blank(s.debit), blank(s.credit), fmt(s.closing), pct(s.closing)];
+    const accountCells = (label, r, sign) => (isTotal ? sumCells(label, { ...r, ...totalsOf(r) }) : [label, open(r.opening), blank(r.debit), blank(r.credit), fmt(r.closing), pct(sign * r.closing)]);
+    const amountCells = (label, amount, side, { withTotal = false, opening = 0 } = {}) => {
+      if (!isTotal) return [label, open(opening), '', '', fmt(amount), pct(amount)];
+      return [label, ...sideCells(amount, side, withTotal)];
     };
     const rows = [];
     for (const r of list) {
-      if (r.kind === 'group') rows.push({ kind: 'group', cells: isTotal ? ['', '', { text: `【${r.label}】` }, '', ''] : [{ text: `【${r.label}】`, span: 6 }] });
+      if (r.kind === 'group') rows.push({ kind: 'group', keepNext: true, cells: [{ text: `【${r.label}】`, span: isTotal ? 5 : 6 }] });
       else if (r.kind === 'account') {
         rows.push({ cells: accountCells({ text: r.label, indent: 3 }, r.row, r.sign) });
         if (subs && r.row.subs.length) {
@@ -225,49 +249,55 @@ export function trialBalanceDoc(tb, { head, entityType, white = false, carriedLa
             rows.push({ cells: accountCells({ text: s2.subAccount ? s2.subAccount.name : '補助なし', indent: 7 }, { ...s2, account: r.row.account }, r.sign), sub: true });
           }
         }
-      } else if (r.kind === 'subtotal' || r.kind === 'total') rows.push({ kind: r.kind, cells: sumCells(center(r.label), r.sum) });
-      else if (r.kind === 'calc') rows.push({ cells: amountCells({ text: r.label, indent: 3 }, r.amount, r.side, true) });
-      else rows.push({ kind: r.strong ? 'total' : 'subtotal', cells: amountCells(center(r.label), r.amount, r.side) });
+      } else if (r.kind === 'subtotal') rows.push({ kind: 'subtotal', cells: sumCells({ text: r.label, indent: 2 }, r.sum) });
+      else if (r.kind === 'total') rows.push({ kind: 'total', cells: sumCells({ text: r.label, bold: true }, r.sum, key === 'bs') });
+      else if (r.kind === 'calc') rows.push({ cells: amountCells({ text: r.label, indent: 3 }, r.amount, r.side, { withTotal: true }) });
+      else if (r.kind === 'income') rows.push({ cells: amountCells({ text: r.label, indent: 3 }, r.closing, r.side, { opening: r.opening }) });
+      else rows.push({ kind: r.strong ? 'total' : 'subtotal', cells: amountCells({ text: r.label, bold: true }, r.amount, r.side) });
     }
     return rows;
   };
   const columns = isTotal
     ? [
-        { label: '借方残高', align: 'right', w: 30 },
-        { label: '借方合計', align: 'right', w: 30 },
-        { label: '勘定科目', grow: 1, min: 40 },
-        { label: '貸方合計', align: 'right', w: 30 },
-        { label: '貸方残高', align: 'right', w: 30 },
+        { label: '勘定科目', grow: 1, min: 44 },
+        { label: '借方', align: 'right', w: 30 },
+        { label: '貸方', align: 'right', w: 30 },
+        { label: '借方', align: 'right', w: 30 },
+        { label: '貸方', align: 'right', w: 30 },
       ]
     : [
-        { label: '勘定科目', grow: 1, min: 40 },
+        { label: '勘定科目', grow: 1, min: 44 },
         { label: carriedLabel, align: 'right', w: 27 },
-        { label: '借方', align: 'right', w: 27 },
-        { label: '貸方', align: 'right', w: 27 },
-        { label: '残高', align: 'right', w: 27 },
+        { label: '借方金額', align: 'right', w: 27 },
+        { label: '貸方金額', align: 'right', w: 27 },
+        { label: '当期残高', align: 'right', w: 27 },
         { label: '構成比', align: 'right', w: 15 },
       ];
-  const parts = [
-    ['貸借対照表', t.bs],
-    ['損益計算書', t.pl],
-    ['製造原価', t.mfg],
-  ].filter(([, p], i) => i === 0 || p.rows.length);
-  const tables = parts.map(([caption, p]) => [caption, make(p)]);
+  const headGroups = isTotal
+    ? [
+        { label: '合　計', from: 1, span: 2 },
+        { label: '残　高', from: 3, span: 2 },
+      ]
+    : undefined;
+  const shown = TRIAL_PARTS.filter(([key]) => parts.includes(key) && (key === 'bs' || t[key].rows.length));
+  const blocks = [];
+  for (const [key, name] of shown) {
+    blocks.push({ type: 'heading', caption: true, text: '', title: `${docTitle}（${name}）` });
+    const rows = make(key, t[key]);
+    if (rows.length) blocks.push({ type: 'table', columns, headGroups, rows });
+    else blocks.push({ type: 'text', text: '残高・取引のある科目がありません。' });
+  }
   // 最後に、全科目の借方・貸方の合計（貸借の一致を確かめる行）。段階利益の行と続かないよう別の表にする
-  const g = t.grand;
-  const grandRow = {
-    kind: 'total',
-    cells: isTotal ? [fmt(g.debitBalance), fmt(g.debitTotal), { text: '合計', align: 'center' }, fmt(g.creditTotal), fmt(g.creditBalance)] : ['借方・貸方の合計', '', fmt(tb.totals.debit), fmt(tb.totals.credit), '', ''],
-  };
-  tables.push(['全科目の合計', [grandRow], columns.map((c) => ({ ...c, label: '' }))]);
-  const ok = tb.totals.debit === tb.totals.credit;
-  return {
-    title: title ?? (isTotal ? '合計残高試算表' : '残高試算表'),
-    ...head,
-    unit: unitCaption(unit),
-    orientation: 'portrait',
-    blocks: [...tables.flatMap(([caption, rows, cols = columns]) => [{ type: 'heading', text: caption }, { type: 'table', columns: cols, rows }]), ok ? null : { type: 'text', text: '※ 借方と貸方の合計が一致していません。' }].filter(Boolean),
-  };
+  if (shown.length === TRIAL_PARTS.filter(([key]) => key === 'bs' || t[key].rows.length).length) {
+    const g = t.grand;
+    const grandRow = {
+      kind: 'total',
+      cells: isTotal ? [{ text: '合計', bold: true }, fmt(g.debitTotal), fmt(g.creditTotal), fmt(g.debitBalance), fmt(g.creditBalance)] : [{ text: '借方・貸方の合計', bold: true }, '', fmt(tb.totals.debit), fmt(tb.totals.credit), '', ''],
+    };
+    blocks.push({ type: 'heading', text: '全科目の合計' }, { type: 'table', columns: columns.map((c) => ({ ...c, label: '' })), rows: [grandRow] });
+  }
+  if (tb.totals.debit !== tb.totals.credit) blocks.push({ type: 'text', text: '※ 借方と貸方の合計が一致していません。' });
+  return { title: docTitle, ...head, unit: unitCaption(unit), orientation: 'portrait', blocks };
 }
 
 // 決算書の体裁（罫線を使わない表）の文字と行の高さ：試算表・元帳（8pt）より大きくし、行の間を空けて読みやすくする
@@ -635,22 +665,29 @@ export function formLayoutBlocks(blocks, { columns: nCols = 3 } = {}) {
 
 /**
  * 推移表（月次推移表・月次推移試算表）：A4横。勘定科目と月ごとの列（繰越・四半期計・半期計・決算整理・合計を含む）
- * 区分の行は区分の計を出して太字、段階利益・合計の行は上に線
- * @param {{ title, head, columns: string[] (金額の列の見出し), sections: Array<{ caption?: string, rows: Array<{ kind: 'group'|'line'|'subtotal'|'total', label, values: number[] }> }>,
+ * 部（貸借対照表・損益計算書など）の section に title を付けると、改ページしてそのページの表題にする（部ごとに列を変えられる）
+ * 行（kind）：group（区分。values があれば区分の計を書き、無ければ見出しだけ）・line（科目。0は空欄）・calc・income（計算の行）・
+ *   subtotal（区分の合計）・total（部の合計）・profit（段階利益。strong は最後の利益）
+ * @param {{ title, head, columns: string[] (金額の列の見出し), sections: Array<{ caption?: string, title?: string, columns?: string[], rows: Array<{ kind, label, values?: number[], strong? }> }>,
  *           unit?, orientation?, notes?: string[] }} p
  */
 export function monthlyDoc({ title, head, columns, sections, unit = YEN_UNIT, orientation = 'landscape', notes = [] }) {
   const { f, b } = unitFormat(unit);
-  const cols = [{ label: '勘定科目', grow: 1, min: 30, max: 46 }, ...columns.map((label) => ({ label, align: 'right' }))];
   const blocks = [];
   for (const sec of sections) {
+    const labels = sec.columns ?? columns;
+    const cols = [{ label: '勘定科目', grow: 1, min: 30, max: 46 }, ...labels.map((label) => ({ label, align: 'right' }))];
+    if (sec.title) blocks.push({ type: 'heading', caption: true, text: '', title: sec.title });
     if (sec.caption) blocks.push({ type: 'heading', text: sec.caption });
     const rows = sec.rows.map((r) => {
       if (r.kind === 'line') return { cells: [{ text: r.label, indent: 3 }, ...r.values.map((v) => b(v))] };
-      if (r.kind === 'group') return { kind: 'group', cells: [`【${r.label}】`, ...r.values.map((v) => f(v))] };
-      return { kind: r.kind === 'total' ? 'total' : 'subtotal', cells: [r.label, ...r.values.map((v) => f(v))] };
+      if (r.kind === 'group') return r.values ? { kind: 'group', cells: [`【${r.label}】`, ...r.values.map((v) => f(v))] } : { kind: 'group', keepNext: true, cells: [{ text: `【${r.label}】`, span: cols.length }] };
+      if (r.kind === 'calc' || r.kind === 'income') return { cells: [{ text: r.label, indent: 3 }, ...r.values.map((v) => f(v))] };
+      const kind = r.kind === 'total' || r.strong ? 'total' : 'subtotal';
+      return { kind, cells: [{ text: r.label, indent: r.kind === 'subtotal' ? 2 : 0, bold: true }, ...r.values.map((v) => f(v))] };
     });
-    blocks.push({ type: 'table', columns: cols, rows });
+    if (rows.length) blocks.push({ type: 'table', columns: cols, rows });
+    else blocks.push({ type: 'text', text: 'この期間の金額はありません。' });
   }
   for (const n of notes) blocks.push({ type: 'text', text: n });
   return { title, ...head, unit: unitCaption(unit), orientation, blocks };

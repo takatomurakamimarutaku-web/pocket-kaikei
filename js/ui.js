@@ -295,6 +295,31 @@ export function amountCell(tag, n, { blankZero = false, cls = '' } = {}) {
   return h(tag, { class: `num ${n < 0 ? 'neg' : ''} ${cls}`.trim(), text });
 }
 
+/**
+ * スマホで横にはみ出す表を、1行目に見出しの列（科目・税区分など）、2行目以降に数字の列を見出しつきで並べる形にする（CSS の .stack-sm）
+ * 各セルに列の見出しを data-label として付ける。labels を渡すと見出しの代わりに使う（長い見出しを短くする）
+ * @param {HTMLTableElement} table
+ * @param {string[]} [labels] 列ごとの短い見出し（先頭の列の分も含める）
+ */
+export function stackTable(table, labels) {
+  const headRow = table.tHead?.rows[table.tHead.rows.length - 1];
+  const heads = labels ?? (headRow ? [...headRow.cells].flatMap((c) => Array(c.colSpan || 1).fill(c.textContent.trim())) : []);
+  table.classList.add('stack-sm');
+  // 数字の列が4つなら2つずつ2段、それ以外は3つまで横に並べる
+  const n = Math.max(1, heads.length - 1);
+  table.style.setProperty('--stack-cols', String(n === 4 ? 2 : Math.min(3, n)));
+  for (const body of [...table.tBodies, table.tFoot].filter(Boolean)) {
+    for (const tr of body.rows) {
+      let col = 0;
+      for (const c of tr.cells) {
+        if (col > 0 && c.tagName === 'TD' && heads[col]) c.dataset.label = heads[col];
+        col += c.colSpan || 1;
+      }
+    }
+  }
+  return table;
+}
+
 /** ファイルの保存（iPhone では共有シートを使い、使えなければダウンロード。Windows 版は保存ダイアログ） */
 export async function saveFile(blob, fileName) {
   const file = typeof File === 'function' ? new File([blob], fileName, { type: blob.type }) : null;
