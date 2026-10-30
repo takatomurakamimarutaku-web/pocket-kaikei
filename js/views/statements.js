@@ -117,6 +117,7 @@ export async function render({ app, outlet, route, query }) {
         : `資産合計と${individual ? '負債・資本合計' : '負債・純資産合計'}が一致しません（差額 ${formatYen(bs.totalAssets - bs.totalLiabilitiesAndEquity)}円）`,
     );
     if (!compare) return put(body, balance, paper(balanceSheetView(bs, { entityType: settings.entityType, showZero })));
+    const right = individual ? '負債・資本の部' : '負債・純資産の部';
     put(
       body,
       balance,
