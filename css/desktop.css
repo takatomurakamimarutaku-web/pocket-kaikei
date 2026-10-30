@@ -94,6 +94,10 @@ body:has(.sidebar[hidden]) { padding-left: 0; }
 
 /* 指標・取引先の一覧も読みやすい幅に（指標と数字、取引先と残高を離しすぎない） */
 .view:is([data-route="/reports/analysis"], [data-route="/receivables"], [data-route="/receivables/party"]) { max-width: var(--form-max); }
+/* 申告書・決算書の様式（欄の番号｜項目｜金額）も読みやすい幅に */
+.view:is([data-route="/reports/blue-return"], [data-route="/reports/blue-return-re"], [data-route="/reports/white-return"], [data-route="/reports/income-tax"], [data-route="/reports/enterprise-tax"], [data-route="/reports/tax-return"]) { max-width: var(--form-max); }
+/* ただし減価償却費の計算（列の多い表）を開いているときは幅いっぱいに */
+.view:is([data-route="/reports/blue-return"], [data-route="/reports/blue-return-re"], [data-route="/reports/white-return"]):has(.br-wide) { max-width: none; }
 /* 資金繰り表のグラフは大きくしすぎない（表は月が多いので幅いっぱいのまま） */
 .view[data-route="/reports/cash-plan"] .chart { max-width: 720px; }
 /* 売掛金・買掛金：要約は4つを1列に、基準日の欄は日付の幅に */
