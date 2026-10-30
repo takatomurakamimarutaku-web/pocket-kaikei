@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { yayoiOpeningRows, groupYayoiRows, splitYayoiGroups, convertChecks, buildConvertPack, accountListCsv, CONVERT_TARGETS } from '../js/convert.js';
 import { yayoiRows } from '../js/yayoi.js';
+import { mfTaxName, mfInvoice, mfGroups, MF_HEADER, freeeTaxName, freeeGroups, FREEE_HEADER } from '../js/convert-formats.js';
 import { detectFormat, parseEntries } from '../js/journal-import.js';
 import { parseCsv } from '../js/bank-import.js';
 import { createSettings } from '../js/models.js';
@@ -105,7 +106,8 @@ test('移行パック（マネーフォワード）：期首残高は手入力�
   assert.match(new TextDecoder().decode(fileOf(pack, '01_').bytes), /資本金,,貸方,100000/);
   assert.ok(fileOf(pack, '04_固定資産台帳'));
   assert.equal(pack.assetCount, 1);
-  assert.match(new TextDecoder().decode(fileOf(pack, '00_').bytes), /他社ソフトデータの移行/);
+  assert.match(new TextDecoder().decode(fileOf(pack, '00_').bytes), /［会計帳簿］→［仕訳帳］/);
+  assert.ok(fileOf(pack, '02_仕訳_マネーフォワード形式'));
 });
 
 test('勘定科目の一覧：科目の行と補助科目の行、区分・残高の側・既定の税区分', () => {
@@ -119,4 +121,84 @@ test('勘定科目の一覧：科目の行と補助科目の行、区分・残�
 test('移行先の定義：オンライン版はShift_JIS向けの制限をすべて持つ', () => {
   assert.deepEqual([CONVERT_TARGETS.online.maxRows, CONVERT_TARGETS.online.maxBytes, CONVERT_TARGETS.online.maxLines, CONVERT_TARGETS.online.noComma], [1000, 1_000_000, 20, true]);
   assert.equal(CONVERT_TARGETS.next.maxRows, 5000);
+});
+
+test('マネーフォワードの税区分：税込の名称、共通対応・非課税対応、経過措置はインボイスの列', () => {
+  assert.equal(mfTaxName('none'), '対象外');
+  assert.equal(mfTaxName('sales_10'), '課税売上 10%');
+  assert.equal(mfTaxName('sales_8r'), '課税売上 (軽)8%');
+  assert.equal(mfTaxName('purchase_10'), '課税仕入 10%');
+  assert.equal(mfTaxName('purchase_8r_c'), '共通課税仕入 (軽)8%');
+  assert.equal(mfTaxName('purchase_10_e'), '非課税対応仕入 10%');
+  assert.equal(mfTaxName('purchase_10_ni'), '課税仕入 10%');
+  assert.equal(mfTaxName('purchase_return_10'), '課税仕入-返還等 10%');
+  assert.equal(mfTaxName('sales_return_8r'), '課税売上-返還等 (軽)8%');
+  assert.equal(mfTaxName('sales_baddebt_10'), '課税売上-貸倒 10%');
+  assert.equal(mfTaxName('sales_recovered_10'), '課税売上-貸倒回収 10%');
+  assert.equal(mfTaxName('sales_export'), '輸売 0%');
+  assert.equal(mfTaxName('sales_exempt'), '非課税売上');
+  assert.equal(mfTaxName('purchase_exempt'), '非課税仕入');
+  assert.equal(mfTaxName('sales_securities'), '非課税売上-有価証券譲渡');
+  assert.equal(mfTaxName('import_tax'), '輸入仕入-消費税額 7.8%');
+  assert.equal(mfInvoice('purchase_10', '2026-11-01'), '');
+  assert.equal(mfInvoice('purchase_10_ni', '2026-09-30'), '80％控除');
+  assert.equal(mfInvoice('purchase_10_ni', '2026-10-01'), '70％控除');
+  assert.equal(mfInvoice('purchase_8r_ni', '2031-10-01'), '控除なし');
+});
+
+test('freee の税区分：税込、軽減は8%(軽)、経過措置は(控80)(控70)', () => {
+  assert.equal(freeeTaxName('none', '2026-05-01'), '対象外');
+  assert.equal(freeeTaxName('sales_10', '2026-05-01'), '課税売上10%');
+  assert.equal(freeeTaxName('sales_8r', '2026-05-01'), '課税売上8%(軽)');
+  assert.equal(freeeTaxName('purchase_10', '2026-05-01'), '課対仕入10%');
+  assert.equal(freeeTaxName('purchase_8r_c', '2026-05-01'), '共対仕入8%(軽)');
+  assert.equal(freeeTaxName('purchase_10_ni', '2026-09-30'), '課対仕入(控80)10%');
+  assert.equal(freeeTaxName('purchase_8r_ni', '2026-10-01'), '課対仕入(控70)8%(軽)');
+  assert.equal(freeeTaxName('purchase_10_ni', '2023-09-30'), '課対仕入10%');
+  assert.equal(freeeTaxName('purchase_return_10', '2026-05-01'), '課対仕返10%');
+  assert.equal(freeeTaxName('sales_return_10', '2026-05-01'), '課税売返10%');
+  assert.equal(freeeTaxName('sales_exempt', '2026-05-01'), '非課売上');
+});
+
+test('マネーフォワード形式・freee形式の仕訳：列数、複合仕訳は同じ番号、決算整理の印、税額は空欄', () => {
+  const b = makeBook('individual', { subs: [['普通預金', 'みらい銀行']] });
+  const journals = [
+    b.j('2026-11-02', [['消耗品費', 1100, 'purchase_10_ni']], [['現金', 1100]], '紙'),
+    b.j('2026-06-27', [['地代家賃', 66000, 'purchase_10'], ['事業主貸', 44000]], [['普通預金', 110000, 'none', 'みらい銀行']], '家賃'),
+    { ...b.j('2026-12-31', [['減価償却費', 50000]], [['工具器具備品', 50000]], '減価償却'), adjusting: true },
+  ];
+  const ctx = { accountById: new Map(b.accounts.map((a) => [a.id, a])), subById: new Map(b.subAccounts.map((s) => [s.id, s])) };
+  const mf = mfGroups(journals, ctx);
+  assert.equal(MF_HEADER.length, 27);
+  assert.ok(mf.flat().every((r) => r.length === 27));
+  // 日付順：家賃（6/27）が先
+  assert.deepEqual(mf[0].map((r) => [r[0], r[1], r[2], r[3], r[8], r[10], r[11], r[16]]), [
+    [2, '2026/06/27', '地代家賃', '', 66000, '普通預金', 'みらい銀行', 110000],
+    [2, '2026/06/27', '事業主貸', '', 44000, '', '', ''],
+  ]);
+  assert.deepEqual([mf[1][0][6], mf[1][0][7], mf[1][0][9]], ['課税仕入 10%', '70％控除', '']);
+  assert.equal(mf[2][0][22], '決算整理');
+  const fr = freeeGroups(journals, ctx);
+  assert.equal(FREEE_HEADER.length, 33);
+  assert.ok(fr.flat().every((r) => r.length === 33 && r[0] === '[明細行]'));
+  assert.deepEqual(fr[0][1].slice(1, 4), ['2026/06/27', 2, '']);
+  assert.deepEqual([fr[0][1][4], fr[0][1][15], fr[0][1][18], fr[0][1][29]], ['事業主貸', 44000, '', '']);
+  assert.deepEqual([fr[1][0][16], fr[1][0][17]], ['課対仕入(控70)10%', '']);
+  assert.equal(fr[2][0][3], 1);
+  assert.equal(fr[0][0][32], '家賃');
+});
+
+test('移行パック（freee）：見出しの[表題行]つきの UTF-8、期首残高は手入力用の一覧、手順書は口座の作成から', () => {
+  const { b, journals } = book();
+  const pack = buildConvertPack({ target: 'freee', settings: createSettings({ entityType: 'individual' }), period: b.period, accounts: b.accounts, subAccounts: b.subAccounts, journals });
+  const bytes = fileOf(pack, '02_仕訳_freee形式').bytes;
+  assert.deepEqual([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf]);
+  const text = new TextDecoder().decode(bytes);
+  assert.ok(text.startsWith('[表題行],日付,伝票番号,決算整理仕訳,借方勘定科目'));
+  assert.equal(text.trim().split('\r\n').length, 3);
+  assert.match(text, /"コピー用紙, A4"/);
+  assert.ok(fileOf(pack, '01_期首残高の一覧'));
+  const guide = new TextDecoder().decode(fileOf(pack, '00_').bytes);
+  assert.match(guide, /口座を作ります/);
+  assert.match(guide, /［取引入力］→［振替伝票］/);
 });
