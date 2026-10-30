@@ -73,9 +73,9 @@ test('試算表の印刷：千円にすると各欄を換算し、合計は円�
   assert.equal(find('資産合計').cells[4], '21,111');
   assert.equal(find('資産合計').cells[5], '100.0%', '構成比は円の金額で計算する');
   assert.equal(find('純資産合計').cells[4], '21,111', '資産合計と純資産合計は同じ円の金額を換算するのでそろう');
-  const total = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', unit: KR }).blocks[1].rows;
-  const cash = total.find((r) => r.cells[2]?.text === '現金');
-  assert.equal(cash.cells[0], '12,346', '合計残高試算表の各欄も換算する（四捨五入）');
+  const total = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'total', unit: KR }).blocks[1].rows;
+  const cash = total.find((r) => r.cells[0]?.text === '現金');
+  assert.equal(cash.cells[3], '12,346', '合計残高試算表の各欄も換算する（四捨五入）');
 });
 
 test('決算書の印刷：報告式・勘定式とも単位を換算し、資産合計＝負債・純資産合計の表示はそろう', () => {

@@ -183,7 +183,13 @@ test('残高試算表：貸借対照表と損益計算書の科目に分け、�
   const find = (rows, label) => rows.find((r) => (typeof r.cells[0] === 'string' ? r.cells[0] : r.cells[0].text) === label);
   assert.equal(find(bsT.rows, '資産合計').cells[4], '130,000');
   assert.equal(find(bsT.rows, '資産合計').cells[5], '100.0%');
-  assert.equal(find(bsT.rows, '純資産合計').cells[4], '100,000');
+  // 純資産に当期純損益金額を入れ、負債・純資産合計は資産合計と一致する
+  assert.equal(find(bsT.rows, '当期純損益金額').cells[4], '30,000');
+  assert.equal(find(bsT.rows, '純資産合計').cells[4], '130,000');
+  assert.equal(find(bsT.rows, '負債・純資産合計').cells[4], '130,000');
+  assert.equal(find(bsT.rows, '負債・純資産合計').cells[5], '100.0%');
+  assert.equal(bsT.columns[0].label, '勘定科目', '勘定科目は左端');
+  assert.deepEqual(bsT.columns.map((c) => c.label), ['勘定科目', '前期繰越', '借方金額', '貸方金額', '当期残高', '構成比']);
   assert.equal(find(plT.rows, '消耗品費').cells[5], '25.0%');
   // 段階利益（損益）：売上総損益金額〜当期純損益金額を残高の欄に書き、構成比は売上高に対する割合
   assert.equal(find(plT.rows, '売上総損益金額').cells[4], '40,000');
@@ -243,15 +249,26 @@ test('合計残高試算表：借方合計＝繰越（借方残の科目）＋�
   const tb = trialBalance({ accounts: b.accounts, period: b.period, journals });
   const cash = tb.rows.find((r) => r.account.name === '現金');
   assert.deepEqual(totalsOf(cash), { debitTotal: 140000, creditTotal: 10000, debitBalance: 130000, creditBalance: 0 });
-  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越' });
+  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'total' });
   assert.equal(doc.title, '合計残高試算表');
-  assert.deepEqual(doc.blocks[1].columns.map((c) => c.label), ['借方残高', '借方合計', '勘定科目', '貸方合計', '貸方残高']);
-  assert.deepEqual(doc.blocks.filter((x) => x.type === 'heading').map((x) => x.text), ['貸借対照表', '損益計算書', '全科目の合計']);
+  // 勘定科目を左端に置き、合計・残高の見出しの下に借方・貸方
+  assert.deepEqual(doc.blocks[1].columns.map((c) => c.label), ['勘定科目', '借方', '貸方', '借方', '貸方']);
+  assert.deepEqual(doc.blocks[1].headGroups.map((g) => [g.label, g.from, g.span]), [['合　計', 1, 2], ['残　高', 3, 2]]);
+  // 部ごとに改ページし、ページの表題に部の名前を入れる
+  assert.deepEqual(doc.blocks.filter((x) => x.type === 'heading' && x.caption).map((x) => x.title), ['合計残高試算表（貸借対照表）', '合計残高試算表（損益計算書）']);
+  assert.equal(doc.blocks.filter((x) => x.type === 'heading' && !x.caption).at(-1).text, '全科目の合計');
   const total = doc.blocks.at(-1).rows.at(-1).cells;
-  assert.equal(total[2].text, '合計');
-  assert.equal(total[1], total[3], '借方合計＝貸方合計');
-  assert.equal(total[0], total[4], '借方残高＝貸方残高');
+  assert.equal(total[0].text, '合計');
+  assert.equal(total[1], total[2], '借方合計＝貸方合計');
+  assert.equal(total[3], total[4], '借方残高＝貸方残高');
   assert.equal(total[1], fmt(140000 + 10000 + 0));
+  // 貸借対照表のページ：当期純損益金額は貸方残高の欄。負債・純資産合計の貸方残高は資産合計の借方残高と同じ
+  const label = (r) => r.cells[0]?.text ?? r.cells[0];
+  const bsRows = doc.blocks[1].rows;
+  assert.deepEqual(bsRows.find((r) => label(r) === '当期純損益金額').cells.slice(1), ['', '', '', '30,000']);
+  assert.equal(bsRows.find((r) => label(r) === '負債・純資産合計').cells[4], bsRows.find((r) => label(r) === '資産合計').cells[3]);
+  const pages = layoutDocument(doc);
+  assert.equal(pages.length, 2, '貸借対照表と損益計算書は別のページ');
 });
 
 test('貸借対照表（勘定式）：左に資産、右に負債・純資産。最後の行で両方の合計をそろえる', async () => {

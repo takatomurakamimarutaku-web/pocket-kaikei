@@ -5,13 +5,14 @@
 //   - 区分の科目が1つだけなら、その金額を右の列に書く（内訳と合計が同じになるため）
 //   - 売上原価・材料費に期末の棚卸高（評価勘定）があれば、その前に「合計」（個人は「小計」）の行を入れ、
 //     期末の棚卸高は差し引く金額として正の数で書く
+//   - 製造原価報告書の材料費・労務費・製造経費は、科目を左の列に書き、区分の最後に「当期材料費」「当期労務費」「当期製造経費」の行（右の列）を立てる
 // 法人の段階利益の名前は会社計算規則 第89条〜第94条の表示（売上総利益金額・営業利益金額・経常利益金額・
 // 税引前当期純利益金額・当期純利益金額）。零未満のときは「売上総損失金額」などとし、金額は零から差し引いた額（正の数）で書く
 // 貸借対照表の純資産の部（法人）は会社計算規則 第76条の区分（株主資本 › 資本金・資本剰余金・利益剰余金〔その他利益剰余金〕）
 //
 // 行：{ kind, label, level, inner, outer, rule }
 //   kind：part（資産の部などの見出し）・heading（【区分】）・heading2・heading3（区分の中の区分）・line（科目）・note（うち当期純利益）・
-//         calc（合計・期首棚卸高などの計算の行）・profit（段階利益）・net（当期純利益金額などの最後の行）・total（負債合計など）・grand（資産合計など）
+//         calc（合計・期首棚卸高・当期材料費〔sum: true〕などの計算の行）・profit（段階利益）・net（当期純利益金額などの最後の行）・total（負債合計など）・grand（資産合計など）
 //   level：字下げの段（0〜3）。inner：左の列の金額、outer：右の列の金額（無ければ null）。rule：右の列の金額の上の線（over）・二重線（double）
 import { isContra } from './accounts.js';
 
@@ -36,6 +37,9 @@ export function corporateProfit(label, amount) {
 
 // 期末の棚卸高を差し引く前に「合計」を入れる区分（売上原価・材料費・仕掛品）
 const COST_GROUPS = ['cost_of_sales', 'mfg_materials', 'mfg_wip'];
+// 製造原価報告書の材料費・労務費・製造経費：区分の合計は最後の科目の行に書かず、「当期材料費」などの行を別に立てて右の列に書く
+// （中小企業庁・会計ソフト各社の製造原価報告書の様式、財務諸表等規則の製造原価明細書の並び）
+const MFG_SUM_GROUPS = ['mfg_materials', 'mfg_labor', 'mfg_overhead'];
 // 見出しを付けない区分（法人税等は「法人税、住民税及び事業税」の行だけを書く）
 const HEADLESS_GROUPS = ['income_taxes'];
 
@@ -62,7 +66,9 @@ function groupLines(it, { showZero, level, individual }) {
     if (l.note) out.push({ ...row('note', l.note.label, level + 1, l.note.amount), paren: true });
   });
   const items = out.filter((r) => r.kind === 'line');
-  if (items.length === 1 && !withCalc) {
+  if (items.length && it.groups?.some((g) => MFG_SUM_GROUPS.includes(g))) {
+    out.push({ ...row('calc', `当期${it.label}`, level, null, it.total), sum: true });
+  } else if (items.length === 1 && !withCalc) {
     items[0].outer = it.total;
     items[0].inner = null;
   } else if (items.length) {

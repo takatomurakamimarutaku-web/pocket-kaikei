@@ -1,7 +1,8 @@
 // 月次推移表（純粋関数）。損益は月ごとの発生額、貸借は月末残高
 // 区分・段階利益の計算は statements.js をそのまま使い、決算書と同じ数字になるようにする
-import { isBsGroup, compareAccounts, GROUP_BY_ID } from './accounts.js';
-import { trialBalance, openingDcMap, toNormal } from './ledger.js';
+import { isBsGroup, compareAccounts, GROUP_BY_ID, isContra } from './accounts.js';
+import { trialBalance, openingDcMap, toNormal, carriedLabel } from './ledger.js';
+import { trialRows } from './trial-rows.js';
 import { incomeStatement, balanceSheet, closingRows, manufacturingReport } from './statements.js';
 import { monthsInPeriod, monthRange } from './period.js';
 
@@ -74,6 +75,46 @@ export function monthlyManufacturing({ accounts, period, journals }) {
 }
 
 /**
+ * 月次推移の行（決算書と同じ並び）：区分の見出し・科目・当期材料費などの合計・当期総製造費用・仕掛品棚卸高・当期製品製造原価
+ * 材料費に期末材料棚卸高（評価勘定）があれば、その前に「合計」の行を入れ、期末の棚卸高は差し引く額として正の数で書く
+ * @param {Array} items monthly.js の monthlyManufacturing の items（各行に values と total）
+ * @returns {Array<{ kind, label, values: number[] }>} values の最後は期間の合計
+ */
+export function manufacturingMonthlyRows(items, { showZero = false } = {}) {
+  const vec = (x) => [...x.values, x.total];
+  const neg = (v) => v.map((n) => 0 - n);
+  const rows = [];
+  for (const it of items) {
+    if (it.type === 'group') {
+      const lines = it.lines.filter((l) => showZero || !isAllZero(l.values));
+      if (!lines.length) continue;
+      rows.push({ kind: 'group', label: it.label });
+      const firstContra = lines.findIndex((l) => isContra(l.account));
+      lines.forEach((l, i) => {
+        if (firstContra > 0 && i === firstContra) {
+          const before = lines.slice(0, firstContra).map(vec);
+          rows.push({ kind: 'calc', label: '合計', values: before[0].map((_, k) => before.reduce((s, v) => s + v[k], 0)) });
+        }
+        rows.push({ kind: 'line', label: l.account.name, account: l.account, values: firstContra > 0 && i >= firstContra ? neg(vec(l)) : vec(l) });
+      });
+      rows.push({ kind: 'subtotal', label: `当期${it.label}`, values: vec(it) });
+      continue;
+    }
+    if (it.plain) {
+      if (showZero || !isAllZero(it.values)) rows.push({ kind: 'calc', label: it.label, values: it.deduct ? neg(vec(it)) : vec(it) });
+      continue;
+    }
+    // 合計（当期総製造費用＋期首仕掛品棚卸高）は期首仕掛品棚卸高があるときだけ
+    if (it.calc) {
+      if (showZero || rows.at(-1)?.label === '期首仕掛品棚卸高') rows.push({ kind: 'calc', label: it.label, values: vec(it) });
+      continue;
+    }
+    rows.push({ kind: it.strong ? 'total' : 'profit', label: it.label, values: vec(it), strong: Boolean(it.strong) });
+  }
+  return rows;
+}
+
+/**
  * 貸借の月次推移（各月末の残高）
  * @returns {{ months: string[], assets: Array, liabilities: Array, balanced: boolean[] }}
  */
@@ -118,8 +159,9 @@ export function isAdjusting(journal) {
  *   separateAdjusting：決算整理の仕訳を月から外し、「決算整理」の列にまとめる（合計には含める）
  * @param {{ accounts, period, journals, fromMonth?, toMonth?, quarters?, halves?, separateAdjusting? }} p
  * @returns {{ columns: Array<{ key, label, type: 'opening'|'month'|'quarter'|'half'|'adjust'|'total' }>,
- *   rows: Array<{ account, values: number[] }>, groups: Array<{ group, rows, values }> }}
+ *   rows: Array<{ account, values: number[], balances: number[], flows: number[] }>, groups: Array<{ group, rows, values }> }}
  *   values は columns と同じ並びで、科目の残高側の金額
+ *   balances・flows：列ごとの残高（その列の末日）と発生額（繰越の列は繰越残高）。借方をプラスにした金額で、科目の区分にかかわらず両方持つ
  */
 export function monthlyTrialBalance({ accounts, period, journals, fromMonth, toMonth, quarters = false, halves = false, separateAdjusting = false }) {
   const all = monthsInPeriod(period);
@@ -176,16 +218,20 @@ export function monthlyTrialBalance({ accounts, period, journals, fromMonth, toM
     e.months.reduce((s, v, i) => (cum[i] = s + v), e.opening);
     const endBalance = (cum.at(-1) ?? e.opening) + e.adjust;
     const occurred = e.months.reduce((s, v) => s + v, 0) + e.adjust;
-    const values = plan.map((c) => {
-      let v;
-      if (c.type === 'opening') v = e.opening;
-      else if (c.type === 'month') v = bs ? cum[c.at] : e.months[c.at];
-      else if (c.type === 'quarter' || c.type === 'half') v = bs ? cum[c.at] : c.span.reduce((s, k) => s + e.months[k], 0);
-      else if (c.type === 'adjust') v = bs ? endBalance : e.adjust;
-      else v = bs ? endBalance : occurred;
-      return toNormal(v, account);
+    const balances = plan.map((c) => {
+      if (c.type === 'opening') return e.opening;
+      if (c.type === 'month' || c.type === 'quarter' || c.type === 'half') return cum[c.at];
+      return endBalance;
     });
-    return { account, values };
+    const flows = plan.map((c) => {
+      if (c.type === 'opening') return e.opening;
+      if (c.type === 'month') return e.months[c.at];
+      if (c.type === 'quarter' || c.type === 'half') return c.span.reduce((s, k) => s + e.months[k], 0);
+      if (c.type === 'adjust') return e.adjust;
+      return occurred;
+    });
+    const values = (bs ? balances : flows).map((v) => toNormal(v, account));
+    return { account, values, balances, flows };
   });
   // 区分ごとの小計（区分の向きで足す。評価勘定は差し引く）
   const groups = [];
@@ -197,4 +243,71 @@ export function monthlyTrialBalance({ accounts, period, journals, fromMonth, toM
     r.values.forEach((v, i) => (g.values[i] += sign * v));
   }
   return { columns, rows, groups };
+}
+
+/**
+ * 月次推移試算表を決算書の形にする（市販の会計ソフトの推移試算表と同じく、貸借対照表・損益計算書・製造原価の部に分ける）
+ *   列ごとに残高試算表の行（trial-rows.js）を作り、同じ位置の行を値の配列にまとめる。区分の合計・段階利益・当期純損益は残高試算表・決算書と同じ計算
+ *   貸借対照表：各列の末日の残高。純資産に期首からの当期純損益金額を入れ、負債・純資産合計で終わる。合計の列は最後の月と同じなので出さず、
+ *     決算整理の列は「決算整理後」の残高
+ *   損益計算書・製造原価：各列の発生額。繰越の列（期の途中から見るときの、開始月の前日までの累計）は金額があるときだけ出す
+ * @param {object} p monthlyTrialBalance の引数
+ * @param {{ entityType: string, white?: boolean, showZero?: boolean }} opts
+ * @returns {{ bs: Part, pl: Part, mfg: Part }}
+ *   Part：{ columns: Array<{ key, label, type }>, rows: Array<{ kind, label, values?: number[], strong?, grand?, account? }> }
+ *   kind：group（区分の見出し。values なし）・line（科目）・calc・income・subtotal・total・profit（trial-rows.js と同じ意味）
+ */
+export function monthlyTrialStatements(p, { entityType, white = false, showZero = false }) {
+  const m = monthlyTrialBalance(p);
+  const all = m.columns.map((_, i) => i);
+  const bsCols = all.filter((i) => m.columns[i].type !== 'total');
+  const used = (arr, cols) => showZero || cols.some((i) => arr[i] !== 0);
+  // 金額のある科目だけで列ごとの残高試算表を作る（どの列でも同じ科目なので、行の並びがそろう）
+  const bsAccounts = m.rows.filter((r) => !isBsGroup(r.account.group) || used(r.balances, bsCols));
+  const plAccounts = m.rows.filter((r) => !isBsGroup(r.account.group) && used(r.flows, all));
+  const fake = (r, dc) => ({ account: r.account, opening: 0, debit: 0, credit: 0, closing: toNormal(dc, r.account), dc, subs: [] });
+  const opts = { entityType, white, showZero: true };
+  const valueOf = (r) => {
+    if (r.kind === 'account') return r.row.closing;
+    if (r.kind === 'subtotal' || r.kind === 'total') return r.sum.closing;
+    if (r.kind === 'income') return r.closing;
+    return r.amount;
+  };
+  const merge = (perCol) =>
+    perCol[0].map((r, k) => {
+      const out = { kind: r.kind === 'account' ? 'line' : r.kind, label: r.label };
+      if (r.kind === 'account') out.account = r.row.account;
+      if (r.strong) out.strong = true;
+      if (r.grand) out.grand = true;
+      if (r.kind !== 'group') out.values = perCol.map((rows) => valueOf(rows[k]));
+      return out;
+    });
+  // 計算の行（当期純損益金額・当期製品製造原価）がすべて0なら省く（0円の科目も出すときは残す）
+  // 見出しの後に科目などの行が無くなった区分は見出しも省き、科目の行が1つも無い部は空にする
+  const content = (r) => r && (r.kind === 'line' || r.kind === 'calc' || r.kind === 'income');
+  const tidy = (rows) => {
+    const kept = rows.filter((r) => showZero || !(r.kind === 'income' || r.kind === 'calc') || r.values.some((v) => v !== 0));
+    const out = kept.filter((r, k) => r.kind !== 'group' || content(kept[k + 1]));
+    return out.some(content) ? out : [];
+  };
+  const bsPer = bsCols.map((i) => trialRows({ rows: bsAccounts.map((r) => fake(r, r.balances[i])) }, opts).bs.rows);
+  const plPer = all.map((i) => trialRows({ rows: plAccounts.map((r) => fake(r, r.flows[i])) }, opts));
+  const startOf = (month) => (month ? monthRange(p.period, month, month).from : p.period.startDate);
+  const carried = carriedLabel(p.period, startOf(m.columns[1]?.key));
+  const label = (c, part) => {
+    if (c.type === 'opening') return carried;
+    if (c.type === 'adjust' && part === 'bs') return '決算整理後';
+    return c.label;
+  };
+  const bs = { columns: bsCols.map((i) => ({ ...m.columns[i], label: label(m.columns[i], 'bs') })), rows: tidy(merge(bsPer)) };
+  // 損益計算書・製造原価：繰越の列は金額があるときだけ
+  const plPart = (key) => {
+    const rows = tidy(merge(plPer.map((t) => t[key].rows)));
+    const keep = all.filter((i) => m.columns[i].type !== 'opening' || rows.some((r) => r.values && r.values[i] !== 0));
+    return {
+      columns: keep.map((i) => ({ ...m.columns[i], label: label(m.columns[i], key) })),
+      rows: rows.map((r) => (r.values ? { ...r, values: keep.map((i) => r.values[i]) } : r)),
+    };
+  };
+  return { bs, pl: plPart('pl'), mfg: plPart('mfg') };
 }

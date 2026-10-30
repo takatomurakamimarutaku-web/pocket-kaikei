@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { corporateProfit, incomeStatementRows, balanceSheetRows, singleAmount } from '../js/fs-rows.js';
-import { trialRows } from '../js/trial-rows.js';
+import { trialRows, netIncomeOf } from '../js/trial-rows.js';
 import { buildStatements, manufacturingReport, closingRows, balanceSheet } from '../js/statements.js';
 import { trialBalance } from '../js/ledger.js';
 import { trialBalanceDoc, financialStatementsDoc, FINANCIAL_PARTS, compareStatementDoc, coverBlock, periodNumberText } from '../js/print-forms.js';
@@ -166,8 +166,16 @@ test('残高試算表の行：損益計算書の科目は決算書の順に並�
   assert.equal(t.pl.base, 400_000, '構成比の分母は売上高');
   // 部に区分が1つだけ（純資産）なら、区分の合計は部の合計と同じなので省く
   assert.equal(t.bs.rows.filter((r) => r.kind === 'subtotal' && r.label === '純資産合計').length, 0);
-  assert.deepEqual(t.bs.rows.filter((r) => r.kind === 'total').map((r) => r.label), ['資産合計', '負債合計', '純資産合計']);
+  assert.deepEqual(t.bs.rows.filter((r) => r.kind === 'total').map((r) => r.label), ['資産合計', '負債合計', '純資産合計', '負債・純資産合計']);
   assert.equal(t.bs.base, find(t.bs.rows, '資産合計').sum.closing);
+  // 純資産に当期純損益金額（損益計算書と同じ額）を入れ、資産合計＝負債・純資産合計
+  const income = t.bs.rows.find((r) => r.kind === 'income');
+  assert.deepEqual([income.label, income.closing], ['当期純損益金額', pl.netIncome]);
+  assert.equal(netIncomeOf(tb).closing, pl.netIncome);
+  assert.equal(t.bs.rows.at(-1).grand, true);
+  assert.equal(t.bs.rows.at(-1).sum.closing, find(t.bs.rows, '資産合計').sum.closing);
+  const equityAccounts = t.bs.rows.filter((r) => r.kind === 'account' && r.row.account.group === 'equity').reduce((s, r) => s + r.sign * r.row.closing, 0);
+  assert.equal(find(t.bs.rows, '純資産合計').sum.closing, equityAccounts + pl.netIncome);
   assert.equal(t.grand.debitTotal, t.grand.creditTotal, '全科目の借方合計＝貸方合計');
   assert.equal(t.grand.debitBalance, t.grand.creditBalance, '全科目の借方残高＝貸方残高');
   assert.equal(t.mfg.rows.length, 0, '製造原価の科目が無ければ製造原価の表は出さない');
@@ -190,30 +198,38 @@ test('残高試算表の行（製造業）：売上原価に当期製品製造�
   assert.equal(t.mfg.base, 160_000);
   // 製造原価の科目は損益計算書の表に重ねて出さない
   assert.ok(!t.pl.rows.some((r) => r.kind === 'account' && r.label === '材料仕入高'));
-  // 印刷：合計残高試算表は 貸借対照表・損益計算書・製造原価・全科目の合計 の順。全科目の合計は貸借が一致する
-  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越' });
-  assert.deepEqual(doc.blocks.filter((x) => x.type === 'heading').map((x) => x.text), ['貸借対照表', '損益計算書', '製造原価', '全科目の合計']);
+  // 印刷：合計残高試算表は 貸借対照表・損益計算書・製造原価 の順に部ごとに改ページし、最後に全科目の合計。全科目の合計は貸借が一致する
+  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'total' });
+  assert.deepEqual(doc.blocks.filter((x) => x.type === 'heading').map((x) => x.title ?? x.text), ['合計残高試算表（貸借対照表）', '合計残高試算表（損益計算書）', '合計残高試算表（製造原価）', '全科目の合計']);
+  assert.equal(layoutDocument(doc).length, 3);
   const total = doc.blocks.at(-1).rows[0].cells;
-  assert.equal(total[1], total[3]);
+  assert.equal(total[1], total[2]);
+  assert.equal(total[3], total[4]);
   // 当期製品製造原価（売上原価の中の行）は借方合計・借方残高の欄、段階利益は貸方残高の欄
   const pl = doc.blocks[3].rows;
   const cell = (row, i) => (typeof row.cells[i] === 'object' ? row.cells[i].text : row.cells[i]);
-  const mfgLine = pl.find((r) => cell(r, 2) === '当期製品製造原価');
-  assert.deepEqual([cell(mfgLine, 0), cell(mfgLine, 1), cell(mfgLine, 3), cell(mfgLine, 4)], ['160,000', '160,000', '', '']);
-  const gross = pl.find((r) => cell(r, 2) === '売上総損益金額');
-  assert.deepEqual([cell(gross, 0), cell(gross, 4)], ['', '140,000']);
+  const mfgLine = pl.find((r) => cell(r, 0) === '当期製品製造原価');
+  assert.deepEqual([cell(mfgLine, 1), cell(mfgLine, 2), cell(mfgLine, 3), cell(mfgLine, 4)], ['160,000', '', '160,000', '']);
+  const gross = pl.find((r) => cell(r, 0) === '売上総損益金額');
+  assert.deepEqual([cell(gross, 3), cell(gross, 4)], ['', '140,000']);
+  // 印刷する部を選べる（全科目の合計は全部を印刷するときだけ）
+  const only = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', parts: ['mfg'] });
+  assert.deepEqual(only.blocks.filter((x) => x.type === 'heading').map((x) => x.title ?? x.text), ['残高試算表（製造原価）']);
 });
 
 test('合計残高試算表：損失の段階利益は借方残高の欄に正の数で書く', () => {
   const b = makeBook('corporation');
   const journals = [b.j('2026-02-01', [['消耗品費', 8_000]], [['現金', 8_000]])];
   const tb = trialBalance({ accounts: b.accounts, period: b.period, journals });
-  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越' });
-  const net = doc.blocks[3].rows.find((r) => r.cells[2]?.text === '当期純損益金額');
-  assert.deepEqual([net.cells[0], net.cells[4]], ['8,000', '']);
+  const doc = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'total' });
+  const net = doc.blocks[3].rows.find((r) => r.cells[0]?.text === '当期純損益金額');
+  assert.deepEqual([net.cells[3], net.cells[4]], ['8,000', '']);
   assert.equal(net.kind, 'total');
+  // 貸借対照表の当期純損益金額（損失）も借方残高の欄
+  const bsNet = doc.blocks[1].rows.find((r) => r.cells[0]?.text === '当期純損益金額');
+  assert.deepEqual([bsNet.cells[3], bsNet.cells[4]], ['8,000', '']);
   const bal = trialBalanceDoc(tb, { head: {}, entityType: 'corporation', carriedLabel: '前期繰越', format: 'balance' });
-  const netBal = bal.blocks[3].rows.find((r) => r.cells[0] === '当期純損益金額');
+  const netBal = bal.blocks[3].rows.find((r) => r.cells[0]?.text === '当期純損益金額');
   assert.equal(netBal.cells[4], '△8,000', '残高試算表は残高の欄に△で書く');
 });
 
@@ -225,6 +241,11 @@ test('残高試算表の行（個人）：差引金額と青色申告特別控�
   assert.deepEqual(blue.pl.rows.filter((r) => r.kind === 'profit').map((r) => [r.label, r.amount]), [['差引金額', 120_000], ['差引金額', 100_000], ['青色申告特別控除前の所得金額', 100_000]]);
   assert.equal(trialRows(tb, { entityType: 'individual', white: true }).pl.rows.at(-1).label, '専従者控除前の所得金額');
   assert.equal(find(blue.bs.rows, '資本合計')?.kind ?? 'total', 'total');
+  // 個人：資本に青色申告特別控除前の所得金額を入れ、負債・資本合計で終わる
+  const income = blue.bs.rows.find((r) => r.kind === 'income');
+  assert.deepEqual([income.label, income.closing], ['青色申告特別控除前の所得金額', 100_000]);
+  assert.equal(blue.bs.rows.at(-1).label, '負債・資本合計');
+  assert.equal(blue.bs.rows.at(-1).sum.closing, find(blue.bs.rows, '資産合計').sum.closing);
 });
 
 test('決算書を1冊にする印刷：帳票ごとに改ページし、各ページに表題と期間。個別注記表のページは単位を書かない', () => {
