@@ -28,7 +28,7 @@
 - `money.js`：`AMOUNT_UNITS`・`ROUNDINGS`・`toUnit`・`formatAmount`・`unitCaption`・`normalizeUnit`（純粋関数、`test/amount-unit.test.js`）
 - `ui.js`：`amountCell` は今の表示単位（`setAmountUnit`）で整形する。`app.js` が画面を開くたびに円へ戻すので、単位の切替を置いた画面の中だけで効く
 - `views/report-common.js`：`unitPicker`（切替の部品）と `unitPrintOptions`（印刷条件）
-- `print-forms.js`：`trialBalanceDoc`・`statementDoc`・`balanceSheetAccountDoc` に `unit` を足した（既定は円で、出力は変わらない）
+- `print-forms.js`：`trialBalanceDoc`・`statementDoc`・`balanceSheetAccountDoc` に `unit` を足した（既定は円で、出力は変わらない）。v0.59.0 で決算書は `incomeStatementDoc`・`balanceSheetReportDoc`・`balanceSheetAccountDoc`・`financialStatementsDoc` に作り直した（`docs/spec-phase3-statement-forms.md`）
 
 ## 出典
 

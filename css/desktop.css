@@ -175,3 +175,6 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 4
 .fs-side .fs-table:first-child { border-top: 0; }
 .fs-side:first-child { padding-right: 18px; }
 .fs-side + .fs-side { padding: 0 0 0 18px; border-top: 0; border-left: 1px solid var(--text); }
+/* 残高試算表：貸借対照表・損益計算書・製造原価の表で列の幅をそろえる */
+.tb-trial { table-layout: fixed; }
+.tb-trial thead th:first-child { width: 34%; }
