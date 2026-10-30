@@ -41,6 +41,7 @@ export async function render({ app, outlet, query }) {
   }
 
   // 印刷：A4横の推移表。印刷条件：損益・貸借（両方も）・0円の科目・金額の単位
+  // 両方を印刷するときは、損益計算書と貸借対照表でページを分け、それぞれの表題にする
   const toRows = (items, total) => {
     const rows = [];
     for (const item of items) {
@@ -64,17 +65,21 @@ export async function render({ app, outlet, query }) {
     ],
     build: (v) => {
       printZero = v.zero;
+      const both = v.mode === 'both';
       const sections = [];
-      if (v.mode !== 'bs') sections.push({ caption: v.mode === 'both' ? '損益（月ごとの発生額）' : '', rows: toRows(income.items, true) });
+      if (v.mode !== 'bs') sections.push({ title: both ? '月次推移表（損益計算書）' : '', caption: both ? '各月の発生額' : '', columns: [...income.months.map(monthLabel), '合計'], rows: toRows(income.items, true) });
       if (v.mode !== 'pl') {
         balance = balance || monthlyBalance(ctx);
-        sections.push({ caption: '資産の部（月末残高）', rows: toRows(balance.assets, false) }, { caption: individual ? '負債・資本の部（月末残高）' : '負債・純資産の部（月末残高）', rows: toRows(balance.liabilities, false) });
+        const columns = balance.months.map(monthLabel);
+        sections.push(
+          { title: both ? '月次推移表（貸借対照表）' : '', caption: '資産の部（月末残高）', columns, rows: toRows(balance.assets, false) },
+          { caption: individual ? '負債・資本の部（月末残高）' : '負債・純資産の部（月末残高）', columns, rows: toRows(balance.liabilities, false) },
+        );
       }
-      const months = v.mode === 'bs' ? (balance || monthlyBalance(ctx)).months : income.months;
       return monthlyDoc({
         title: v.mode === 'bs' ? '月次推移表（貸借対照表）' : v.mode === 'pl' ? '月次推移表（損益計算書）' : '月次推移表',
         head: docHead({ settings, period, printedAt }),
-        columns: [...months.map(monthLabel), ...(v.mode === 'bs' ? [] : ['合計'])],
+        columns: [],
         sections,
         unit: normalizeUnit(v),
         orientation: v.orientation,

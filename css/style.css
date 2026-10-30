@@ -703,6 +703,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .monthly .mt-acc { font-weight: 500; padding-left: 12px; }
 .mt-strong th, .mt-strong td { font-weight: 800; background: var(--surface-2); }
 .monthly .mt-strong th:first-child { background: var(--surface-2); }
+.monthly .mt-head th:first-child { font-size: 0.78rem; font-weight: 800; }
+.mt-total th, .mt-total td { font-weight: 800; background: var(--surface-2); border-top: 1px solid color-mix(in srgb, var(--text) 30%, transparent); }
+.monthly .mt-total th:first-child { background: var(--surface-2); }
+.mt-profit th, .mt-profit td { font-weight: 800; background: color-mix(in srgb, var(--primary) 7%, var(--surface)); border-top: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); }
+.monthly .mt-profit th:first-child { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.monthly .mt-calc th:first-child { color: var(--muted); font-weight: 500; padding-left: 12px; }
+.mtb .mt-strong th, .mtb .mt-strong td { border-top: 3px double color-mix(in srgb, var(--text) 40%, transparent); }
 /* ---- 部門 ---- */
 .dep-row { flex-wrap: wrap; gap: 2px 6px; }
 .dep-head { display: flex; align-items: center; gap: 8px; flex-basis: 100%; min-width: 0; }
@@ -1439,6 +1446,11 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 /* スマホ：借方・貸方の列を隠す（勘定科目・繰越・残高）。繰越の列が無い表は2・3列目が借方・貸方 */
 .tb-compact:not(.tb-no-open) tr > :nth-child(3), .tb-compact:not(.tb-no-open) tr > :nth-child(4) { display: none; }
 .tb-compact.tb-no-open tr > :nth-child(2), .tb-compact.tb-no-open tr > :nth-child(3) { display: none; }
+.tb-compact .tb-rate { display: none; }
+.tb-trial .tb-rate { color: var(--muted); font-size: 0.74rem; font-weight: 500; }
+.tb-trial thead th.tb-rate { min-width: 4.6em; }
+.tb-trial .tb-lte th, .tb-trial .tb-lte td { border-top: 3px double color-mix(in srgb, var(--text) 45%, transparent); }
 .tb-grand { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 10px; align-items: baseline; margin: 0 0 var(--sp-2); padding: 10px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); font-variant-numeric: tabular-nums; font-weight: 800; }
-.tb-grand-label { font-size: 0.76rem; color: var(--muted); font-weight: 700; }
+.tb-grand-label { font-size: 0.76rem; color: var(--muted); font-weight: 700; white-space: nowrap; }
+@media (max-width: 560px) { .tb-grand { grid-template-columns: auto 1fr; } }
 .tb-grand .num { text-align: right; }
