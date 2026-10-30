@@ -1363,3 +1363,11 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .tb-grand { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 10px; align-items: baseline; margin: 0 0 var(--sp-2); padding: 10px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--card-border); font-variant-numeric: tabular-nums; font-weight: 800; }
 .tb-grand-label { font-size: 0.76rem; color: var(--muted); font-weight: 700; }
 .tb-grand .num { text-align: right; }
+
+/* 移行パック：移行先のコードの対応表 */
+.tc-codes { margin: 0.5rem 0 0.75rem; }
+.tc-codes-title { margin: 0 0 0.25rem; }
+.tc-codes-head { margin: 0.75rem 0 0.25rem; font-weight: 600; }
+.tc-code-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border, #e5e5e5); }
+.tc-code-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.9rem; }
+input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
