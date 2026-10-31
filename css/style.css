@@ -941,6 +941,11 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .ch-line.ch-plan { stroke-dasharray: 5 4; }
 .ch-dot.ch-plan { fill: var(--surface); stroke: var(--chart-2); }
 .ch-sw-plan { background: color-mix(in srgb, var(--chart-1) 50%, var(--surface)); }
+.ch-line-1 { stroke: var(--chart-1); }
+.ch-dot-1 { fill: var(--chart-1); }
+.ch-dot-1.ch-plan { fill: var(--surface); stroke: var(--chart-1); }
+.ch-sw-line1 { background: var(--chart-1); height: 3px; border-radius: 2px; }
+.ch-sw-dash { height: 0; border-top: 2px dashed var(--muted); border-radius: 0; background: none; }
 .cash-plan thead th .cp-kind { display: block; font-size: 0.66rem; font-weight: 600; }
 .cash-plan th.is-plan, .cash-plan td.is-plan { background: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
 .cash-plan thead th.is-plan .cp-kind { color: var(--primary-strong); }
@@ -1608,3 +1613,17 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .advisor-grid tr.fs-r-group td { background: inherit; }
 .advisor-tips { display: grid; gap: 6px; margin: var(--sp-2) 0; padding-left: 1.2em; list-style: disc; }
 .advisor-share td.muted { white-space: normal; min-width: 10em; }
+.advisor-annual-pick { display: grid; gap: 4px; margin: 0 0 var(--sp-2); }
+.advisor-annual-pick select { max-width: 100%; }
+/* 事業承継：引き継ぐときの税金の比較 */
+.st-options { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.st-option p { margin: 4px 0 0; }
+.st-option.is-disabled { opacity: 0.6; }
+.st-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.st-bars { display: grid; gap: 3px; margin-top: 6px; }
+.st-bar { display: block; height: 8px; border-radius: 4px; }
+.st-bar-tax, .st-sw-tax { background: var(--chart-2); }
+.st-bar-deferred, .st-sw-deferred { background: color-mix(in srgb, var(--chart-2) 35%, var(--surface)); }
+.st-bar-cash, .st-sw-cash { background: var(--chart-1); }
+.sim-check { display: flex; align-items: center; gap: 8px; }
+.sim-inputs-sub[hidden] { display: none; }

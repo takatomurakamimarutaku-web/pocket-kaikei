@@ -9,7 +9,7 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // キャッシュ対象に含めるべきディレクトリと、対象外とするファイル
 const APP_DIRS = ['js', 'css', 'icons', 'img'];
 // 外部URLのうち許可するもの：SVG の名前空間と、税法の出典として載せる国税庁・e-Tax のページ（読み込みはしない）
-const ALLOWED_URLS = ['http://www.w3.org/2000/svg', 'https://www.nta.go.jp/', 'https://www.e-tax.nta.go.jp/', 'https://kyosai-web.smrj.go.jp/'];
+const ALLOWED_URLS = ['http://www.w3.org/2000/svg', 'https://www.nta.go.jp/', 'https://www.e-tax.nta.go.jp/', 'https://kyosai-web.smrj.go.jp/', 'https://www.chusho.meti.go.jp/'];
 // 外部のライブラリ（同梱したもの）。キャッシュ対象には含めるが、ソースの検査はしない
 const VENDOR_DIR = 'vendor/';
 
