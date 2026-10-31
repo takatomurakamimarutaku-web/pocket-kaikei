@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { duplicateJournals, negativeCashDays, abnormalBalances, suspenseBalances, futureJournals } from '../js/journal-checks.js';
+import { duplicateJournals, negativeCashDays, abnormalBalances, suspenseBalances, futureJournals, assetLikeExpenses } from '../js/journal-checks.js';
 import { makeBook } from './helpers.js';
 
 test('重複の可能性：同じ日付・同じ明細の仕訳を組にする（行の順序は問わない）', () => {
@@ -53,4 +53,24 @@ test('評価勘定は逆残高にしない・仮払金の残り（法人）', ()
   const ab = abnormalBalances({ accounts: b.accounts, period: b.period, journals });
   assert.deepEqual(ab, []);
   assert.deepEqual(suspenseBalances({ accounts: b.accounts, period: b.period, journals }).map((x) => [x.account.name, x.closing]), [['仮払金', 20000]]);
+});
+
+test('固定資産にあたるかもしれない消耗品：消耗品費・事務用品費の借方で10万円以上（期間内だけ・科目名ではなくテンプレートのコードで見分ける）', () => {
+  const b = makeBook('corporation');
+  const journals = [
+    b.j('2026-02-01', [['消耗品費', 99999]], [['現金', 99999]]),
+    b.j('2026-03-01', [['消耗品費', 165000]], [['普通預金', 165000]], 'ノートパソコン'),
+    b.j('2026-04-01', [['事務用品費', 100000]], [['現金', 100000]]),
+    b.j('2026-05-01', [['修繕費', 300000]], [['現金', 300000]]),
+    b.j('2027-01-10', [['消耗品費', 200000]], [['現金', 200000]]), // 期間外
+  ];
+  const res = assetLikeExpenses({ accounts: b.accounts, period: b.period, journals, entityType: 'corporation' });
+  assert.deepEqual(res.map((x) => [x.journal.date, x.line.amount]), [['2026-03-01', 165000], ['2026-04-01', 100000]]);
+  // 科目名を変えても見つける
+  const renamed = b.accounts.map((a) => (a.name === '消耗品費' ? { ...a, name: '備品消耗品' } : a));
+  assert.equal(assetLikeExpenses({ accounts: renamed, period: b.period, journals, entityType: 'corporation' }).length, 2);
+  // 個人は消耗品費（609）
+  const ind = makeBook('individual');
+  const j = ind.j('2026-06-01', [['消耗品費', 120000]], [['現金', 120000]]);
+  assert.equal(assetLikeExpenses({ accounts: ind.accounts, period: ind.period, journals: [j], entityType: 'individual' }).length, 1);
 });

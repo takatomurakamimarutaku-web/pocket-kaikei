@@ -437,7 +437,7 @@ async function putAsset(tx, asset, { split = false } = {}) {
     splitFrom: asset.splitFrom || null,
     splits: Array.isArray(asset.splits) ? asset.splits : [],
   };
-  const errors = validateAsset(record, { entityType: settings?.entityType, accounts });
+  const errors = validateAsset(record, { entityType: settings?.entityType, accounts, filing: settings?.filing });
   if (Object.keys(errors).length) throw new ValidationError(errors);
   const store = tx.objectStore('assets');
   const before = await req(store.get(record.id));

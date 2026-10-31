@@ -9,6 +9,9 @@ import {
   ratesFor,
   NEW_METHOD_FROM,
   smeLimit,
+  smallAssetOptions,
+  smeUsage,
+  SMALL_LIMIT,
   validateAsset,
   depreciationSchedule,
   formatRate,
@@ -38,6 +41,16 @@ const toInt = (v) => {
   return /^\d+$/.test(t) ? Number(t) : null;
 };
 
+/** 仕訳のチェックから開いたとき（#/asset/new?cost=…&date=…&name=…）の初期値 */
+function fromJournal(query) {
+  const out = {};
+  const cost = toInt(query.cost ?? '');
+  if (cost) out.cost = cost;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(query.date ?? '')) out.acquiredOn = out.startedOn = query.date;
+  if (query.name) out.name = String(query.name).slice(0, 40);
+  return out;
+}
+
 export async function render({ app, outlet, params, query = {} }) {
   const { settings, period, accounts, journals, departments } = await app.load();
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
@@ -55,7 +68,7 @@ export async function render({ app, outlet, params, query = {} }) {
     ? { ...original }
     : capexParent
       ? createAsset(capexDefaults(capexParent, defaultDate))
-      : createAsset({ acquiredOn: defaultDate, startedOn: defaultDate, method: individual ? 'straight' : 'declining', usefulLife: 4, businessRatio: 100 });
+      : createAsset({ acquiredOn: defaultDate, startedOn: defaultDate, method: individual ? 'straight' : 'declining', usefulLife: 4, businessRatio: 100, ...fromJournal(query) });
   // 不動産所得だけの人が新しく登録する資産は、償却費の科目を「減価償却費（不動産）」にしておく
   if (!original && !capexParent && settings.realEstate === 'only' && hasRealEstate(settings)) state.expenseAccountId = findByHint(accounts, 're_depreciation')?.id ?? null;
   const byId = new Map(assets.map((a) => [a.id, a]));
@@ -131,6 +144,9 @@ export async function render({ app, outlet, params, query = {} }) {
   const usedMonths = h('input', { id: 'f-used-months', type: 'text', inputmode: 'numeric', maxlength: 2, placeholder: '0' });
   const usedResult = h('p', { class: 'field-hint', 'aria-live': 'polite' });
   const methodHint = h('p', { class: 'field-hint' });
+  // 取得価額で選べる方法（少額・一括償却・少額特例）の案内と、選ぶボタン
+  const costGuide = h('div', { class: 'cost-guide', 'aria-live': 'polite' });
+  const smeEntity = individual ? true : (period.corporateTax?.sme ?? true);
   const rateHint = h('p', { class: 'field-hint' });
   const preview = h('div');
   let startedTouched = Boolean(original);
@@ -198,6 +214,39 @@ export async function render({ app, outlet, params, query = {} }) {
     return { carryOn, carryBook: yen(carryBook.value), carryRevisedBase: method.value === 'declining' ? yen(carryRevised.value) : null };
   }
 
+  /** 取得価額から選べる方法の案内（少額・一括償却・少額特例）。特例を選んだときは、その期間の上限（年300万円）の残りも出す */
+  function paintCostGuide(a) {
+    const pre = parseYen(cost.value || '0');
+    if (!pre.ok || pre.value < 1 || splitLocked || a.method === 'none' || CATEGORY_BY_ID[a.category]?.nonDepreciable) return put(costGuide);
+    const amount = pre.value; // 判定は圧縮前の取得価額（少額・一括償却・特例は圧縮記帳と併用しない）
+    const o = smallAssetOptions({ cost: amount, acquiredOn: a.acquiredOn, entityType: settings.entityType, filing: settings.filing, smeEntity });
+    const names = { small: '少額（全額を経費）', lump3: '一括償却（3年）', sme: '少額特例（全額を経費）' };
+    const choices = o.methods.filter((m) => m !== 'normal');
+    const lines = [];
+    let warn = false;
+    if (!choices.length) lines.push(`取得価額 ${formatYen(amount)}円：通常の減価償却（定額法・定率法）です。`);
+    else lines.push(`取得価額 ${formatYen(amount)}円：${choices.map((m) => names[m]).join('・')}も選べます。`);
+    if (amount >= SMALL_LIMIT && amount < o.sme.limit && !o.sme.ok) lines.push(`少額減価償却資産の特例は${o.sme.reason}。`);
+    if (a.method === 'sme' && amount < SMALL_LIMIT) {
+      warn = true;
+      lines.push('10万円未満のものは特例の対象外です（「少額（全額を経費）」を選びます）。');
+    }
+    const own = periods.find((p) => a.startedOn >= p.startDate && a.startedOn <= p.endDate);
+    if (a.method === 'sme' && own) {
+      const others = assets.filter((x) => x.id !== state.id);
+      const u = smeUsage([...others, a], own);
+      warn ||= u.over;
+      lines.push(`この期間の特例の合計 ${formatYen(u.total)}円／上限 ${formatYen(u.limit)}円${u.over ? '：上限を超えています。超えた資産は通常の償却か一括償却にします' : ''}。`);
+    }
+    put(
+      costGuide,
+      h('p', { class: `field-hint${warn ? ' warn' : ''}`, text: lines.join('') }),
+      choices.length && !choices.includes(a.method)
+        ? h('div', { class: 'chips cost-guide-chips' }, choices.map((m) => h('button', { type: 'button', class: 'chip', text: `${names[m]}にする`, onclick: () => ((method.value = m), paint()) })))
+        : null,
+    );
+  }
+
   function paint() {
     carryWrap.hidden = !usesLife(method.value) || !(startedOn.value && startedOn.value < firstStart);
     revisedWrap.hidden = method.value !== 'declining';
@@ -217,12 +266,15 @@ export async function render({ app, outlet, params, query = {} }) {
       old_straight: '平成19年3月31日以前に使い始めた資産は旧定額法です：（取得価額−残存価額10%）×償却率。償却費の累計が取得価額の95%に達したら、翌年から5年間で1円まで均等に償却します。',
       old_declining: '平成19年3月31日以前に使い始めた資産は旧定率法です：期首の帳簿価額×償却率。償却費の累計が取得価額の95%に達したら、翌年から5年間で1円まで均等に償却します。',
       declining250: '平成19年4月1日〜平成24年3月31日に取得した資産は250%定率法です。最初の年ほど多く償却し、償却保証額を下回った年から改定償却率で償却します。',
-      lump3: '取得価額20万円未満のものを、使い始めた年から3年間、1/3ずつ経費にします（月数で按分しません）。',
+      lump3: individual
+        ? '取得価額20万円未満のものを、使い始めた年から3年間、1/3ずつ経費にします（月数で按分しません）。売却・除却しても3年間は経費にし続けます。'
+        : '取得価額20万円未満のものを、使い始めた事業年度から 取得価額×その事業年度の月数÷36 ずつ損金にします（使い始めた月では按分しません）。売却・除却しても36か月分を終えるまで続けます。申告書に別表十六（八）を付けます。',
       small: '取得価額10万円未満（または使える期間が1年未満）のものは、使い始めた年に全額を経費にします。',
       none: '土地・建設仮勘定・美術品（取得価額100万円以上など）・電話加入権のように、使っても価値が減らない資産は減価償却しません。台帳には取得価額のまま載り、売却・除却したときに台帳から外れます。',
-      sme: `青色申告の中小企業者等が、取得価額${limit / 10000}万円未満のものを使い始めた年に全額を経費にできます（年300万円まで。令和8年4月以後の取得は40万円未満）。`,
+      sme: `${individual ? '青色申告の個人事業主' : '青色申告の中小企業者等'}は、取得価額10万円以上${limit / 10000}万円未満のものを、使い始めた年に全額を経費にできます（年300万円まで。${limit === 400000 ? '令和8年3月までの取得は30万円未満' : '令和8年4月以後の取得は40万円未満'}。従業員${limit === 400000 ? '400' : '500'}人以下の要件があります）。`,
     };
     methodHint.textContent = hints[variant] || hints[a.method] || '';
+    paintCostGuide(a);
     const rates = usesLife(a.method) && a.startedOn && a.acquiredOn ? ratesFor(a) : null;
     const variantName = { old_straight: '旧定額法', old_declining: '旧定率法', declining250: '250%定率法', declining200: '200%定率法', straight: '定額法' }[variant] ?? '';
     rateHint.textContent = rates
@@ -230,7 +282,7 @@ export async function render({ app, outlet, params, query = {} }) {
         ? `${variantName}：償却率 ${formatRate(rates.rate)}・改定償却率 ${rates.revised ? formatRate(rates.revised) : '－'}・保証率 ${rates.guarantee ? formatRate(rates.guarantee, 5) : '－'}`
         : `${variantName}：償却率 ${formatRate(rates.rate)}`
       : '耐用年数は国税庁の耐用年数表で確認してください（例：パソコン4年、普通自動車6年、軽自動車4年）';
-    const errors = validateAsset(a, { entityType: settings.entityType, accounts });
+    const errors = validateAsset(a, { entityType: settings.entityType, accounts, filing: settings.filing });
     if (Object.keys(errors).length) {
       put(preview, h('p', { class: 'muted small', text: '入力を終えると、年ごとの償却費を表示します。' }));
       return;
@@ -482,7 +534,7 @@ export async function render({ app, outlet, params, query = {} }) {
     h('div', { class: 'field-row' }, field('種類', category, { name: 'category' }), field('勘定科目', account, { name: 'accountId' })),
     h('div', { class: 'field-row' }, field('取得日', acquiredOn, { name: 'acquiredOn' }), field('使い始めた日', startedOn, { name: 'startedOn' })),
     field('取得価額（円）', cost, { name: 'cost', hint: 'このアプリは税込経理なので、消費税を含んだ金額で入力します（10万円・20万円などの判定も税込）' }),
-    h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, h('p', { class: 'field-error', role: 'alert' })),
+    h('div', { class: 'field', dataset: { field: 'method' } }, h('label', { class: 'field-label', for: 'f-method', text: '償却の方法' }), method, methodHint, costGuide, h('p', { class: 'field-error', role: 'alert' })),
     lifeWrap,
     structure ? field('構造又は用途（任意）', structure, { name: 'structure' }) : null,
     detail ? field('細目（任意）', detail, { name: 'detail', hint: '別表十六・少額減価償却資産の明細書の「構造」「細目」になります。耐用年数表から選ぶと入ります' }) : null,

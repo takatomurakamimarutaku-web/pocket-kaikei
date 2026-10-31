@@ -1,6 +1,6 @@
 // 固定資産台帳：台帳・増減明細・償却予定・月次償却・取得と除売却を切り替えて見る。状態・科目・種類・部門・文字で絞り込み、集計の単位と並び順を選ぶ
 import { h, put, emptyState, amountCell, saveFile, stackTable, segmented, showToast, confirmDialog, errorBox } from '../ui.js';
-import { assetRegister, smeUsage, depreciationSchedule, methodLabel, usesLife, CATEGORY_BY_ID, ASSET_CATEGORIES, METHODS } from '../depreciation.js';
+import { assetRegister, smallAssetSummary, depreciationSchedule, methodLabel, usesLife, CATEGORY_BY_ID, ASSET_CATEGORIES, METHODS } from '../depreciation.js';
 import {
   registerDetail,
   otherStatus,
@@ -53,7 +53,8 @@ export async function render({ app, outlet, query = {} }) {
   const byId = new Map(assets.map((a) => [a.id, a]));
   // 台帳に出ない資産（償却が終わった・除却した・まだ使っていない）。一部の売却・除却で分けた資産は、分けた期間より前は元の資産に含まれるので出さない
   const others = assets.filter((a) => !shown.has(a.id) && !(a.splitFrom && a.carryOn && period.startDate < a.carryOn)).map((a) => ({ asset: a, status: otherStatus(a, period) }));
-  const sme = smeUsage(assets, period);
+  const smallSum = smallAssetSummary(assets, periods, period);
+  const sme = smallSum.sme;
   const names = { accountById, departmentById };
 
   // 表示の条件（URL に残して、編集から戻ったときも同じ条件で開く）
@@ -439,6 +440,34 @@ export async function render({ app, outlet, query = {} }) {
     return [acqTable, dispTable, disposed.length ? h('p', { class: 'muted small', text: '売却益（△損）＝売却額−売却した日の帳簿価額。除却は帳簿価額がそのまま除却損です。' }) : null, moveTable];
   }
 
+  /** 少額・一括償却・少額特例のまとめ（この期間に1件でもあるときだけ） */
+  function smallView() {
+    const { small, lump3 } = smallSum;
+    if (!small.count && !sme.count && !lump3.count) return null;
+    const item = (label, text, method) => h('li', {}, h('a', { class: 'link', href: `#/assets?method=${method}`, text: label }), `　${text}`);
+    return h(
+      'section',
+      { class: 'panel small-asset-sum' },
+      h('h2', { class: 'section-title', text: '少額・一括償却の資産（この期間）' }),
+      h(
+        'ul',
+        { class: 'plain-list small' },
+        small.count ? item('少額（全額を経費）', `${small.count}件・${formatYen(small.total)}円`, 'small') : null,
+        sme.count ? item('少額減価償却資産の特例', `${sme.count}件・${formatYen(sme.total)}円（上限 ${formatYen(sme.limit)}円${sme.over ? '' : `・残り ${formatYen(sme.limit - sme.total)}円`}）`, 'sme') : null,
+        lump3.count ? item('一括償却資産', `${lump3.count}件・取得価額 ${formatYen(lump3.cost)}円・この期間の償却費 ${formatYen(lump3.amount)}円`, 'lump3') : null,
+      ),
+      sme.over
+        ? h(
+            'p',
+            { class: 'notice' },
+            `少額減価償却資産の特例の合計（${formatYen(sme.total)}円）が、この期間の上限 ${formatYen(sme.limit)}円 を超えています。使い始めた順に足して上限を超える資産（`,
+            sme.overAssets.map((a, i) => [i ? '・' : '', h('a', { class: 'link', href: `#/asset/${encodeURIComponent(a.id)}`, text: a.name })]),
+            '）は、通常の減価償却か一括償却にしてください。',
+          )
+        : null,
+    );
+  }
+
   function paint() {
     const list = details();
     const total = list.reduce((s, d) => s + d.amount, 0);
@@ -460,7 +489,7 @@ export async function render({ app, outlet, query = {} }) {
         ),
         h('p', { class: 'small' }, '決算整理の仕訳は ', h('a', { href: '#/closing', class: 'link', text: '決算・繰越' }), ' の画面から期末日の日付で登録します。'),
       ),
-      sme.over ? h('p', { class: 'notice', text: `少額減価償却資産の特例の合計（${formatYen(sme.total)}円）が、この期間の上限 ${formatYen(sme.limit)}円 を超えています。超える分は通常の減価償却か一括償却にしてください。` }) : null,
+      smallView(),
       st.view === 'register' ? [registerView(list), othersView()] : null,
       st.view === 'movement' ? movementView(list) : null,
       st.view === 'forecast' ? forecastView() : null,

@@ -1,6 +1,6 @@
-// 仕訳のチェック：重複の可能性・残高のマイナス・逆残高・仮払金などの残り・未来の日付・税区分
+// 仕訳のチェック：重複の可能性・残高のマイナス・逆残高・仮払金などの残り・未来の日付・税区分・10万円以上の消耗品
 import { h, put } from '../ui.js';
-import { duplicateJournals, negativeCashDays, abnormalBalances, suspenseBalances, futureJournals } from '../journal-checks.js';
+import { duplicateJournals, negativeCashDays, abnormalBalances, suspenseBalances, futureJournals, assetLikeExpenses } from '../journal-checks.js';
 import { taxChecks } from '../tax-reports.js';
 import { formatYen } from '../money.js';
 import { formatPeriod, todayString } from '../period.js';
@@ -9,7 +9,7 @@ import { journalLabel } from '../journal.js';
 const slash = (d) => d.replaceAll('-', '/');
 
 export async function render({ app, outlet }) {
-  const { period, accounts, subAccounts, journals, accountById, subById } = await app.load();
+  const { settings, period, accounts, subAccounts, journals, accountById, subById } = await app.load();
   const ctx = { accounts, subAccounts, period, journals };
   const name = (accountId, subAccountId) => `${accountById.get(accountId)?.name ?? '（不明な科目）'}${subAccountId ? `／${subById.get(subAccountId)?.name ?? ''}` : ''}`;
   const jlink = (j) => h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, class: 'link', text: journalLabel(j) });
@@ -21,6 +21,7 @@ export async function render({ app, outlet }) {
   const abnormal = abnormalBalances(ctx);
   const suspense = suspenseBalances(ctx);
   const future = futureJournals(journals, todayString());
+  const assetLike = assetLikeExpenses({ ...ctx, entityType: settings.entityType });
   const tax = taxChecks({ journals, accounts });
   const taxWarn = tax.filter((x) => x.level === 'warn').length;
 
@@ -35,7 +36,7 @@ export async function render({ app, outlet }) {
 
   // 見出しの件数は誤りの可能性が高いものだけ。仮払金の残りと未来の日付は参考として別に数える
   const total = dups.length + negatives.length + abnormal.length + taxWarn;
-  const info = suspense.length + future.length;
+  const info = suspense.length + future.length + assetLike.length;
   const FUTURE_MAX = 10;
   put(
     outlet,
@@ -65,6 +66,16 @@ export async function render({ app, outlet }) {
         future.length > FUTURE_MAX ? h('p', { class: 'muted small', text: `ほか${future.length - FUTURE_MAX}件（${slash(future.at(-1).date)} まで）。仕訳帳で日付順に確かめられます。` }) : null,
       ),
       '予定を先に入力した場合は問題ありません。年の打ち間違いがないか確かめてください。',
+    ),
+    section('固定資産にあたるかもしれない消耗品', assetLike.length, 'info', () =>
+      h(
+        'ul',
+        { class: 'plain-list small' },
+        assetLike.map(({ journal: j, line: l, account: a }) =>
+          h('li', {}, `${slash(j.date)}　${a.name}　${formatYen(l.amount)}円　${l.memo || memoOf(j)}　`, jlink(j), '　', h('a', { class: 'link', href: `#/asset/new?${new URLSearchParams({ cost: String(l.amount), date: j.date, name: l.memo || memoOf(j) })}`, text: '固定資産に登録' })),
+        ),
+      ),
+      '1つ（1組）10万円以上の物は、全額をその年の経費にできません。固定資産台帳に登録して、一括償却（20万円未満）・少額減価償却資産の特例（青色の中小企業者等。令和8年4月以後の取得は40万円未満）・通常の減価償却から選びます。登録したら、この仕訳の科目を資産の科目（工具器具備品など）に直してください。1つ10万円未満の物をまとめて買った場合はこのままで構いません。',
     ),
     section('税区分の確認', taxWarn, 'warn', () => h('p', { class: 'small' }, h('a', { class: 'link', href: '#/reports/tax?view=check', text: '消費税集計の「税区分のチェック」を開く' })), '売上の科目に仕入の税区分が付いているなど、誤りやすい組み合わせです（参考の項目は消費税集計の画面に出ます）。'),
   );
