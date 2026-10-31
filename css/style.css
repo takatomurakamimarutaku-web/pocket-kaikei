@@ -1560,3 +1560,19 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .saving-amount { width: 100%; min-height: 34px; padding: 4px 8px; text-align: right; font-size: 0.95rem; }
 .saving-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
 .saving-more p.strong { margin: 8px 0 2px; }
+/* ---- 着地見込み：月ごと・季節変動の注意 ---- */
+.advisor-months-table tr.is-plan td { color: var(--muted); }
+.advisor-plan { margin-left: 6px; font-size: 0.65rem; padding: 0 6px; }
+.advisor-months { margin-top: 4px; }
+.advisor-months > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 2px 0; }
+.advisor-month-grid { display: grid; grid-template-columns: 5.5em 1fr 1fr; gap: 4px 8px; align-items: center; margin: 6px 0; max-width: 28em; }
+.advisor-month-grid .num { text-align: right; }
+.advisor-plan-num { color: var(--muted); }
+.advisor-month-input { width: 100%; min-height: 30px; padding: 2px 6px; text-align: right; font-size: 0.8rem; }
+.advisor-advice-list { display: grid; gap: 8px; list-style: none; padding-left: 0; }
+.advisor-advice { padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--separator); }
+.advisor-advice.is-missing { border-color: var(--warn-text); }
+.advisor-advice-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.advisor-advice p { margin: 4px 0 0; }
+.advisor-advice-warn { color: var(--warn-text); font-weight: 700; }
+.advisor-advice-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

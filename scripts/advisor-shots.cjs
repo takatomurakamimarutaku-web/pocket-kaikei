@@ -27,7 +27,8 @@ mkdirSync(OUT, { recursive: true });
     };
     await page.goto(BASE);
     await page.waitForSelector('form.setup');
-    await page.getByRole('button', { name: entity === 'individual' ? '個人のサンプル' : '法人のサンプル' }).click();
+    await page.selectOption('#sample-id', entity);
+    await page.getByRole('button', { name: 'このサンプルを読み込む' }).click();
     await page.waitForTimeout(900);
     if (!pc) await shot('01-home-switch');
     await page.getByRole('radio', { name: '経営' }).click();
@@ -47,6 +48,20 @@ mkdirSync(OUT, { recursive: true });
       await page.waitForTimeout(800);
       if ((await page.locator('select.advisor-method').first().inputValue()) !== 'manual') errors.push(`${entity}: 立て方が保存されない`);
       await shot('04-forecast-manual');
+      // 月ごと：開いて「月ごとに入れる」にし、1か月の金額を変える
+      await page.locator('details.advisor-months > summary').first().click();
+      await page.waitForTimeout(200);
+      const toMonthly = page.getByRole('button', { name: 'この科目を月ごとに入れる' }).first();
+      if (await toMonthly.count()) await toMonthly.click();
+      await page.waitForTimeout(300);
+      const mi = page.locator('input.advisor-month-input').first();
+      if (!(await mi.count())) errors.push(`${entity}: 月ごとの入力欄が出ない`);
+      else {
+        await mi.fill('2,000,000');
+        await mi.dispatchEvent('change');
+        await page.waitForTimeout(300);
+      }
+      await shot('04b-forecast-monthly');
     }
     await go('#/advisor/tax');
     await shot('05-tax');
