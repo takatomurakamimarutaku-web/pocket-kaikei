@@ -209,4 +209,4 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 4
 .view[data-route^="/advisor"] { max-width: 1040px; }
 .advisor-chart .chart-svg { height: 300px; }
 .view[data-route="/advisor/forecast"] .table-wrap, .view[data-route="/advisor/tax"] .table-wrap { max-width: 860px; }
-.view[data-route="/advisor/saving"] > * { max-width: 860px; }
+.view[data-route="/advisor/saving"] > *, .view[data-route="/advisor/simulation"] > *, .view[data-route="/advisor/annual"] > * { max-width: 860px; }

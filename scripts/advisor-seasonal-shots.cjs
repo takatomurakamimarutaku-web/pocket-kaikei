@@ -34,5 +34,7 @@ const { chromium } = require('playwright');
   await p.screenshot({ path: 'shots/advisor/corporation-08-seasonal-missing.png', fullPage: true });
   const btn = p.getByRole('button', { name: '月ごとに入れる' }).first();
   if (await btn.count()) { await btn.click(); await p.waitForTimeout(500); await p.screenshot({ path: 'shots/advisor/corporation-09-seasonal-fixed.png', fullPage: true }); }
+  await p.evaluate(() => (location.hash = '#/advisor/annual')); await p.waitForTimeout(1200);
+  await p.screenshot({ path: 'shots/advisor/corporation-10-annual-with-prev.png', fullPage: true });
   await b.close();
 })();
