@@ -76,6 +76,9 @@ export function createAsset(fields = {}, now = new Date()) {
     supplier: '', // 購入先（任意）
     departmentId: null, // 部門（任意。償却費の仕訳に付ける）
     moves: [], // 移動の履歴（部門・設置場所の変更。asset-reports の addMove）
+    compressionAmount: null, // 圧縮記帳の圧縮額（直接減額方式。cost は圧縮後の取得価額）
+    compressionOn: null, // 圧縮記帳をした日
+    compressionName: null, // 補助金等の名前
     disposalType: null, // 売却（sell）・除却（retire）
     salePrice: null, // 売却額（税込）
     expenseAccountId: null, // 償却費の科目（null なら減価償却費。製造業の工場の資産は製造経費の科目）

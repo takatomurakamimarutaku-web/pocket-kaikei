@@ -10,6 +10,12 @@
 // - 個人の業務用資産の取壊し・除却の損失は必要経費：No.2210 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2210.htm
 // - 資本的支出：元の資産と種類・耐用年数が同じ資産を新たに取得したものとして、支出額を取得価額にして償却する（平成19年4月1日以後の支出）
 //   No.2107 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2107.htm 、法人税法施行令55条
+// - 圧縮記帳（直接減額方式）：圧縮損を計上し、同額を取得価額から減額する。圧縮後の金額が取得価額とみなされ、償却の基礎になる
+//   「圧縮記帳に関する会計処理及び表示について」https://www.nta.go.jp/law/tsutatsu/kobetsu/hojin/760515/01.htm
+//   別表十三（一）の圧縮限度額は「−1円」（帳簿価額を1円以上残す）
+//   https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2022/pdf/13(01).pdf
+//   個人は国庫補助金等を総収入金額に算入せず、取得費から補助金等の額を差し引いた額で減価償却する（所得税法42条。確定申告書に明細書を添付）
+//   No.2202 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2202.htm
 //   （国税庁「2 固定資産の取得価額等」https://www.nta.go.jp/law/joho-zeikaishaku/hojin/070622-2/03.htm）
 import { CATEGORY_BY_ID, usesLife, isDisposable, depreciationSchedule, hasCarryOver, MIN_LIFE, NEW_METHOD_FROM } from './depreciation.js';
 import { isValidDate } from './period.js';
@@ -42,6 +48,65 @@ export function bookValueAt(asset, periods, date) {
   if (rows.length) return rows[rows.length - 1].closing;
   if (hasCarryOver(asset) && date >= asset.carryOn) return asset.carryBook;
   return asset.cost;
+}
+
+/** 圧縮記帳の仕訳（source: 'asset_compression'） */
+export function findCompressionJournals(journals, assetId) {
+  return journals.filter((j) => j.source === 'asset_compression' && j.sourceId === assetId);
+}
+
+/**
+ * 圧縮記帳の時期の検証（取得価額を圧縮後にして最初から償却するので、使い始めた会計期間の中で圧縮記帳する）
+ *   アプリで最初の会計期間より前の日付なら記録だけ（前の帳簿で済んでいる）
+ * @returns {string[]} 誤りの文言
+ */
+export function compressionErrors(asset, periods) {
+  if (asset.compressionAmount == null || !asset.compressionOn) return [];
+  const first = periods.map((p) => p.startDate).sort()[0];
+  if (first && asset.compressionOn < first) return [];
+  const p = periods.find((x) => asset.compressionOn >= x.startDate && asset.compressionOn <= x.endDate);
+  if (!p) return ['圧縮記帳をした日の会計期間がありません'];
+  if (!(asset.startedOn >= p.startDate && asset.startedOn <= p.endDate)) {
+    return ['圧縮記帳は、使い始めた会計期間の中の日付にしてください（使い始めた後の期間に補助金等を受けたときの圧縮記帳には、まだ対応していません）'];
+  }
+  return [];
+}
+
+/**
+ * 固定資産圧縮損の科目が無い帳簿（v0.75.0 より前に始めた法人）に足す科目の項目（コードは 732 から空いている番号）
+ * @returns {object|null} createAccount に渡す項目。空いているコードが無ければ null
+ */
+export function compressionLossAccount(accounts) {
+  const used = new Set(accounts.map((a) => String(a.code)));
+  for (let n = 732; n <= 799; n += 1) {
+    if (!used.has(String(n))) {
+      return { code: String(n), name: '固定資産圧縮損', group: 'extraordinary_losses', normalSide: 'debit', defaultTaxCategory: 'none', sortOrder: n, hint: accounts.some((a) => a.hint === 'compression_loss') ? null : 'compression_loss' };
+    }
+  }
+  return null;
+}
+
+/**
+ * 圧縮記帳の仕訳の明細（直接減額方式）
+ *   法人：固定資産圧縮損（特別損失） / 資産の科目
+ *   個人：事業主借 / 資産の科目（補助金等は総収入金額に入れないので、入金を 普通預金 / 事業主借 で記帳し、ここで打ち消す）
+ * @returns {{ lines: Array, errors: string[] }}
+ */
+export function compressionLines({ asset, accounts, entityType, lossAccountId = '' }) {
+  const errors = [];
+  const amount = asset.compressionAmount;
+  if (!Number.isInteger(amount) || amount < 1) errors.push('圧縮額を入力してください');
+  const debit = entityType === 'individual' ? accounts.find((a) => a.role === 'owner_borrowings') : accounts.find((a) => a.id === lossAccountId && a.active);
+  if (!debit) errors.push(entityType === 'individual' ? '事業主借の科目が見つかりません' : '固定資産圧縮損の科目を選んでください');
+  if (errors.length) return { lines: [], errors };
+  const memo = `圧縮記帳 ${asset.name}${asset.compressionName ? `（${asset.compressionName}）` : ''}`.slice(0, 100);
+  return {
+    lines: [
+      { side: 'debit', accountId: debit.id, subAccountId: null, amount, taxCategory: 'none', memo },
+      { side: 'credit', accountId: asset.accountId, subAccountId: null, amount, taxCategory: 'none', memo },
+    ],
+    errors,
+  };
 }
 
 /**
@@ -184,7 +249,7 @@ export function validateCapex(asset, parent) {
 
 /** 一部の売却・除却ができる資産か */
 export function canSplit(asset) {
-  return usesLife(asset.method) && !asset.disposalType && !asset.splitFrom;
+  return usesLife(asset.method) && !asset.disposalType && !asset.splitFrom && asset.compressionAmount == null;
 }
 
 /** 分けた資産に引き継ぐ移動の履歴（売却・除却した日までの移動。部門・設置場所もその時点のもの） */
