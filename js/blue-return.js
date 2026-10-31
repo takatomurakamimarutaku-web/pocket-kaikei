@@ -220,7 +220,8 @@ export function monthlySalesPurchases({ accounts, period, journals }) {
  * @returns {{ rows: Array, total: { ordinary, special, amount, business, closing } }}
  */
 export function depreciationTable({ assets, periods, period, filter = () => true }) {
-  const rows = assetRegister(assets, periods, period).filter(({ asset }) => filter(asset)).map(({ asset, cost, opening, row, closing }) => {
+  // 償却しない資産（土地など）は減価償却費の計算に載せない
+  const rows = assetRegister(assets, periods, period).filter(({ asset }) => asset.method !== 'none' && filter(asset)).map(({ asset, cost, opening, row, closing }) => {
     const rateText = row?.rate ? (row.rate / 1000).toFixed(3) : asset.method === 'lump3' ? '1/3' : '';
     // 摘要：一括償却・少額の区分、95%到達後の「均等償却」、特別償却の制度の名前、除却した日
     const note = [

@@ -59,6 +59,7 @@ export const PT_EXEMPTION = 1500000;
  * @returns {{ include: boolean, fixed: boolean, reason: string, review: boolean }}
  */
 export function ptEligibility(asset) {
+  if (asset.method === 'none') return { include: false, fixed: true, reason: asset.category === 'land' ? '土地は償却資産ではなく土地として課税されます' : '減価償却をしない資産（建設仮勘定・美術品など）は対象外です', review: false };
   if (asset.category === 'building') return { include: false, fixed: true, reason: '家屋（建物）は償却資産ではなく家屋として課税されます', review: false };
   if (asset.category === 'intangible') return { include: false, fixed: true, reason: '無形固定資産は対象外です', review: false };
   if (asset.method === 'lump3') return { include: false, fixed: true, reason: '一括償却資産（3年均等償却）は対象外です', review: false };
