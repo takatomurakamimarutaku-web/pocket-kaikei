@@ -6,7 +6,7 @@ import { parseYen, formatYen } from '../money.js';
 import { formatPeriod, periodMonths } from '../period.js';
 import { previousPeriod } from '../closing.js';
 import { formatPercent, parsePercent } from '../enterprise-tax.js';
-import { corporateTaxReturn, carryOverInput, cleanCorporateTax, validateCorporateTax, TAX_KINDS, ADJUSTMENT_PRESETS, RESIDENT_DEFAULTS, TOKYO_DEFAULTS, MAX_ROWS, MAX_LOSS_ROWS, MAX_LABEL, DEFENSE_FROM } from '../corporate-tax.js';
+import { corporateTaxReturn, carryOverInput, cleanCorporateTax, validateCorporateTax, TAX_KINDS, ADJUSTMENT_PRESETS, RESIDENT_DEFAULTS, TOKYO_DEFAULTS, standardPerCapita, MAX_ROWS, MAX_LOSS_ROWS, MAX_LABEL, DEFENSE_FROM } from '../corporate-tax.js';
 
 /** 金額の欄 */
 const yenBox = (id, value, { placeholder = '0', label } = {}) => h('input', { id, type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: value ? String(value) : '', placeholder, 'aria-label': label });
@@ -153,6 +153,18 @@ export async function render({ app, outlet }) {
   const prefPerCapita = yenBox('ct-pref-pc', v.prefPerCapita);
   const cityPerCapita = yenBox('ct-city-pc', v.cityPerCapita);
   const months = h('input', { id: 'ct-months', type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: v.residentMonths === null ? '' : String(v.residentMonths), placeholder: `空欄なら ${Math.min(12, periodMonths(period))}` });
+  const employees = h('input', { id: 'ct-employees', type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: v.employees === null ? '' : String(v.employees) });
+  const prefInterimPC = yenBox('ct-pref-ipc', v.interimPerCapita.pref, { label: '道府県民税の中間納付額のうち均等割' });
+  const cityInterimPC = yenBox('ct-city-ipc', v.interimPerCapita.city, { label: '市町村民税の中間納付額のうち均等割' });
+  // 均等割の標準税率：資本金等の額（別表五(一)の資本金等の期末）と従業者数から（自治体の超過税率は入力で直す）
+  const fillStandard = () => {
+    const n = Number(String(employees.value).normalize('NFKC').trim() || 0);
+    const d = standardPerCapita(current.capital.total, Number.isFinite(n) ? n : 0, tokyo.checked);
+    prefPerCapita.value = d.pref ? String(d.pref) : '';
+    cityPerCapita.value = d.city ? String(d.city) : '';
+    markDirty();
+    showToast(`資本金等の額 ${formatYen(current.capital.total)}円・従業者${Number.isFinite(n) ? n : 0}人の標準税率を入れました`);
+  };
   tokyo.addEventListener('change', () => {
     const d = tokyo.checked ? TOKYO_DEFAULTS : RESIDENT_DEFAULTS;
     prefRate.value = formatPercent(d.prefRate);
@@ -169,6 +181,7 @@ export async function render({ app, outlet }) {
       return Number.isNaN(r) ? 0 : r;
     };
     const m = String(months.value).normalize('NFKC').trim();
+    const e = String(employees.value).normalize('NFKC').trim();
     const record = {
       sme: sme.checked,
       excluded: excluded.checked,
@@ -189,6 +202,8 @@ export async function render({ app, outlet }) {
       prefPerCapita: readYen(prefPerCapita, '道府県民税の均等割', errors),
       cityPerCapita: readYen(cityPerCapita, '市町村民税の均等割', errors),
       residentMonths: m === '' ? null : /^\d+$/.test(m) ? Number(m) : NaN,
+      employees: e === '' ? null : /^\d+$/.test(e) ? Number(e) : NaN,
+      interimPerCapita: { pref: readYen(prefInterimPC, '道府県民税の中間納付額のうち均等割', errors), city: readYen(cityInterimPC, '市町村民税の中間納付額のうち均等割', errors) },
     };
     return { record, errors: [...errors, ...validateCorporateTax(cleanCorporateTax(record))] };
   }
@@ -284,6 +299,11 @@ export async function render({ app, outlet }) {
       h('div', { class: 'field-row' }, field('法人税割の税率（道府県民税・%）', prefRate), field('法人税割の税率（市町村民税・%）', cityRate)),
       h('div', { class: 'field-row' }, field('均等割の年額（道府県民税）', prefPerCapita), field('均等割の年額（市町村民税）', cityPerCapita)),
       field('均等割の月数（事務所があった月数）', months, { hint: '税率・年額は事務所がある自治体の案内で確かめてください（資本金等の額・従業者数で年額が変わります）' }),
+      field('期末の従業者数', employees, { hint: '第六号様式・第二十号様式の欄。市町村民税の均等割は従業者数が50人を超えるかで年額が変わります' }),
+      h('div', { class: 'report-tools' }, h('button', { type: 'button', class: 'btn', text: '均等割を標準税率で入れる', onclick: fillStandard })),
+      h('p', { class: 'field-hint', text: `帳簿の資本金＋資本準備金の期末（${formatYen(current.capital.total)}円）で区分します。税務上の資本金等の額（別表五(一)の差引翌期首現在資本金等の額）の方が大きいときは、その額で判定し直してください。自治体が超過税率を決めていれば、その年額に直してください。` }),
+      h('div', { class: 'field-row' }, field('中間納付額のうち均等割（道府県民税）', prefInterimPC), field('中間納付額のうち均等割（市町村民税）', cityInterimPC)),
+      h('p', { class: 'field-hint', text: '中間申告で納めた住民税のうち均等割の額。残りを法人税割として、申告書の「既に納付の確定した当期分」の欄に分けて書きます。' }),
       h('h2', { class: 'section-title', text: '別表五(一)の期首の調整項目' }),
       h('p', { class: 'field-hint', text: '前期の別表五(一)の「差引翌期首現在」に載っている、減価償却の償却超過額などの調整項目。マイナスは「-」か「△」を付けます。当期の留保の加算・減算と同じ名前にすると同じ行にまとまります。' }),
       openList,

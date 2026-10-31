@@ -8,6 +8,8 @@ import { formatYen } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { warekiText } from '../print-layout.js';
+import { propertyHead } from '../print-form-heads.js';
+import { filerOf } from '../filer.js';
 
 const era = (d) => {
   const e = eraOf(d);
@@ -22,7 +24,8 @@ export async function render({ app, outlet, query }) {
   const body = h('div');
   const errorsEl = h('div');
   // 印刷：画面の表から作る。期間の行は会計期間ではなく、申告する年度と賦課期日（1月1日現在）
-  app.printDoc = () => ({ period: `${fiscalYearLabel(year)}　賦課期日 ${warekiText(`${year}-01-01`)}現在` });
+  // 頭書き：所有者の欄（住所・名称・番号・事業種目）と提出先の市町村
+  app.printDoc = () => ({ period: `${fiscalYearLabel(year)}　賦課期日 ${warekiText(`${year}-01-01`)}現在`, headBlocks: [propertyHead(filerOf(settings), { corporation: settings.entityType === 'corporation' })] });
 
   const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('span', { class: 'kpi-label', text: label }), h('span', { class: 'kpi-value num', text: value }), sub ? h('span', { class: 'kpi-sub', text: sub }) : null);
   const tableWrap = (label, head, rows, cls = '') => h('div', { class: 'table-wrap' }, h('table', { class: `report taxform pt-table ${cls}`, 'aria-label': label }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)));

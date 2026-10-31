@@ -1,13 +1,14 @@
 // 法人税の申告：納める税額の一覧と、別表四・別表一・別表五(一)・別表五(二)・別表七(一)・別表十五・住民税と事業税
 // 弥生会計・freee の法人税申告ソフト（別表四から順に作り、別表五(一)で検算する流れ）を参考にした。転記用の写しを作る
-import { h, put, amountCell, saveFile, segmented } from '../ui.js';
+import { h, put, amountCell, saveFile, segmented, stackTable } from '../ui.js';
 import { corporateTaxReturn, corporateTaxCsvRows, filingDeadline, RATES } from '../corporate-tax.js';
 import { formatPercent } from '../enterprise-tax.js';
 import { formatPeriod } from '../period.js';
 import { formatYen } from '../money.js';
 import { toCsv, csvFileName } from '../csv.js';
 import { docHead } from '../print-forms.js';
-import { corporateTaxDoc, CORPORATE_SHEETS } from '../print-tax-forms.js';
+import { corporateTaxDoc, CORPORATE_SHEETS, localFormRows } from '../print-tax-forms.js';
+import { filerOf, hasFiler } from '../filer.js';
 
 const TABS = [
   { value: 'summary', label: '概要' },
@@ -17,7 +18,8 @@ const TABS = [
   { value: 's52', label: '別表五(二)' },
   { value: 's7', label: '別表七(一)' },
   { value: 's15', label: '別表十五' },
-  { value: 'local', label: '住民税・事業税' },
+  { value: 'pref', label: '県民税・事業税' },
+  { value: 'city', label: '市民税' },
 ];
 
 const jpDate = (iso) => `${Number(iso.slice(0, 4))}年${Number(iso.slice(5, 7))}月${Number(iso.slice(8, 10))}日`;
@@ -42,7 +44,9 @@ export async function render({ app, outlet, query }) {
   const { settings, period, accounts, journals } = await app.load();
   if (settings.entityType !== 'corporation') return put(outlet, h('p', { class: 'notice', text: '法人税の申告は法人で使います。個人は「所得税の確定申告書」を使ってください。' }), h('a', { class: 'btn', href: '#/reports', text: '帳票へ' }));
   const r = corporateTaxReturn({ accounts, period, journals, input: period.corporateTax || {}, enterpriseInput: period.enterpriseTax || {} });
-  let tab = TABS.some((t) => t.value === query.tab) ? query.tab : 'summary';
+  // 以前の「住民税・事業税」のタブ（tab=local）は県民税・事業税のタブで開く
+  const asked = query.tab === 'local' ? 'pref' : query.tab;
+  let tab = TABS.some((t) => t.value === asked) ? asked : 'summary';
   const sections = {};
 
   // ---- 概要 ----
@@ -201,42 +205,54 @@ export async function render({ app, outlet, query }) {
     h('p', { class: 'muted small', text: '1人あたり1万円以下の飲食費（社内の役員・従業員だけの飲食を除く）は、書類を保存すれば交際費等に含めません（国税庁 No.5265）。会議費など他の科目に交際費等があるときは、支出交際費等の額を入力で直してください。' }),
   ];
 
-  // ---- 住民税・事業税 ----
-  const res = r.resident;
-  const part = (label, x) => [
-    h('tr', { class: 'ct-heading' }, h('th', { scope: 'rowgroup', colspan: 3, text: label })),
-    line('法人税割額', x.taxPart, { rateText: rate(x.rate), indent: true }),
-    line('均等割額', x.perCapitaPart, { rateText: '', indent: true, sub: `年${formatYen(x.perCapita)}円×${res.months}/12` }),
-    line('計', x.total, { rateText: '', indent: true }),
-    line('中間納付額', x.interim, { rateText: '', indent: true }),
-    line(x.due >= 0 ? '差引納付税額' : '還付税額', Math.abs(x.due), { rateText: '', strong: true }),
+  // ---- 県民税・事業税（第六号様式）・市民税（第二十号様式）：様式の欄の番号と並びで、課税標準・税率・税額の列 ----
+  const local = localFormRows(r);
+  // スマホでは区分を1行目、課税標準・税率・税額を2行目に並べる（stackTable）
+  const localTable = (label, rows) =>
+    h(
+      'div',
+      { class: 'table-wrap' },
+      stackTable(
+        h(
+          'table',
+          { class: 'report ct-local', 'aria-label': label },
+          h('thead', {}, h('tr', {}, ['区分', '課税標準', '税率', '税額'].map((t) => h('th', { scope: 'col', text: t })))),
+          h(
+            'tbody',
+            {},
+            rows.map((x) =>
+              x.group
+                ? h('tr', { class: 'tb-group ct-heading' }, h('th', { scope: 'rowgroup', colspan: 4, text: x.group }))
+                : h(
+                    'tr',
+                    { class: x.strong ? 'mt-strong tb-subtotal' : '' },
+                    rowHead(`${x.no ? `${x.no} ` : ''}${x.label}`, x.sub),
+                    typeof x.base === 'string' ? h('td', { class: 'num', text: x.base }) : x.base == null ? h('td', {}) : cell(x.base),
+                    h('td', { class: 'num', text: x.rate == null ? '' : rate(x.rate) }),
+                    x.tax == null ? h('td', {}) : cell(x.tax),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  const localNote = h('p', { class: 'muted small', text: '税率と均等割の年額は自治体ごとに違います（標準税率は法人税割 道府県民税1.0%・市町村民税6.0%）。均等割は「計算の条件」で資本金等の額と従業者数から標準税率で入れられます。欄の番号は様式の目安です（推定を含みます）。2以上の自治体に事務所がある場合の分割、外形標準課税には対応していません。' });
+  sections.pref = [
+    h('h3', { class: 'tf-title', text: `第六号様式　事業税・特別法人事業税・${r.resident.tokyo ? '都民税' : '道府県民税'}の確定申告書` }),
+    localTable('第六号様式', local.pref),
+    localNote,
+    h('div', { class: 'report-tools no-print' }, h('a', { class: 'btn', href: '#/reports/enterprise-tax', text: '事業税の税率・中間納付額を変える' })),
   ];
-  const ent = r.enterprise;
-  sections.local = [
-    h('h3', { class: 'tf-title', text: '法人住民税（法人税割・均等割）' }),
-    wrap('法人住民税', 'ct-s1', ['項目', '税率', '金額'], [
-      line('課税標準となる法人税額', res.base, { rateText: '', sub: '差引法人税額＋足し戻す控除額（1,000円未満切捨て）' }),
-      ...part(res.tokyo ? '都民税' : '道府県民税', res.pref),
-      ...(res.tokyo && !res.city.total && !res.city.interim ? [] : part('市町村民税', res.city)),
-    ]),
-    h('p', { class: 'muted small', text: '税率と均等割の年額は自治体ごとに違います（標準税率は法人税割 道府県民税1.0%・市町村民税6.0%、均等割は資本金等の額1,000万円以下・従業者50人以下で道府県民税2万円・市町村民税5万円）。複数の自治体に事務所がある場合の分割には対応していません。' }),
-    h('h3', { class: 'tf-title', text: '事業税・特別法人事業税' }),
-    wrap('事業税', 'ct-s1', ['項目', '税率', '金額'], [
-      line('所得金額（課税標準）', ent.base, { rateText: '', sub: ent.fromSchedule4 ? '別表四の所得金額（1,000円未満切捨て）' : '事業税の画面で入力した所得金額' }),
-      line('所得割', ent.incomeTax, { rateText: '' }),
-      line('特別法人事業税', ent.special, { rateText: '37%' }),
-      line('中間納付額', ent.interimTax + ent.interimSpecial, { rateText: '' }),
-      line('差引納付税額', ent.total, { rateText: '', strong: true }),
-    ]),
-    h('div', { class: 'report-tools no-print' }, h('a', { class: 'btn', href: '#/reports/enterprise-tax', text: '事業税（第六号様式）を見る' })),
-  ];
+  sections.city = local.city
+    ? [h('h3', { class: 'tf-title', text: '第二十号様式　市町村民税の確定申告書' }), localTable('第二十号様式', local.city), localNote]
+    : [h('p', { class: 'notice small', text: '東京都の特別区（23区）では、市町村民税の分も都民税として第六号様式で申告します。' })];
 
   // ---- 印刷：国税庁の様式の欄の番号と並びに合わせた別表（print-tax-forms.js）。概要・住民税と事業税の画面は全部の別表を既定にする ----
   app.printDoc = ({ printedAt }) => ({
     options: [
       { key: 'sheet', label: '印刷する別表', type: 'select', choices: [['all', '別表一〜十五（全部）'], ...CORPORATE_SHEETS.map((x) => [x.value, x.label])], value: CORPORATE_SHEETS.some((x) => x.value === tab) ? tab : 'all' },
     ],
-    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
+    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), filer: filerOf(settings), sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
   });
 
   // ---- 画面 ----
@@ -252,13 +268,14 @@ export async function render({ app, outlet, query }) {
     h('p', { class: 'muted small', text: `${settings.businessName}　${formatPeriod(period)}（${r.period.months}か月）` }),
     r.warnings.length ? h('div', { class: 'notice small ws-warn' }, h('p', { class: 'ws-warn-title', text: '確かめること' }), h('ul', {}, r.warnings.map((w) => h('li', { text: w })))) : null,
     !period.corporateTax ? h('p', { class: 'notice small', text: '計算の条件がまだ保存されていません。中小法人・前期分の税額・中間納付額などを入力すると正確になります。' }) : null,
+    !hasFiler(settings) ? h('p', { class: 'notice small no-print' }, '申告書の上の欄（納税地・法人番号・代表者・提出先）がまだ空欄です。', h('a', { href: '#/settings/filer?back=%23%2Freports%2Fcorporate-tax', text: '提出者の欄を入力する' })) : null,
     h('div', { class: 'no-print ct-tools' }, segmented({ name: '別表', options: TABS, value: tab, onChange: show })),
     ...sectionEls,
-    h('div', { class: 'report-tools no-print' }, h('a', { class: 'btn btn-primary', href: '#/reports/corporate-tax/input', text: '計算の条件を入力する' }), h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv }), h('a', { class: 'btn', href: '#/reports/schedule16', text: '別表十六（減価償却）' })),
+    h('div', { class: 'report-tools no-print' }, h('a', { class: 'btn btn-primary', href: '#/reports/corporate-tax/input', text: '計算の条件を入力する' }), h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv }), h('a', { class: 'btn', href: '#/reports/schedule16', text: '別表十六（減価償却）' }), h('a', { class: 'btn', href: '#/settings/filer?back=%23%2Freports%2Fcorporate-tax', text: '提出者の欄' })),
     h(
       'div',
       { class: 'panel small muted' },
-      h('p', { text: '資本金1億円以下の普通法人（青色申告）の、法人税申告書の主な別表の写しです。国税庁の様式（別表一・四・五(一)・五(二)・七(一)・十五）の行の名前に合わせて並べています。e-Tax や申告ソフト、国税庁の様式に書き写すときに使ってください。' }),
+      h('p', { text: '資本金1億円以下の普通法人（青色申告）の、法人税申告書の主な別表と、都道府県・市町村に出す申告書（第六号様式・第二十号様式）の写しです。様式の行の名前と欄の番号に合わせて並べています。e-Tax・eLTAX や申告ソフト、様式に書き写すときに使ってください。' }),
       h('p', { text: '対応していないもの：グループ通算制度、外国税額控除、受取配当等の益金不算入・寄附金の損金算入限度額などの計算（別表四の加算・減算に金額を入力）、仮払経理、申告期限の延長、複数の自治体への分割、特定同族会社の留保金課税、使途秘匿金・土地譲渡利益の税額。' }),
     ),
   );
