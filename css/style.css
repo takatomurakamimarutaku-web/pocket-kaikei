@@ -1547,3 +1547,16 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .advisor-accounts td.strong, .advisor-taxes td.strong { font-weight: 800; }
 .advisor-taxes td:last-child { color: var(--muted); }
 .advisor-note { margin-top: var(--sp-4); }
+
+/* ---- 節税・税制の提案 ---- */
+.saving-card { margin-bottom: var(--sp-3); }
+.saving-card.is-off { opacity: 0.75; }
+.saving-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.saving-title { margin: 0; font-size: 1rem; font-weight: 800; }
+.saving-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5em, 1fr)); gap: 8px; margin: var(--sp-2) 0; }
+.saving-stat { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.saving-stat .num { font-size: 1.05rem; font-weight: 700; }
+.saving-stat .num.strong { color: var(--primary); font-weight: 800; }
+.saving-amount { width: 100%; min-height: 34px; padding: 4px 8px; text-align: right; font-size: 0.95rem; }
+.saving-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
+.saving-more p.strong { margin: 8px 0 2px; }
