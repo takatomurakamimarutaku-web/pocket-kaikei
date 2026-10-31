@@ -127,7 +127,7 @@ export function assetsCsv(register, { accountById, departmentById, individual, p
   if (individual) head.push('事業で使う割合');
   head.push('期首帳簿価額', '償却費', 'うち特別償却');
   if (individual) head.push('うち経費');
-  head.push('期末帳簿価額', '売却・除却日', '売却・除却', '売却額', 'メモ', '購入先', '部門', '償却月数', '期中増加', '期中減少', '減価償却累計額');
+  head.push('期末帳簿価額', '売却・除却日', '売却・除却', '売却額', 'メモ', '購入先', '部門', '償却月数', '期中増加', '期中減少', '減価償却累計額', '圧縮額', '補助金等');
   const rows = [head];
   for (const entry of register) {
     const d = entry.bookClosing !== undefined ? entry : period ? registerDetail(entry, period) : null;
@@ -137,7 +137,7 @@ export function assetsCsv(register, { accountById, departmentById, individual, p
     r.push(d ? d.bookOpening : (opening ?? ''), row?.amount ?? 0, row?.special ?? 0);
     if (individual) r.push(row?.business ?? 0);
     r.push(d ? d.bookClosing : (closing ?? ''), slash(a.disposedOn), { sell: '売却', retire: '除却' }[a.disposalType] ?? '', a.disposalType === 'sell' ? a.salePrice : '', a.memo || '');
-    r.push(a.supplier || '', a.departmentId ? (departmentById?.get(a.departmentId)?.name ?? '') : '', row?.months ?? '', d ? d.bookIncrease : '', d ? d.bookDecrease : '', d ? d.accumulatedClosing : '');
+    r.push(a.supplier || '', a.departmentId ? (departmentById?.get(a.departmentId)?.name ?? '') : '', row?.months ?? '', d ? d.bookIncrease : '', d ? d.bookDecrease : '', d ? d.accumulatedClosing : '', a.compressionAmount ?? '', a.compressionName || '');
     rows.push(r);
   }
   return toCsv(rows);
@@ -215,10 +215,10 @@ export function propertyTaxCsv(r) {
   out.push(['合計', ...['before', 'decrease', 'increase', 'total', 'value'].map((key) => r.kinds.reduce((s, k) => s + k[key], 0))]);
   out.push(['課税標準額（参考）', r.taxBase], ['税額（参考・1.4%）', r.tax], []);
   out.push(['種類別明細書（全資産用）'], ['資産の種類', '資産番号', '資産の名称等', '数量', '取得年月', '取得価額', '耐用年数', '減価残存率', '評価額', '増加資産']);
-  for (const it of r.items) out.push([it.kind, it.asset.assetNo || '', it.asset.name, it.asset.quantity ?? 1, era(it.asset.acquiredOn), it.asset.cost, it.life ?? '', it.residual ? (it.residual / 1000).toFixed(3) : '', it.value, it.increase ? '増' : '']);
+  for (const it of r.items) out.push([it.kind, it.asset.assetNo || '', it.asset.name, it.asset.quantity ?? 1, era(it.asset.acquiredOn), it.cost ?? it.asset.cost, it.life ?? '', it.residual ? (it.residual / 1000).toFixed(3) : '', it.value, it.increase ? '増' : '']);
   out.push([]);
   out.push(['種類別明細書（減少資産用）'], ['資産の種類', '資産番号', '資産の名称等', '数量', '取得年月', '取得価額', '耐用年数', '減少の事由']);
-  for (const d of r.decreases) out.push([d.kind, d.asset.assetNo || '', d.asset.name, d.asset.quantity ?? 1, era(d.asset.acquiredOn), d.asset.cost, d.life ?? '', d.reason]);
+  for (const d of r.decreases) out.push([d.kind, d.asset.assetNo || '', d.asset.name, d.asset.quantity ?? 1, era(d.asset.acquiredOn), d.cost ?? d.asset.cost, d.life ?? '', d.reason]);
   return toCsv(out);
 }
 

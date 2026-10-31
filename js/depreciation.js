@@ -342,6 +342,15 @@ export function validateAsset(asset, { entityType, accounts }) {
   // v0.68.0 で追加した管理の項目（任意）：部門（償却費の仕訳の部門）・購入先
   if (asset.departmentId != null && (typeof asset.departmentId !== 'string' || !asset.departmentId)) e.departmentId = '部門が正しくありません';
   if (asset.supplier != null && (typeof asset.supplier !== 'string' || asset.supplier.length > 40)) e.supplier = '購入先は40文字以内にしてください';
+  // v0.74.0 で追加した圧縮記帳（任意。直接減額方式）：cost は圧縮後の取得価額、compressionAmount は圧縮額
+  if (asset.compressionAmount != null) {
+    if (!isYen(asset.compressionAmount) || asset.compressionAmount < 1) e.compressionAmount = '圧縮額は1円以上の整数で入力してください';
+    else if (!canCompress(asset.method)) e.compressionAmount = '圧縮記帳は定額法・定率法の資産と、償却しない資産（土地など）だけです';
+    else if (asset.splits?.length || asset.splitFrom) e.compressionAmount = '一部を売却・除却した資産には圧縮記帳を入れられません';
+    else if (!isValidDate(asset.compressionOn)) e.compressionOn = '圧縮記帳をした日（補助金等の返還不要が確定した日など）を入力してください';
+    else if (isValidDate(asset.acquiredOn) && asset.compressionOn < asset.acquiredOn) e.compressionOn = '圧縮記帳をした日は取得日以後にしてください';
+    if (String(asset.compressionName ?? '').length > 40) e.compressionName = '補助金等の名前は40文字以内にしてください';
+  } else if (asset.compressionOn || asset.compressionName) e.compressionAmount = '圧縮額を入力してください';
   // v0.72.0 で追加した移動の履歴（任意）：部門・設置場所を変えた記録。最後の移動の「移動後」が今の部門・設置場所
   const moveError = validateMoves(asset);
   if (moveError) e.moves = moveError;
@@ -356,6 +365,19 @@ export function validateAsset(asset, { entityType, accounts }) {
   if (asset.ptKind != null && !(Number.isInteger(asset.ptKind) && asset.ptKind >= 1 && asset.ptKind <= 6)) e.ptKind = '償却資産の種類を選んでください';
   if (asset.ptLife != null && !(Number.isInteger(asset.ptLife) && asset.ptLife >= MIN_LIFE && asset.ptLife <= MAX_LIFE)) e.ptLife = `耐用年数は${MIN_LIFE}〜${MAX_LIFE}年で入力してください`;
   return e;
+}
+
+/**
+ * 圧縮記帳ができる償却の方法（定額法・定率法・償却しない資産）
+ * 少額・一括償却・中小企業者等の特例は取得価額で判定するので、ここでは圧縮記帳を入れない
+ */
+export function canCompress(method) {
+  return usesLife(method) || method === 'none';
+}
+
+/** 圧縮前の取得価額（償却資産申告は圧縮前で申告する） */
+export function costBeforeCompression(asset) {
+  return asset.cost + (asset.compressionAmount ?? 0);
 }
 
 export const MAX_MOVES = 100;

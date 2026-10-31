@@ -31,7 +31,8 @@ function noteText(d, { departmentById, groupBy }) {
   const a = d.asset;
   const disposal = a.disposedOn && isDisposable(a.method) ? `${slash(a.disposedOn)} ${{ sell: '売却', retire: '除却' }[a.disposalType] ?? '除却'}` : '';
   const dep = groupBy !== 'department' && a.departmentId ? departmentById?.get(a.departmentId)?.name : '';
-  return [disposal, d.special ? `うち特別償却 ${fmt(d.special)}` : '', dep ? `部門 ${dep}` : '', a.memo || ''].filter(Boolean).join('　');
+  const comp = a.compressionAmount ? `圧縮記帳 ${fmt(a.compressionAmount)}${a.compressionName ? `（${a.compressionName}）` : ''}` : '';
+  return [disposal, d.special ? `うち特別償却 ${fmt(d.special)}` : '', comp, dep ? `部門 ${dep}` : '', a.memo || ''].filter(Boolean).join('　');
 }
 
 /**
