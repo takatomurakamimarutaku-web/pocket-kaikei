@@ -28,6 +28,8 @@
 // - 法人住民税（地方税）：法人税割の標準税率 道府県民税1.0%・市町村民税6.0%、均等割は資本金等の額と従業者数による年額×月数/12
 //   （出典は docs/spec-phase2-corporate-tax.md）。税率・年額は自治体ごとに違うので入力で変えられる
 // 率は 1/1000 % の整数で持つ（23.2% → 23200）。浮動小数点を使わない
+import { familyCompany, validateShareholders, cleanShareholders } from './family-company.js';
+import { withholdingCredit, validateWithholdingRows, cleanWithholdingRows } from './withholding-credit.js';
 import { isYen } from './money.js';
 import { isValidDate, periodMonths, addDays, addMonths } from './period.js';
 import { taxDueDate } from './holidays.js';
@@ -118,7 +120,8 @@ export const DEFAULT_CORPORATE_TAX = {
   dividends: 0, // 当期に支払った剰余金の配当（別表四の社外流出「配当」）
   entertainment: null, // 支出交際費等の額。null なら交際費の科目（目印 entertainment）の当期の額
   dining: 0, // うち接待飲食費の額
-  withholding: 0, // 法人税額から控除される所得税額（復興特別所得税を含む）
+  withholding: 0, // 法人税額から控除される所得税額（復興特別所得税を含む）。withholdingRows があればその合計を使う
+  withholdingRows: [], // 別表六(一)の明細 [{ kind, payer, address, date, income, tax, periodMonths, heldMonths }]（withholding-credit.js）
   credits: 0, // 法人税額の特別控除額（賃上げ促進税制など）
   residentAddBack: 0, // 法人税割の課税標準に足し戻す控除額（中小企業者等の賃上げ促進税制など）
   adjustments: [], // 別表四の「その他」の行 [{ label, side, kind, amount }]
@@ -131,6 +134,9 @@ export const DEFAULT_CORPORATE_TAX = {
   employees: null, // 期末の従業者数（第六号様式・第二十号様式の欄。均等割の区分に使う）
   interimPerCapita: { pref: 0, city: 0 }, // 中間納付額のうち均等割（残りは法人税割）
   openingAdjustments: [], // 別表五(一)の期首現在の調整項目 [{ label, amount }]
+  shareholders: [], // 別表二の株主 [{ name, address, relation, group, shares, votes, corporate }]（family-company.js）
+  sharesTotal: null, // 期末現在の発行済株式の総数又は出資の総額（null なら株主の合計）
+  votesTotal: null, // 期末現在の議決権の総数（null なら発行済株式の総数）
 };
 
 const isNonNeg = (n) => isYen(n) && n >= 0;
@@ -174,6 +180,8 @@ export function validateCorporateTax(v) {
       if (!label(a.label)) errors.push(`期首の調整項目の名前は1〜${MAX_LABEL}文字で入力してください`);
       if (!isYen(a.amount)) errors.push('期首の調整項目の金額は整数の円で入力してください（マイナスは「-」か「△」）');
     }
+  errors.push(...validateShareholders(v));
+  errors.push(...validateWithholdingRows(v.withholdingRows));
   return [...new Set(errors)];
 }
 
@@ -189,6 +197,8 @@ export function cleanCorporateTax(input) {
     adjustments: (v.adjustments || []).map((a) => ({ label: String(a.label ?? '').trim(), side: a.side, kind: a.kind, amount: a.amount })),
     losses: (v.losses || []).map((l) => ({ endDate: l.endDate, amount: l.amount })).sort((a, b) => (a.endDate < b.endDate ? -1 : a.endDate > b.endDate ? 1 : 0)),
     openingAdjustments: (v.openingAdjustments || []).map((a) => ({ label: String(a.label ?? '').trim(), amount: a.amount })),
+    shareholders: cleanShareholders(v.shareholders),
+    withholdingRows: cleanWithholdingRows(v.withholdingRows),
   };
 }
 
@@ -293,6 +303,9 @@ const sumBy = (list, f) => list.reduce((s, x) => s + f(x), 0);
  */
 export function corporateTaxReturn({ accounts, period, journals, input = {}, enterpriseInput = {} }) {
   const v = cleanCorporateTax(input);
+  // 別表六(一)の明細があれば、控除を受ける所得税額はその計（6の③）
+  const schedule61 = withholdingCredit(v.withholdingRows);
+  if (schedule61.entered) v.withholding = schedule61.credit;
   const ent = { ...DEFAULT_ENTERPRISE_TAX, ...enterpriseInput };
   const { startDate, endDate } = period;
   const months = periodMonths(period);
@@ -513,6 +526,8 @@ export function corporateTaxReturn({ accounts, period, journals, input = {}, ent
     enterprise,
     capital,
     employees: v.employees,
+    schedule61,
+    family: familyCompany({ shareholders: v.shareholders, sharesTotal: v.sharesTotal, votesTotal: v.votesTotal, sme: v.sme }),
     dues,
     dueTotal,
     payableTarget,
@@ -531,6 +546,10 @@ export function carryOverInput(prev) {
   return {
     losses: prev.loss.rows.filter((r) => r.carry > 0).map((r) => ({ endDate: r.endDate, amount: r.carry })),
     openingAdjustments: prev.schedule51.adjustRows.filter((r) => r.closing !== 0).map((r) => ({ label: r.label, amount: r.closing })),
+    // 株主・発行済株式の総数は前期末のものを引き継ぐ（変わっていれば直す）
+    shareholders: prev.input.shareholders,
+    sharesTotal: prev.input.sharesTotal,
+    votesTotal: prev.input.votesTotal,
     prior: {
       corp: pos(prev.corp.due),
       local: pos(prev.local.due),

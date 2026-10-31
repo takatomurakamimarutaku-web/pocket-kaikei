@@ -6,7 +6,9 @@
 //   別表一：令和8年4月1日以後終了事業年度等分の記載要領（防衛特別法人税の次葉一が加わり、税額の内訳は次葉二の74〜）
 //     https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/01-01-ki.pdf
 
-import { fmt } from './print-layout.js';
+import { fmt, wrapText } from './print-layout.js';
+import { formatRatio } from './family-company.js';
+import { formatHoldingRatio } from './withholding-credit.js';
 import { DEPENDENT_KIND_LABELS } from './income-tax.js';
 import { formHeadBlock, corporateHead, localHead, consumptionHead, incomeHead } from './print-form-heads.js';
 
@@ -329,7 +331,7 @@ function twoSide(left, right) {
   const side = (it) => {
     if (!it) return ['', '', ''];
     if (it.head) return [{ text: it.head, span: 3, bold: true, align: 'center' }];
-    return [{ text: it.label, bold: it.strong, indent: it.indent ? 3 : 0 }, noCell(it.no), it.amount === undefined ? '' : { text: it.amount === null ? '' : num(it.amount), bold: it.strong }];
+    return [{ text: it.label, bold: it.strong, indent: it.indent ? 3 : 0 }, noCell(it.no), it.amount === undefined ? '' : { text: it.amount === null ? '' : typeof it.amount === 'string' ? it.amount : num(it.amount), bold: it.strong }];
   };
   const rows = [];
   for (let i = 0; i < n; i++) rows.push({ cells: [...side(left[i]), ...side(right[i])] });
@@ -415,6 +417,152 @@ export function schedule1Blocks(r) {
     { type: 'text', text: '番号は令和8年4月1日以後終了事業年度等分の様式の欄の番号です。番号の空欄は様式で番号を確かめられなかった欄です（防衛特別法人税は次葉一に記入）。所得税額の控除・欠損金の繰戻し還付・土地譲渡利益・留保金課税は対象外の欄です。' },
   ];
 }
+// ---- 別表二：同族会社等の判定に関する明細書 ----
+
+/**
+ * 別表二：上に判定（1〜6・10〜14・17・18）、下に判定基準となる株主等の株式数等の明細（19〜22）
+ * @param {object} fc family-company.js の familyCompany の結果
+ */
+export function schedule2Blocks(fc) {
+  const f = fc.fields;
+  const pct = (r) => formatRatio(r);
+  const left = [
+    { head: '同族会社の判定' },
+    { no: 1, label: '期末現在の発行済株式の総数又は出資の総額', amount: f[1] },
+    { no: 2, label: '(19)と(21)の上位3順位の株式数又は出資の金額', amount: f[2] },
+    { no: 3, label: '株式数等による判定　(2)／(1)', amount: pct(f[3]) },
+    { no: 4, label: '期末現在の議決権の総数', amount: f[4] },
+    { no: 5, label: '(20)と(22)の上位3順位の議決権の数', amount: f[5] },
+    { no: 6, label: '議決権の数による判定　(5)／(4)', amount: pct(f[6]) },
+    { no: 7, label: '期末現在の社員の総数', amount: null },
+    { no: 8, label: '社員の3人以下及びこれらの同族関係者の合計人数のうち最も多い数', amount: null },
+    { no: 9, label: '社員の数による判定　(8)／(7)', amount: null },
+    { no: 10, label: '同族会社の判定割合　((3)、(6)又は(9)のうち最も高い割合)', amount: pct(f[10]), strong: true },
+  ];
+  const right = [
+    { head: '特定同族会社の判定' },
+    { no: 11, label: '(19)と(21)の上位1順位の株式数又は出資の金額', amount: f[11] },
+    { no: 12, label: '株式数等による判定　(11)／(1)', amount: pct(f[12]) },
+    { no: 13, label: '(20)と(22)の上位1順位の議決権の数', amount: f[13] },
+    { no: 14, label: '議決権の数による判定　(13)／(4)', amount: pct(f[14]) },
+    { no: 15, label: '社員の1人及びその同族関係者の合計人数のうち最も多い数', amount: null },
+    { no: 16, label: '社員の数による判定　(15)／(7)', amount: null },
+    { no: 17, label: '特定同族会社の判定割合　((12)、(14)又は(16)のうち最も高い割合)', amount: pct(f[17]), strong: true },
+    { head: '判定結果' },
+    { no: 18, label: '特定同族会社・同族会社・非同族会社', amount: f[18], strong: true },
+  ];
+  const cnt = (n) => (n ? fmt(n) : '');
+  const rows = fc.rows.map((x) => ({
+    cells: [
+      { text: x.sharesRank ?? '', align: 'center' },
+      { text: x.votesRank ?? '', align: 'center' },
+      x.address,
+      x.name,
+      x.relation,
+      x.corporate ? cnt(x.shares) : '',
+      x.corporate ? cnt(x.votes ?? x.shares) : '',
+      x.corporate ? '' : cnt(x.shares),
+      x.corporate ? '' : cnt(x.votes ?? x.shares),
+    ],
+  }));
+  while (rows.length < 10) rows.push({ cells: ['', '', '', '', '', '', '', '', ''] });
+  const n = (label, no) => ({ label: `${label}\n${no}`, align: 'right', w: 19 });
+  return [
+    twoSide(left, right),
+    { type: 'heading', text: '判定基準となる株主等の株式数等の明細' },
+    {
+      type: 'table',
+      font: 7.5,
+      columns: [
+        { label: '株式数等', align: 'center', w: 10 },
+        { label: '議決権数', align: 'center', w: 10 },
+        { label: '住所又は所在地', grow: 1, min: 30 },
+        { label: '氏名又は法人名', w: 30 },
+        { label: '判定基準と\nなる株主等\nとの続柄', w: 15 },
+        n('株式数又は\n出資の金額', '(19)'),
+        n('議決権の数', '(20)'),
+        n('株式数又は\n出資の金額', '(21)'),
+        n('議決権の数', '(22)'),
+      ],
+      headGroups: [
+        { label: '順位', from: 0, span: 2 },
+        { label: '被支配会社でない\n法人株主等', from: 5, span: 2 },
+        { label: 'その他の株主等', from: 7, span: 2 },
+      ],
+      rows,
+    },
+    { type: 'text', text: fc.entered ? '株主グループは、判定基準となる株主とその同族関係者（親族・支配する会社など）をまとめたものです。順位はグループの合計で付け、グループの最初の行に書いています。社員の数による判定（7〜9・15・16）は持分会社の欄で、このアプリでは使っていません。資本金1億円以下の法人は特定同族会社に当たりません（大法人の100%子会社などを除く）。' : '株主が入力されていません。「計算の条件」の株主（別表二）に、期末の株主と株式数を入力してください。' },
+  ];
+}
+
+// ---- 別表六(一)：所得税額の控除に関する明細書 ----
+
+/**
+ * 別表六(一)：区分ごとの①収入金額 ②所得税額 ③控除を受ける所得税額（1〜6）、個別法（7〜12）、簡便法（13〜19、空欄）、その他の明細（20・21）
+ * @param {object} w withholding-credit.js の withholdingCredit の結果
+ * @param {number} withholding 明細が無いときの「法人税額から控除される所得税額」（入力した額）
+ */
+export function schedule61Blocks(w, withholding = 0) {
+  // 区分の名前は様式どおりの長い文なので、列の幅（約90mm）で折り返す
+  const kindRows = w.kinds.map((k) => ({ cells: [{ text: wrapText(k.label, 8, 90), subSmall: false }, noCell(k.no), blank(k.income), blank(k.tax), blank(k.credit)] }));
+  // 明細が無く、控除する所得税額だけを入れているときは、計の③に出す（内訳は様式に書く）
+  const total = w.entered ? w.total : { income: 0, tax: 0, credit: withholding };
+  kindRows.push({ kind: 'total', cells: [{ text: '計', bold: true }, noCell(6), num(total.income), num(total.tax), num(total.credit)] });
+  const pad = (rows, n, width) => {
+    while (rows.length < n) rows.push({ cells: Array(width).fill('') });
+    return rows;
+  };
+  const pr = w.prorated.map((x) => ({
+    cells: [x.payer, blank(x.income), blank(x.tax), x.periodMonths ? `${x.periodMonths}月` : '', x.heldMonths ? `${x.heldMonths}月` : '', x.periodMonths ? formatHoldingRatio(x.ratio) : '', blank(x.credit)],
+  }));
+  const n = (label, no, w2 = 20) => ({ label: `${label}\n${no}`, align: 'right', w: w2 });
+  const others = w.others.map((x) => ({ cells: [x.payer, x.address, waDate(x.date), blank(x.income), blank(x.tax), ''] }));
+  const otherTotal = { income: w.others.reduce((s, x) => s + x.income, 0), tax: w.others.reduce((s, x) => s + x.tax, 0) };
+  return [
+    {
+      type: 'table',
+      columns: [{ label: '区　　分', grow: 1, min: 60 }, NO, AMT('収入金額\n①'), AMT('①について課される\n所得税額\n②'), AMT('②のうち控除を\n受ける所得税額\n③')],
+      rows: kindRows,
+    },
+    { type: 'heading', text: '剰余金の配当、集団投資信託の収益の分配又は割引債の償還差益に係る控除を受ける所得税額の計算' },
+    {
+      type: 'table',
+      font: 7.5,
+      columns: [
+        { label: '銘　柄', grow: 1, min: 30 },
+        n('収入金額', '7'),
+        n('所得税額', '8'),
+        n('配当等の計算期間\n(9)', '9', 16),
+        n('(9)のうち元本\n所有期間', '10', 16),
+        n('所有期間割合\n(10)/(9)', '11', 16),
+        n('控除を受ける\n所得税額\n(8)×(11)', '12'),
+      ],
+      headGroups: [{ label: '個別法による場合', from: 0, span: 7 }],
+      rows: pad(pr, 4, 7),
+    },
+    {
+      type: 'table',
+      font: 7.5,
+      columns: [{ label: '銘　柄', grow: 1, min: 30 }, n('収入金額', '13'), n('所得税額', '14'), n('期末の所有\n元本数等', '15', 16), n('期首の所有\n元本数等', '16', 16), n('(15)-(16)\n2又は12', '17', 16), n('所有元本割合\n(16)+(17)\n/(15)', '18', 16), n('控除を受ける\n所得税額\n(14)×(18)', '19')],
+      headGroups: [{ label: '銘柄別簡便法による場合', from: 0, span: 8 }],
+      rows: pad([], 2, 8),
+    },
+    { type: 'heading', text: 'その他に係る控除を受ける所得税額の明細' },
+    {
+      type: 'table',
+      font: 7.5,
+      columns: [{ label: '支払者の氏名\n又は法人名', w: 34 }, { label: '支払者の住所\n又は所在地', grow: 1, min: 30 }, { label: '支払を受けた\n年月日', w: 20, align: 'center' }, n('収入金額', '20', 22), n('控除を受ける\n所得税額', '21', 22), { label: '参　考', w: 18 }],
+      rows: [...pad(others, 4, 6), { kind: 'total', cells: [{ text: '計', bold: true }, '', '', num(otherTotal.income), num(otherTotal.tax), ''] }],
+    },
+    {
+      type: 'text',
+      text: w.entered
+        ? '②・③は復興特別所得税を含みます。2〜4は元本を所有していた期間に応じて控除し（個別法。所有期間割合は小数点以下3位未満を切上げ）、計算期間を入れていない行は全額を控除しています。銘柄別簡便法は使っていません。③の計（6）は別表一の「控除税額」の計算と、別表四の「法人税額から控除される所得税額」に使います。'
+        : '明細が入力されていません。「計算の条件」の「所得税額の控除（別表六(一)）」に、預金の利子・配当などの支払者・収入金額・源泉徴収された所得税額を入力してください。',
+    },
+  ];
+}
+
 // 地方法人税額（10.3%、100円未満切捨ての前）
 const applyLocal = (L) => (L.base > 0 ? Math.floor((L.base * L.rate) / 100000) : 0);
 
@@ -514,9 +662,11 @@ const LOCAL_NOTE = '欄の番号は、令和7年4月1日以後開始事業年度
 
 export const CORPORATE_SHEETS = [
   { value: 's1', label: '別表一', title: '法人税・地方法人税・防衛特別法人税の申告書' },
+  { value: 's2', label: '別表二', title: '同族会社等の判定に関する明細書' },
   { value: 's4', label: '別表四（簡易様式）', title: '所得の金額の計算に関する明細書（簡易様式）' },
   { value: 's51', label: '別表五(一)', title: '利益積立金額及び資本金等の額の計算に関する明細書' },
   { value: 's52', label: '別表五(二)', title: '租税公課の納付状況等に関する明細書' },
+  { value: 's61', label: '別表六(一)', title: '所得税額の控除に関する明細書' },
   { value: 's7', label: '別表七(一)', title: '欠損金の損金算入等に関する明細書' },
   { value: 's15', label: '別表十五', title: '交際費等の損金算入に関する明細書' },
   { value: 'pref', label: '第六号様式', title: '事業税・特別法人事業税・道府県民税の確定申告書' },
@@ -536,6 +686,8 @@ export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEE
     s1: () => [...(filer ? [corporateHead(filer, p)] : []), ...schedule1Blocks(r)],
     pref: () => [...(filer ? [localHead(filer, { ...p, kind: 'pref' })] : []), localFormBlock(local.pref), { type: 'text', text: LOCAL_NOTE }],
     city: () => [...(filer ? [localHead(filer, { ...p, kind: 'city' })] : []), localFormBlock(local.city), { type: 'text', text: LOCAL_NOTE }],
+    s2: () => schedule2Blocks(r.family),
+    s61: () => schedule61Blocks(r.schedule61, r.input.withholding),
     s4: () => schedule4Blocks(r.schedule4),
     s51: () => schedule51Blocks(r.schedule51, { defense: r.defense.applies }),
     s52: () => schedule52Blocks(r.schedule52, { startDate: r.period.startDate }),
@@ -549,7 +701,7 @@ export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEE
     blocks.push({ type: 'heading', caption: true, text: s.label, title });
     blocks.push(...build[s.value]());
   }
-  return { title: '法人税申告書', ...head, orientation: 'portrait', blocks };
+  return { title: '法人税申告書', ...head, orientation: 'portrait', blocks, taxForm: { from: r.period.startDate, to: r.period.endDate, name: head.company } };
 }
 
 // ---- 消費税及び地方消費税の申告書 ----
@@ -623,7 +775,7 @@ export function consumptionTaxDoc(forms, { head, filer = null, period = null, co
     blocks.push({ type: 'heading', caption: true, text: caption, title }, ...consumptionSheetBlocks(s));
   }
   if (blocks.length) for (const n of forms.notes) blocks.push({ type: 'text', text: n });
-  return { title: '消費税及び地方消費税の申告書', ...head, orientation: 'portrait', blocks };
+  return { title: '消費税及び地方消費税の申告書', ...head, orientation: 'portrait', blocks, ...(period ? { taxForm: { kind: 'consumption', from: period.startDate, to: period.endDate, name: (corporation ? filer?.name : filer?.tradeName || filer?.name) || head.company } } : {}) };
 }
 
 // ---- 所得税及び復興特別所得税の確定申告書 ----
@@ -796,5 +948,5 @@ export function incomeTaxDoc(r, { head, filer = null, input, year, white = false
   add('second', `第二表（${reiwa}）`, '所得税及び復興特別所得税の申告書', () => incomeSecondBlocks(r, input));
   if (r.loss.needed) add('loss', `第四表（${reiwa}）`, '所得税及び復興特別所得税の申告書（損失申告用）', () => incomeLossBlocks(r, { white, year }));
   if (input.medical.length) add('medical', `医療費控除の明細書（${reiwa}）`, '医療費控除の明細書', () => medicalBlocks(r, input, kindLabel));
-  return { title: '所得税及び復興特別所得税の申告書', ...head, orientation: 'portrait', blocks };
+  return { title: '所得税及び復興特別所得税の申告書', ...head, orientation: 'portrait', blocks, taxForm: { kind: 'individual', yearText: reiwa, name: filer?.ownerName || head.company } };
 }
