@@ -264,3 +264,28 @@ export function bySubAccount(rows, label = (r) => r.account.name) {
   }
   return out;
 }
+
+/**
+ * 決算書・収支内訳書の「売上（収入）金額の明細」「仕入金額の明細」：補助科目を相手先として金額の多い順に max 件。
+ * 残りと補助科目の無い分は「上記以外」（others）にまとめる
+ * @param {Array} rows trialBalance の行（subs を持つ）
+ * @returns {{ rows: Array<{ name, amount }>, others: number, total: number }}
+ */
+export function partnerSummary(rows, max = 4) {
+  const named = [];
+  let others = 0;
+  for (const r of rows) {
+    if (!r.subs.length) {
+      others += r.closing;
+      continue;
+    }
+    for (const x of r.subs) {
+      if (x.subAccount && x.closing) named.push({ name: x.subAccount.name, amount: x.closing });
+      else others += x.closing;
+    }
+  }
+  named.sort((a, b) => b.amount - a.amount);
+  const top = named.slice(0, max);
+  others += named.slice(max).reduce((t, x) => t + x.amount, 0);
+  return { rows: top, others, total: top.reduce((t, x) => t + x.amount, 0) + others };
+}

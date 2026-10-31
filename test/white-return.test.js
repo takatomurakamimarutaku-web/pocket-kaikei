@@ -168,8 +168,9 @@ test('whiteReturnSet：専従者控除を⑳・⑭に入れる。事業所得等
 test('収支内訳書の内訳：売上先・仕入先・地代家賃（補助科目ごと）', () => {
   const { b, journals } = shopBook();
   const d = whiteDetails({ accounts: b.accounts, subAccounts: b.subAccounts, period: b.period, journals });
-  assert.deepEqual(d.sales, [{ name: 'A商店', amount: 1800000 }, { name: 'B商店', amount: 1200000 }]); // 雑収入は入れない
-  assert.deepEqual(d.purchases, [{ name: 'C問屋', amount: 1000000 }]);
+  // 様式の明細：多い順に4つまでと「上記以外」。雑収入は入れない
+  assert.deepEqual(d.sales, { rows: [{ name: 'A商店', amount: 1800000 }, { name: 'B商店', amount: 1200000 }], others: 0, total: 3000000 });
+  assert.deepEqual(d.purchases, { rows: [{ name: 'C問屋', amount: 1000000 }], others: 0, total: 1000000 });
   assert.deepEqual(d.rent, [{ name: '大家 田中', amount: 600000 }]);
   assert.deepEqual(d.wages, [{ name: '給料賃金', amount: 400000 }]);
 });

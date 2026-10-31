@@ -7,7 +7,7 @@
 //     経費18科目の並び（租税公課〜貸倒金・雑費）、貸借対照表の科目の並び（現金〜事業主貸、支払手形〜元入金）
 // 科目と欄の対応は、テンプレートの科目コードで決める（科目名は利用者が変えられるため名前では判定しない）。
 // テンプレートにない科目は、経費は空欄の行（㉕〜㉚）、資産・負債は空欄の行に入れる
-import { trialBalance, bySubAccount } from './ledger.js';
+import { trialBalance, bySubAccount, partnerSummary } from './ledger.js';
 import { monthsInPeriod, monthRange } from './period.js';
 import { isBsGroup } from './accounts.js';
 import { assetRegister, CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
@@ -267,14 +267,17 @@ export function depreciationTable({ assets, periods, period, filter = () => true
 /**
  * 4ページ目：貸借対照表（資産負債調）。期首（1月1日）と期末（12月31日）
  * @param {number} incomeBeforeDeduction 青色申告特別控除前の所得金額（㊸）
+ * @param {Array} [assetLines] [assetLines, liabilityLines] 様式の行（[目印, 欄名]。目印 null は空欄の行）。不動産所得用は RE_BS_ASSET_LINES など
  * @returns {{ assets: Array<{ label, opening, closing }>, liabilities: Array, totals, balanced }}
  */
-export function blueBalanceSheet({ accounts, period, journals, incomeBeforeDeduction }) {
+export function blueBalanceSheet({ accounts, period, journals, incomeBeforeDeduction, assetLines = BS_ASSET_LINES, liabilityLines = BS_LIABILITY_LINES }) {
   const rows = trialBalance({ accounts, period, journals }).rows.filter((r) => isBsGroup(r.account.group));
+  // 行の目印：テンプレートの科目コード、または 'hint:目印'。'' は様式に行があっても該当する科目の無い行
+  const matches = (r, code) => (code.startsWith('hint:') ? r.account.hint === code.slice(5) : r.account.template && r.account.code === code);
   const side = (lines, groups) => {
     const used = new Set();
     const out = [];
-    const extras = rows.filter((r) => groups.includes(r.account.group) && !lines.some(([code]) => code && r.account.template && r.account.code === code) && (r.opening || r.closing));
+    const extras = rows.filter((r) => groups.includes(r.account.group) && !lines.some(([code]) => code && matches(r, code)) && (r.opening || r.closing));
     for (const [code, label] of lines) {
       if (code === null) {
         // 空欄の行：テンプレートにない科目・テンプレートでも様式にない科目（未収入金・ソフトウェア・敷金など）
@@ -284,14 +287,14 @@ export function blueBalanceSheet({ accounts, period, journals, incomeBeforeDeduc
         }
         continue;
       }
-      const r = rows.find((x) => x.account.template && x.account.code === code);
+      const r = code ? rows.find((x) => matches(x, code)) : null;
       if (r) used.add(r.account.id);
       out.push({ label, name: r?.account.name, opening: r ? r.opening : 0, closing: r ? r.closing : 0 });
     }
     return out;
   };
-  const assets = side(BS_ASSET_LINES, ['current_assets', 'tangible_fixed_assets', 'intangible_fixed_assets', 'investments', 'deferred_assets', 'owner_drawings']);
-  const liabilities = side(BS_LIABILITY_LINES, ['current_liabilities', 'fixed_liabilities', 'equity']);
+  const assets = side(assetLines, ['current_assets', 'tangible_fixed_assets', 'intangible_fixed_assets', 'investments', 'deferred_assets', 'owner_drawings']);
+  const liabilities = side(liabilityLines, ['current_liabilities', 'fixed_liabilities', 'equity']);
   liabilities.push({ label: '青色申告特別控除前の所得金額', opening: null, closing: incomeBeforeDeduction });
   const total = (list, k) => list.reduce((s, x) => s + (x[k] || 0), 0);
   const totals = { assetsOpening: total(assets, 'opening'), assetsClosing: total(assets, 'closing'), liabilitiesOpening: total(liabilities, 'opening'), liabilitiesClosing: total(liabilities, 'closing') };
@@ -309,29 +312,12 @@ export function blueBalanceSheet({ accounts, period, journals, incomeBeforeDeduc
 export function blueDetails({ accounts, subAccounts = [], period, journals }) {
   const rows = trialBalance({ accounts, subAccounts, period, journals }).rows;
   const byCode = (code) => rows.filter((r) => r.account.template && r.account.code === code);
-  // 補助科目のある分だけを相手先として並べ、補助科目の無い分は「上記以外」に入れる
-  const partners = (list, max = 4) => {
-    const named = [];
-    let others = 0;
-    for (const r of list) {
-      if (!r.subs.length) {
-        others += r.closing;
-        continue;
-      }
-      for (const x of r.subs) if (x.subAccount && x.closing) named.push({ name: x.subAccount.name, amount: x.closing });
-      else if (x.closing) others += x.closing;
-    }
-    named.sort((a, b) => b.amount - a.amount);
-    const top = named.slice(0, max);
-    others += named.slice(max).reduce((t, x) => t + x.amount, 0);
-    return { rows: top, others, total: top.reduce((t, x) => t + x.amount, 0) + others };
-  };
   const miscIncome = templateAccount(accounts, '501');
   const sales = rows.filter((r) => r.account.group === 'sales' && r.account.id !== miscIncome?.id);
   const purchases = rows.filter((r) => r.account.group === 'cost_of_sales' && r.account.hint === 'purchases');
   return {
-    sales: partners(sales),
-    purchases: partners(purchases),
+    sales: partnerSummary(sales),
+    purchases: partnerSummary(purchases),
     wages: bySubAccount(byCode('612')),
     family: bySubAccount(rows.filter((r) => r.account.group === 'family_salary')),
     rent: bySubAccount(byCode('615')),
