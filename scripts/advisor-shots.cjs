@@ -98,6 +98,21 @@ mkdirSync(OUT, { recursive: true });
       }
       await shot('09-succession');
     }
+    await go('#/advisor/meeting');
+    await shot('10-meeting');
+    if (pc) {
+      // 印刷プレビューを開いて PDF を保存する
+      await page.click('#print');
+      const pv = page.locator('.print-preview');
+      await pv.waitFor({ timeout: 5000 }).catch(() => errors.push(`${entity}: 検討会資料のプレビューが開かない`));
+      if (await pv.count()) {
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: join(OUT, `${entity}${pc}-10-meeting-preview.png`) });
+        const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'PDFを保存・共有' }).click()]);
+        await download.saveAs(join(OUT, `${entity}${pc}-10-meeting.pdf`));
+        await page.getByRole('button', { name: '閉じる' }).click();
+      }
+    }
     await go('#/advisor/saving');
     await shot('06-saving');
     // 利益が出ない見込み（法人のサンプル）では金額の入力欄が出ない
