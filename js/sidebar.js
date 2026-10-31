@@ -40,7 +40,7 @@ export function sidebarSections(settings) {
     items: items.filter(([href]) => !SKIP.has(href)).map(([href, label, , name]) => ({ href, label, icon: name })),
   }));
   const toItems = (list) => list.map(([href, label, name]) => ({ href, label, icon: name }));
-  return [{ title: null, open: true, items: [{ href: '#/home', label: 'ホーム', icon: 'chart' }] }, { title: '日々の入力', open: true, items: toItems(DAILY) }, ...reports, { title: '決算・設定', open: true, items: toItems(SETTINGS) }];
+  return [{ title: null, open: true, items: [{ href: '#/home', label: 'ホーム', icon: 'chart' }, { href: '#/advisor', label: '経営サポート', icon: 'pl' }] }, { title: '日々の入力', open: true, items: toItems(DAILY) }, ...reports, { title: '決算・設定', open: true, items: toItems(SETTINGS) }];
 }
 
 /**
