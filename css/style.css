@@ -1564,14 +1564,7 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .saving-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
 .saving-more p.strong { margin: 8px 0 2px; }
 /* ---- 着地見込み：月ごと・季節変動の注意 ---- */
-.advisor-months-table tr.is-plan td { color: var(--muted); }
 .advisor-plan { margin-left: 6px; font-size: 0.65rem; padding: 0 6px; white-space: nowrap; }
-.advisor-months { margin-top: 4px; }
-.advisor-months > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 2px 0; }
-.advisor-month-grid { display: grid; grid-template-columns: 5.5em 1fr 1fr; gap: 4px 8px; align-items: center; margin: 6px 0; max-width: 28em; }
-.advisor-month-grid .num { text-align: right; }
-.advisor-plan-num { color: var(--muted); }
-.advisor-month-input { width: 100%; min-height: 30px; padding: 2px 6px; text-align: right; font-size: 0.8rem; }
 .advisor-advice-list { display: grid; gap: 8px; list-style: none; padding-left: 0; }
 .advisor-advice { padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--separator); }
 .advisor-advice.is-missing { border-color: var(--warn-text); }
@@ -1590,3 +1583,20 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .advisor-sim tr.mt-strong td, .advisor-sim tr.mt-strong th { font-weight: 800; }
 .advisor-annual tr.is-plan td { color: var(--muted); }
 @media (min-width: 900px) { .sim-inputs { grid-template-columns: 1fr 1fr; } }
+
+/* ---- 着地見込み：月別の見込みの表（縦に科目・横に月） ---- */
+.advisor-grid-head { align-items: baseline; }
+.advisor-prev-toggle { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.advisor-grid-wrap { overflow-x: auto; }
+.advisor-grid { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 0.78rem; }
+.advisor-grid th, .advisor-grid td { white-space: nowrap; padding: 4px 6px; }
+.advisor-grid .grid-account { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; min-width: 7.5em; max-width: 9em; white-space: normal; box-shadow: 1px 0 0 var(--separator); }
+.advisor-grid thead th { font-size: 0.72rem; text-align: right; }
+.advisor-grid thead th.grid-account { z-index: 2; }
+.advisor-grid .grid-kind { display: block; font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+.advisor-grid th.is-plan, .advisor-grid td.is-plan { background: var(--surface-2); }
+.advisor-grid .grid-input { width: 7.2em; min-height: 28px; padding: 2px 4px; text-align: right; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.advisor-grid .grid-prev td, .advisor-grid .grid-prev th { color: var(--muted); font-size: 0.7rem; padding-top: 0; }
+.advisor-grid .grid-subtotal td, .advisor-grid .grid-subtotal th { font-weight: 700; border-top: 1px solid var(--separator); }
+.advisor-grid .grid-cum td, .advisor-grid .grid-cum th { color: var(--muted); }
+.advisor-grid tr.fs-r-group td { background: inherit; }
