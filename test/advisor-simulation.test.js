@@ -66,4 +66,25 @@ test('年計：前期＋当期の月別から、12か月の合計を出す', () 
   assert.deepEqual(only.sales.slice(0, 11), Array(11).fill(null));
   assert.equal(only.sales[11], 12 * 1200000);
   assert.equal(only.change, null);
+  // 科目ごとの年計
+  const row = r.rows.find((x) => x.account.name === '売上高');
+  assert.deepEqual(row.annual, r.sales);
+  assert.equal(row.monthly[0], 1200000);
+  assert.equal(row.change, r.change.sales);
+  assert.ok(r.rows.every((x) => x.monthly.length === 12 && x.annual.length === 12));
+});
+
+test('年計：前期だけにある科目も行に出す（当期は0）', () => {
+  const b = makeBook('corporation');
+  const prevPeriod = createPeriod({ startDate: '2025-01-01', endDate: '2025-12-31' });
+  const pj = [{ ...b.j('2025-12-10', [['消耗品費', 300000]], [['現金', 300000]]), periodId: prevPeriod.id }];
+  const journals = [b.j('2026-01-10', [['普通預金', 1000000]], [['売上高', 1000000]])];
+  const landing = forecastLanding({ entityType: 'corporation', accounts: b.accounts, period: b.period, journals, prev: { period: prevPeriod, journals: pj }, input: { actualThrough: '2026-12' }, today: '2027-01-05' });
+  const r = movingAnnual({ accounts: b.accounts, landing, prev: { period: prevPeriod, journals: pj } });
+  const supplies = r.rows.find((x) => x.account.name === '消耗品費');
+  assert.ok(supplies);
+  assert.equal(supplies.annual[0], 300000); // 2025-02〜2026-01 に前期12月を含む
+  assert.equal(supplies.annual[11], 0);
+  assert.equal(r.profit[0], 1000000 - 300000);
+  assert.equal(r.profit[11], 1000000);
 });
