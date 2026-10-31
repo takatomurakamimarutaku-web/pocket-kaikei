@@ -187,6 +187,15 @@ export function canSplit(asset) {
   return usesLife(asset.method) && !asset.disposalType && !asset.splitFrom;
 }
 
+/** 分けた資産に引き継ぐ移動の履歴（売却・除却した日までの移動。部門・設置場所もその時点のもの） */
+function movesUntil(asset, date) {
+  const all = Array.isArray(asset.moves) ? asset.moves : [];
+  const moves = all.filter((m) => m.date <= date);
+  if (moves.length === all.length) return { moves };
+  const next = all[moves.length];
+  return { moves, departmentId: next.fromDepartmentId ?? null, location: next.fromLocation };
+}
+
 /**
  * 一部の売却・除却：元の資産から、売却・除却する分を別の資産に分ける
  * 分けた期間の期首に、取得価額・帳簿価額（定率法は改定取得価額も）を割合で分ける。それより前の期間は元の資産のまま
@@ -234,6 +243,7 @@ export function splitAsset(asset, periods, { date, cost, quantity = null }) {
     disposedOn: null,
     disposalType: null,
     salePrice: null,
+    ...movesUntil(asset, date),
   };
   return { original, part, errors: [] };
 }

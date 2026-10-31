@@ -10,8 +10,8 @@ import { createJournal, createPeriod } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { periodContext, closedNotice } from './period-common.js';
-import { assetRegister, depreciationLines, findDepreciationJournals, smeUsage } from '../depreciation.js';
-import { bookedDepreciation, monthlyDepreciationLines } from '../asset-reports.js';
+import { assetRegister, findDepreciationJournals, smeUsage } from '../depreciation.js';
+import { assetDepreciationLines, bookedDepreciation, monthlyDepreciationLines } from '../asset-reports.js';
 import { householdPlan, householdBases, householdEligible, findHouseholdJournals, isValidRatio, HOUSEHOLD_SOURCE } from '../household.js';
 
 export async function render({ app, outlet }) {
@@ -87,7 +87,7 @@ export async function render({ app, outlet }) {
   function depreciationSection() {
     const title = h('h2', { class: 'section-title', text: '2. 減価償却' });
     const link = h('a', { href: '#/assets', class: 'btn btn-block', text: '固定資産台帳を開く' });
-    const { lines, total, errors } = depreciationLines({ assets, periods, period, accounts, entityType, departments });
+    const { lines, total, errors } = assetDepreciationLines({ assets, periods, period, accounts, entityType, departments });
     const done = findDepreciationJournals(journals).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no));
     const booked = bookedDepreciation(journals);
     // 月次償却で一部の月だけ登録しているとき：残りの月の分を期末日でまとめて登録する

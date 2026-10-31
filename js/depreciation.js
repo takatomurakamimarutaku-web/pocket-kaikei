@@ -342,6 +342,9 @@ export function validateAsset(asset, { entityType, accounts }) {
   // v0.68.0 で追加した管理の項目（任意）：部門（償却費の仕訳の部門）・購入先
   if (asset.departmentId != null && (typeof asset.departmentId !== 'string' || !asset.departmentId)) e.departmentId = '部門が正しくありません';
   if (asset.supplier != null && (typeof asset.supplier !== 'string' || asset.supplier.length > 40)) e.supplier = '購入先は40文字以内にしてください';
+  // v0.72.0 で追加した移動の履歴（任意）：部門・設置場所を変えた記録。最後の移動の「移動後」が今の部門・設置場所
+  const moveError = validateMoves(asset);
+  if (moveError) e.moves = moveError;
   if (asset.disposalType != null) {
     if (!['sell', 'retire'].includes(asset.disposalType)) e.disposedOn = '売却か除却かが正しくありません';
     else if (!asset.disposedOn) e.disposedOn = '売却・除却した日を入力してください';
@@ -353,6 +356,33 @@ export function validateAsset(asset, { entityType, accounts }) {
   if (asset.ptKind != null && !(Number.isInteger(asset.ptKind) && asset.ptKind >= 1 && asset.ptKind <= 6)) e.ptKind = '償却資産の種類を選んでください';
   if (asset.ptLife != null && !(Number.isInteger(asset.ptLife) && asset.ptLife >= MIN_LIFE && asset.ptLife <= MAX_LIFE)) e.ptLife = `耐用年数は${MIN_LIFE}〜${MAX_LIFE}年で入力してください`;
   return e;
+}
+
+export const MAX_MOVES = 100;
+
+/** 移動の履歴の検証（問題が無ければ null） */
+function validateMoves(asset) {
+  if (asset.moves == null) return null;
+  if (!Array.isArray(asset.moves) || asset.moves.length > MAX_MOVES) return `移動の履歴は${MAX_MOVES}件までです`;
+  const dep = (v) => v == null || (typeof v === 'string' && v.length > 0);
+  const loc = (v) => typeof v === 'string' && v.length <= 40;
+  let prev = null;
+  for (const m of asset.moves) {
+    if (!m || typeof m.id !== 'string' || !m.id) return '移動の履歴のデータが正しくありません';
+    if (!isValidDate(m.date)) return '移動した日を入力してください';
+    if (isValidDate(asset.acquiredOn) && m.date < asset.acquiredOn) return '移動した日は取得日以後にしてください';
+    if (asset.disposedOn && m.date > asset.disposedOn) return '移動した日は売却・除却した日以前にしてください';
+    if (!dep(m.fromDepartmentId) || !dep(m.toDepartmentId) || !loc(m.fromLocation) || !loc(m.toLocation)) return '移動の部門・設置場所が正しくありません（設置場所は40文字以内）';
+    if (m.memo != null && (typeof m.memo !== 'string' || m.memo.length > 40)) return '移動のメモは40文字以内にしてください';
+    if ((m.fromDepartmentId ?? null) === (m.toDepartmentId ?? null) && m.fromLocation === m.toLocation) return '移動の前と後で、部門か設置場所を変えてください';
+    if (prev) {
+      if (m.date < prev.date) return '移動の履歴は日付の順にしてください';
+      if ((m.fromDepartmentId ?? null) !== (prev.toDepartmentId ?? null) || m.fromLocation !== prev.toLocation) return '移動の履歴がつながっていません（前の移動の移動後と、次の移動の移動前が違います）';
+    }
+    prev = m;
+  }
+  if (prev && ((asset.departmentId ?? null) !== (prev.toDepartmentId ?? null) || String(asset.location ?? '') !== prev.toLocation)) return '今の部門・設置場所が、最後の移動の移動後と違います';
+  return null;
 }
 
 /** 前の会計ソフトの帳簿価額を引き継いでいるか（定額法・定率法で、日付と金額があるとき） */
@@ -573,9 +603,10 @@ export function smeUsage(assets, period) {
  *   減価償却費（事業分）・事業主貸（個人の私用分） / 資産の科目（直接法）または減価償却累計額（法人の有形固定資産で、累計額の科目があるとき）
  *   資産に部門を指定していれば、償却費の明細に部門を付ける（部門別損益）
  *   pick：台帳の1行 → { amount, business }（月次償却で一部の月の分だけ登録するとき。省略すると期間の全額）、memoSuffix：摘要の後ろに付ける文字
+ *   split：(台帳の1行, 金額) → [{ departmentId, business }]（期中に部門を移動した資産の償却費を部門ごとに分けるとき。合計は business と同じ）
  * @returns {{ lines: Array, total: number, errors: string[] }}
  */
-export function depreciationLines({ assets, periods, period, accounts, entityType, departments = [], pick = null, memoSuffix = '' }) {
+export function depreciationLines({ assets, periods, period, accounts, entityType, departments = [], pick = null, memoSuffix = '', split = null }) {
   const errors = [];
   const expense = accounts.find((a) => a.hint === 'depreciation' && a.active);
   const drawings = accounts.find((a) => a.role === 'owner_drawings');
@@ -596,8 +627,11 @@ export function depreciationLines({ assets, periods, period, accounts, entityTyp
     if (asset.expenseAccountId && !own) errors.push(`「${asset.name}」の償却費の科目が見つかりません（無効にした場合は固定資産の画面で選び直してください）`);
     const debit = own || expense;
     // 資産に部門を指定していれば、償却費（損益の科目）に部門を付ける（使わない設定にした部門は付けない）
-    const dep = asset.departmentId ? departments.find((d) => d.id === asset.departmentId && d.active !== false) : null;
-    if (debit && row.business) lines.push({ ...line('debit', debit.id, row.business, memo), ...(dep ? { departmentId: dep.id } : {}) });
+    const parts = (split && split(entry, row)) || [{ departmentId: asset.departmentId, business: row.business }];
+    for (const part of parts) {
+      const dep = part.departmentId ? departments.find((d) => d.id === part.departmentId && d.active !== false) : null;
+      if (debit && part.business) lines.push({ ...line('debit', debit.id, part.business, memo), ...(dep ? { departmentId: dep.id } : {}) });
+    }
     if (row.private) {
       if (drawings) lines.push(line('debit', drawings.id, row.private, `${memo}（私用分）`.slice(0, 100)));
       else errors.push('事業主貸の科目が見つかりません');

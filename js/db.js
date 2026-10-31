@@ -418,6 +418,7 @@ async function putAsset(tx, asset, { split = false } = {}) {
     detail: String(asset.detail ?? '').trim(),
     supplier: String(asset.supplier ?? '').trim(),
     departmentId: asset.departmentId || null,
+    moves: Array.isArray(asset.moves) ? asset.moves : [],
     quantity: asset.quantity ?? 1,
     businessRatio: settings?.entityType === 'individual' ? asset.businessRatio : 100,
     disposedOn: asset.disposedOn || null,
