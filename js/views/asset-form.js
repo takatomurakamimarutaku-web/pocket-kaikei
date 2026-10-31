@@ -24,7 +24,8 @@ import { hasRealEstate } from '../real-estate.js';
 import { compareDepartments } from '../departments.js';
 import { parseYen } from '../money.js';
 import { todayString } from '../period.js';
-import { createAsset } from '../models.js';
+import { createAsset, newId } from '../models.js';
+import { assetMoves, addMove, undoLastMove } from '../asset-reports.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { journalLabel } from '../journal.js';
@@ -330,6 +331,51 @@ export async function render({ app, outlet, params, query = {} }) {
       : null,
     h('p', { class: 'field-error', role: 'alert' }),
   );
+  // 移動（部門・設置場所の変更）：履歴を残し、今の部門・設置場所を移動後にする。期中に部門を移した資産の償却費は月数で部門に分ける
+  const moves = original ? assetMoves(original) : [];
+  const depName = (id) => (id ? (departments.find((d) => d.id === id)?.name ?? '（削除した部門）') : '指定なし');
+  const placeText = (dep, loc) => [deps.length || dep ? depName(dep) : null, loc || (deps.length || dep ? '' : '設置場所なし')].filter(Boolean).join('・');
+  const moveDate = h('input', { id: 'f-move-date', type: 'date', value: defaultDate });
+  const moveDeps = departments.filter((d) => d.active !== false).sort(compareDepartments);
+  const moveDep = moveDeps.length || original?.departmentId
+    ? h('select', { id: 'f-move-dep' }, h('option', { value: '', text: '指定しない', selected: !original?.departmentId }), moveDeps.map((d) => h('option', { value: d.id, text: d.name, selected: d.id === original?.departmentId })))
+    : null;
+  const moveLoc = h('input', { id: 'f-move-loc', type: 'text', maxlength: 40, value: original?.location || '', placeholder: '例：第2倉庫' });
+  const moveMemo = h('input', { id: 'f-move-memo', type: 'text', maxlength: 40, placeholder: '例：営業所の開設に伴い移設' });
+  const moveForm = h(
+    'div',
+    { class: 'move-form', dataset: { field: 'moves' } },
+    h('div', { class: 'field-row' }, field('移動した日', moveDate, { name: 'moveDate' }), moveDep ? field('移動後の部門', moveDep, { name: 'moveDep' }) : null),
+    field('移動後の設置場所', moveLoc, { name: 'moveLoc' }),
+    field('メモ（任意）', moveMemo, { name: 'moveMemo' }),
+    h('p', { class: 'field-error', role: 'alert' }),
+    h('button', { type: 'button', class: 'btn btn-block', text: '移動を記録する', onclick: recordMove }),
+  );
+  const moveBox = original
+    ? h(
+        'section',
+        { class: 'panel' },
+        h('h3', { class: 'section-title', text: '移動（部門・設置場所の変更）' }),
+        moves.length
+          ? h(
+              'ol',
+              { class: 'move-list small' },
+              moves.map((m, i) =>
+                h(
+                  'li',
+                  {},
+                  h('span', { class: 'nowrap', text: slash(m.date) }),
+                  ' ',
+                  h('span', { text: `${placeText(m.fromDepartmentId, m.fromLocation)} → ${placeText(m.toDepartmentId, m.toLocation)}` }),
+                  m.memo ? h('span', { class: 'muted', text: `（${m.memo}）` }) : null,
+                  i === moves.length - 1 ? h('button', { type: 'button', class: 'btn btn-small btn-danger-text', text: '取り消す', onclick: undoMove }) : null,
+                ),
+              ),
+            )
+          : h('p', { class: 'muted small', text: '別の部門・事業所・倉庫などへ移したときに記録します。移動した月から新しい部門の償却費になり、期中に移した資産の償却費は月数で部門に分けて仕訳します。' }),
+        original.disposalType ? null : moveForm,
+      )
+    : null;
   const capexBox =
     original && (children.length || canAddCapex(original))
       ? h(
@@ -368,7 +414,7 @@ export async function render({ app, outlet, params, query = {} }) {
     disposalBox,
     h('div', { class: 'field-row' }, field('資産番号（任意）', assetNo, { name: 'assetNo' }), field('数量', quantity, { name: 'quantity' })),
     h('div', { class: 'field-row' }, field('設置場所（任意）', location, { name: 'location' }), field('購入先（任意）', supplier, { name: 'supplier' })),
-    department ? field('部門（任意）', department, { name: 'departmentId', hint: '償却費の仕訳にこの部門を付けて、部門別損益に入れます' }) : null,
+    department ? field('部門（任意）', department, { name: 'departmentId', hint: original?.moves?.length ? '移動の履歴があるので、部門・設置場所は下の「移動を記録する」で変えます' : '償却費の仕訳にこの部門を付けて、部門別損益に入れます' }) : null,
     field('メモ（任意）', memo, { name: 'memo' }),
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '登録する' }),
   );
@@ -444,6 +490,11 @@ export async function render({ app, outlet, params, query = {} }) {
     life.disabled = true;
     preset.hidden = true;
   }
+  // 移動の履歴があるときは、部門・設置場所は「移動を記録する」で変える（履歴とずらさない）
+  if (moves.length) {
+    location.disabled = true;
+    if (department) department.disabled = true;
+  }
   if (splitLocked) {
     for (const el of [category, acquiredOn, startedOn, cost, method, life, carryBook, carryRevised, specialRate, lifeQuery]) el.disabled = true;
     usedWrap.hidden = true;
@@ -452,6 +503,7 @@ export async function render({ app, outlet, params, query = {} }) {
     outlet,
     form,
     h('section', { class: 'panel' }, preview),
+    moveBox,
     capexBox,
     original ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn btn-danger-text', text: 'この固定資産を削除', onclick: remove })) : null,
   );
@@ -466,6 +518,35 @@ export async function render({ app, outlet, params, query = {} }) {
     } catch (e) {
       if (e instanceof ValidationError && !Array.isArray(e.errors)) showErrors(form, e.errors);
       else showToast(errorText(e, '保存'));
+    }
+  }
+
+  async function recordMove() {
+    const errorEl = moveForm.querySelector('.field-error');
+    errorEl.textContent = '';
+    const next = addMove(original, { id: newId(), date: moveDate.value, departmentId: moveDep ? moveDep.value : (original.departmentId ?? null), location: moveLoc.value, memo: moveMemo.value });
+    try {
+      await app.db.saveAsset(next);
+      showToast('移動を記録しました');
+      app.refresh();
+    } catch (e) {
+      errorEl.textContent = e instanceof ValidationError && !Array.isArray(e.errors) ? Object.values(e.errors).join(' ') : errorText(e, '保存');
+    }
+  }
+
+  async function undoMove() {
+    const ok = await confirmDialog({
+      title: '最後の移動を取り消しますか？',
+      message: '部門・設置場所を移動前に戻します。登録済みの減価償却の仕訳は変わりません（必要なら登録し直してください）。',
+      buttons: [{ label: 'キャンセル', value: false }, { label: '取り消す', value: true, variant: 'danger' }],
+    });
+    if (!ok) return;
+    try {
+      await app.db.saveAsset(undoLastMove(original));
+      showToast('取り消しました');
+      app.refresh();
+    } catch (e) {
+      showToast(e instanceof ValidationError && !Array.isArray(e.errors) ? Object.values(e.errors).join(' ') : errorText(e, '取り消し'));
     }
   }
 

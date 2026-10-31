@@ -1502,3 +1502,19 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 @media (min-width: 900px) { .asset-table.asset-wide { min-width: 100%; } }
 .asset-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
 .asset-more[open] > summary { margin-bottom: 6px; }
+
+/* 固定資産の移動（部門・設置場所の変更）の履歴 */
+.move-list {
+  margin: 0 0 12px;
+  padding-left: 1.4em;
+}
+.move-list li {
+  margin-bottom: 6px;
+}
+.move-list .btn {
+  margin-left: 6px;
+}
+.move-form {
+  border-top: 1px solid var(--separator);
+  padding-top: 10px;
+}

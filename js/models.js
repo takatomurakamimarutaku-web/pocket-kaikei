@@ -75,6 +75,7 @@ export function createAsset(fields = {}, now = new Date()) {
     detail: '', // 細目（任意。同上）
     supplier: '', // 購入先（任意）
     departmentId: null, // 部門（任意。償却費の仕訳に付ける）
+    moves: [], // 移動の履歴（部門・設置場所の変更。asset-reports の addMove）
     disposalType: null, // 売却（sell）・除却（retire）
     salePrice: null, // 売却額（税込）
     expenseAccountId: null, // 償却費の科目（null なら減価償却費。製造業の工場の資産は製造経費の科目）

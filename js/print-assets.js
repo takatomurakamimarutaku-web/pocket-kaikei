@@ -3,7 +3,7 @@
 // 「償却予定表」「月次償却額一覧表」を参考に、資産を1行ずつ並べて集計の単位（科目・種類・設置場所・部門）ごとに小計・合計を付ける
 import { fmt } from './print-layout.js';
 import { CATEGORY_BY_ID, usesLife, isDisposable, methodLabel } from './depreciation.js';
-import { registerDetail, groupDetails, sortDetails, sumDetails, disposalList, depreciationForecast, monthlyTable, GROUP_KEYS } from './asset-reports.js';
+import { registerDetail, groupDetails, sortDetails, sumDetails, disposalList, depreciationForecast, monthlyTable, movesIn, GROUP_KEYS } from './asset-reports.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
 const b0 = (n) => (n ? fmt(n) : '');
@@ -18,6 +18,7 @@ export const ASSET_DOCS = [
   ['monthly', '月次償却額一覧表'],
   ['acquired', '取得資産台帳（当期に取得）'],
   ['disposed', '除却資産台帳（当期に売却・除却）'],
+  ['moved', '移動資産台帳（当期に部門・設置場所を移動）'],
 ];
 
 /** 償却方法と耐用年数（2行） */
@@ -310,6 +311,41 @@ export function disposedDoc(details, { head }) {
     blocks: [
       { type: 'table', columns, rows, font: 7.5 },
       { type: 'text', text: '・売却益（△損）＝売却額−売却した日の帳簿価額。除却は帳簿価額がそのまま除却損です（個人の事業用資産の売却は譲渡所得になり、帳簿では事業主借・事業主貸で処理します）。' },
+    ],
+  };
+}
+
+/**
+ * 移動資産台帳（当期に部門・設置場所を移動した資産）：移動した日・移動前と移動後の部門・設置場所・移動した日の帳簿価額の目安として期末帳簿価額
+ */
+export function movedDoc(details, { period, departmentById, head }) {
+  const byAsset = new Map(details.map((d) => [d.asset.id, d]));
+  const list = movesIn(details.map((d) => d.asset), period);
+  const dep = (id) => (id ? (departmentById?.get(id)?.name ?? '（削除した部門）') : '');
+  const columns = [
+    { label: '移動日', align: 'center', w: 19 },
+    { label: '資産番号', w: 15 },
+    { label: '資産の名称\n種類', grow: 1, max: 60 },
+    { label: '取得価額', align: 'right', w: 23 },
+    { label: '期末帳簿価額', align: 'right', w: 23 },
+    { label: '移動前\n部門・設置場所', max: 45 },
+    { label: '移動後\n部門・設置場所', max: 45 },
+    { label: 'メモ', max: 40 },
+  ];
+  const rows = list.map(({ asset, move }) => {
+    const d = byAsset.get(asset.id);
+    return {
+      cells: [slash(move.date), asset.assetNo || '', [asset.name, CATEGORY_BY_ID[asset.category]?.label ?? ''], fmt(d?.cost ?? asset.cost), fmt(d?.bookClosing ?? 0), [dep(move.fromDepartmentId), move.fromLocation], [dep(move.toDepartmentId), move.toLocation], move.memo || ''],
+    };
+  });
+  rows.push({ kind: 'total', cells: [{ text: `合計（${list.length}件）`, span: 8 }] });
+  return {
+    title: '移動資産台帳',
+    ...head,
+    orientation: 'landscape',
+    blocks: [
+      { type: 'table', columns, rows, font: 7.5 },
+      { type: 'text', text: '・移動した月から移動後の部門の償却費になります。期中に部門を移した資産の償却費は、月数で部門に分けて仕訳します。' },
     ],
   };
 }

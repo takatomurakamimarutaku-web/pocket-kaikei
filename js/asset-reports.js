@@ -350,11 +350,90 @@ export function monthlyDepreciationLines({ months, ...p }) {
   };
   const sorted = [...set].sort();
   const label = sorted.length === 1 ? `（${Number(sorted[0].slice(5))}月分）` : `（${Number(sorted[0].slice(5))}月〜${Number(sorted.at(-1).slice(5))}月分）`;
-  return depreciationLines({ ...p, pick, memoSuffix: label });
+  return depreciationLines({ ...p, pick, memoSuffix: label, split: (entry) => departmentSplit(entry, p.period, set) });
 }
 
 /** その月の末日（期間の末日を超えない） */
 export function monthEnd(month, period) {
   const end = addDays(addMonths(`${month}-01`, 1), -1);
   return end > period.endDate ? period.endDate : end;
+}
+
+// ---- 移動（部門・設置場所の変更）----
+
+/** 移動の履歴（日付の順。古いデータには無い） */
+export function assetMoves(asset) {
+  return Array.isArray(asset.moves) ? asset.moves : [];
+}
+
+/**
+ * その月の部門・設置場所（移動した日の属する月から、移動後の部門・設置場所）
+ * @param {string} month 'YYYY-MM'
+ * @returns {{ departmentId: string|null, location: string }}
+ */
+export function placeAt(asset, month) {
+  const moves = assetMoves(asset);
+  if (!moves.length) return { departmentId: asset.departmentId ?? null, location: asset.location || '' };
+  const last = moves.filter((m) => m.date.slice(0, 7) <= month).at(-1);
+  return last ? { departmentId: last.toDepartmentId ?? null, location: last.toLocation } : { departmentId: moves[0].fromDepartmentId ?? null, location: moves[0].fromLocation };
+}
+
+/**
+ * 移動の記録を作る（今の部門・設置場所から、新しい部門・設置場所へ）。資産の部門・設置場所も移動後にする
+ * @param {{ id, date, departmentId, location, memo }} m
+ */
+export function addMove(asset, { id, date, departmentId = null, location = '', memo = '' }) {
+  const move = {
+    id,
+    date,
+    fromDepartmentId: asset.departmentId ?? null,
+    fromLocation: asset.location || '',
+    toDepartmentId: departmentId || null,
+    toLocation: String(location).trim(),
+    memo: String(memo).trim(),
+  };
+  const moves = [...assetMoves(asset), move].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return { ...asset, moves, departmentId: move.toDepartmentId, location: move.toLocation };
+}
+
+/** 最後の移動を取り消す（部門・設置場所を移動前に戻す） */
+export function undoLastMove(asset) {
+  const moves = assetMoves(asset);
+  const last = moves.at(-1);
+  if (!last) return asset;
+  return { ...asset, moves: moves.slice(0, -1), departmentId: last.fromDepartmentId ?? null, location: last.fromLocation };
+}
+
+/**
+ * 期中に部門を移動した資産の償却費（経費になる額）を部門ごとに分ける。月ごとの額は monthlyDepreciation と同じ割り振り
+ *   移動の無い資産・期間中ずっと同じ部門の資産は null（資産の部門のまま）
+ * @param {Set<string>|null} only 月次償却で一部の月の分だけ登録するときの月
+ * @returns {Array<{ departmentId, business }>|null}
+ */
+export function departmentSplit(entry, period, only = null) {
+  if (!assetMoves(entry.asset).length) return null;
+  const m = monthlyDepreciation(entry, period);
+  const map = new Map();
+  m.months.forEach((mm, i) => {
+    if (only && !only.has(mm)) return;
+    const dep = placeAt(entry.asset, mm).departmentId;
+    map.set(dep, (map.get(dep) ?? 0) + m.business[i]);
+  });
+  const parts = [...map].filter(([, v]) => v).map(([departmentId, business]) => ({ departmentId, business }));
+  return parts.length ? parts : null;
+}
+
+/** 減価償却の仕訳の明細（期中に部門を移動した資産は、償却費を部門ごとに分ける）。depreciationLines と同じ引数 */
+export function assetDepreciationLines(p) {
+  return depreciationLines({ ...p, split: (entry) => departmentSplit(entry, p.period) });
+}
+
+/**
+ * 期間中の移動の一覧（移動資産台帳）。日付の順
+ * @returns {Array<{ asset, move }>}
+ */
+export function movesIn(assets, period) {
+  return assets
+    .flatMap((asset) => assetMoves(asset).filter((m) => inPeriod(m.date, period)).map((move) => ({ asset, move })))
+    .sort((a, b) => (a.move.date < b.move.date ? -1 : a.move.date > b.move.date ? 1 : String(a.asset.name).localeCompare(String(b.asset.name), 'ja')));
 }
