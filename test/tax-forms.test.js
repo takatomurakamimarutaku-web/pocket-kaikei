@@ -144,3 +144,23 @@ test('様式の欄をすべて出す：第二表は①〜㉓、第一表は修�
   assert.ok(one[0].items.some((it) => it.t === 'text' && it.text === 'この申告書が修正申告である場合'));
   assert.equal(layoutDocument(consumptionTaxDoc(f, { head: {}, sheets: ['second'] })).length, 1);
 });
+
+test('付表の欄も様式どおり：付表1-3・2-3・4-3・5-3の番号の並び（扱わない欄は空欄）と、それぞれ1枚に収まる', () => {
+  const book = makeBook('individual');
+  const journals = [
+    book.j('2026-03-31', [['普通預金', 5500000]], [['売上高', 5500000, 'sales_10']]),
+    book.j('2026-04-10', [['仕入高', 2200000, 'purchase_10']], [['普通預金', 2200000]]),
+  ];
+  const nos = (f, id) => f.sheets.find((s) => s.id === id).rows.map((x) => x.no);
+  const circled = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => String.fromCodePoint((from + i <= 20 ? 0x2460 - 1 : 0x3251 - 21) + from + i));
+  const g = taxReturnForms(computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'general' }));
+  assert.deepEqual(nos(g, '付表1-3'), ['①', '①-1', '①-2', '②', '③', '④', '⑤', '⑤-1', '⑤-2', ...circled(6, 13)]);
+  assert.deepEqual(nos(g, '付表2-3'), circled(1, 28));
+  const s13 = byNo(g.sheets[0].rows);
+  assert.deepEqual([s13['①-2'].a, s13['①-2'].b, s13['①-2'].c, s13['⑤-2'].c], [null, null, null, null]);
+  const s = taxReturnForms(computeTaxReturn({ journals, period: period2026, entityType: 'individual', method: 'simplified', businessType: 5 }));
+  assert.deepEqual(nos(s, '付表4-3'), ['①', '①-1', ...circled(2, 13)]);
+  assert.deepEqual(nos(s, '付表5-3'), circled(1, 19));
+  assert.ok(s.notes.some((n) => n.includes('付表5-3のⅢ')));
+  for (const f of [g, s]) for (const sheet of f.sheets) assert.equal(layoutDocument(consumptionTaxDoc(f, { head: {}, sheets: [sheet.id] })).length, 1, sheet.id);
+});
