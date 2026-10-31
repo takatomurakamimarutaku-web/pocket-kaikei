@@ -143,10 +143,37 @@ test('印刷：第一表は左に所得と控除、右に税金の計算（様�
   assert.equal(side.get('0:⑫'), '4,000,000');
   assert.equal(side.get('0:⑬'), '600,000');
   assert.equal(side.get('3:㉛'), r.lines[31].toLocaleString('en-US'));
-  assert.equal(side.get('3:(52)'), r.lines[52].toLocaleString('en-US'));
+  assert.equal(side.get('3:52'), r.lines[52].toLocaleString('en-US'));
+  // 様式の欄をすべて出す（扱わない欄は空欄）：収入金額等 ㋐〜㋚、所得金額等 ①〜⑫、税金の計算〜その他 66 まで
+  for (const no of ['㋐', '㋑', '㋓', '㋕', '㋘', '㋙', '㋚']) assert.ok(side.has(`0:${no}`), no);
+  for (const no of ['②', '④', '⑤', '⑦', '⑪', '㉗']) assert.equal(side.get(`0:${no}`), '', no);
+  for (const no of ['㉝', '㊸', '54', '55', '56', '61', '63', '64', '65', '66']) assert.equal(side.get(`3:${no}`), '', no);
+  assert.equal(layoutDocument(incomeTaxDoc(r, { head: {}, input, year: 2026, sheets: ['first'] })).length, 1);
   assert.deepEqual(incomeSheets(r, input).map((s) => s.value), ['first', 'second', 'medical']);
   const pages = layoutDocument(incomeTaxDoc(r, { head: {}, input, year: 2026 }));
   assert.deepEqual(pages.map((p) => p.caption), ['第一表（令和8年分）', '第二表（令和8年分）', '医療費控除の明細書（令和8年分）']);
   const loss = computeIncomeTax({ year: 2026, business: { ...business, income: -500000 }, input: DEFAULT_INCOME_TAX });
   assert.ok(incomeSheets(loss, DEFAULT_INCOME_TAX).some((s) => s.value === 'loss'));
+});
+
+test('第二表の印刷：様式の事項（保険料・本人・雑損・寄附・譲渡・所得の内訳・親族・専従者・住民税と事業税）を1枚に並べ、個人番号は空欄', async () => {
+  const { incomeSecondBlocks } = await import('../js/print-tax-forms.js');
+  const input = { ...DEFAULT_INCOME_TAX, salaryRevenue: 1200000, salaryWithholding: 30000, salaryPayer: '株式会社エー', widow: 'single_parent', donations: 50000, dependents: [{ name: '山田 花', relation: '子', birthDate: '2012-05-01', income: 0 }, { name: '山田 太', relation: '父', birthDate: '1950-01-01', income: 0, familyWorker: true }] };
+  const r = computeIncomeTax({ year: 2026, business, input });
+  const blocks = incomeSecondBlocks(r, input);
+  const labels = blocks.flatMap((b) => (b.headGroups || []).map((g) => g.label)).join('|');
+  for (const t of ['保険料控除等に関する事項', '本人に関する事項', '雑損控除に関する事項', '総合課税の譲渡所得、一時所得に関する事項', '所得の内訳', '配偶者や親族に関する事項', '事業専従者に関する事項', '住民税・事業税に関する事項']) assert.ok(labels.includes(t), t);
+  const json = JSON.stringify(blocks);
+  assert.match(json, /株式会社エー/);
+  assert.match(json, /"text":"㊾ 源泉徴収税額の合計額"/);
+  // ひとり親に○、寄附金
+  const me = blocks.find((b) => b.headGroups?.[0].label.startsWith('本人に関する事項'));
+  assert.deepEqual(me.rows[0].cells.slice(0, 3), ['', '○', '']);
+  assert.equal(me.rows[0].cells.at(-1), '50,000');
+  // 親族の表：個人番号は空欄、専従者は専従者の表にも出る
+  const family = blocks.find((b) => b.headGroups?.[0].label.startsWith('配偶者や親族'));
+  assert.ok(family.rows.every((x) => x.cells[1] === ''));
+  const workers = blocks.find((b) => b.headGroups?.[0].label.startsWith('事業専従者'));
+  assert.equal(workers.rows[0].cells[0], '山田 太');
+  assert.equal(layoutDocument(incomeTaxDoc(r, { head: {}, input, year: 2026, sheets: ['second'] })).length, 1);
 });
