@@ -13,8 +13,16 @@ import {
   monthlyDepreciation,
   monthlyTable,
   disposalList,
+  addMove,
+  undoLastMove,
+  placeAt,
+  departmentSplit,
+  assetDepreciationLines,
+  monthlyDepreciationLines,
+  movesIn,
 } from '../js/asset-reports.js';
-import { assetRegisterDoc, movementDoc, forecastDoc, monthlyDoc, acquiredDoc, disposedDoc } from '../js/print-assets.js';
+import { assetRegisterDoc, movementDoc, forecastDoc, monthlyDoc, acquiredDoc, disposedDoc, movedDoc } from '../js/print-assets.js';
+import { splitAsset } from '../js/asset-tools.js';
 import { layoutDocument, fmt } from '../js/print-layout.js';
 import { buildSample } from '../js/sample.js';
 import { makeBook } from './helpers.js';
@@ -301,4 +309,71 @@ test('償却しない資産（土地）：償却費0で取得価額のまま台�
   // 青色申告決算書の減価償却費の計算・償却資産申告の対象から外す
   assert.equal(depreciationTable({ assets: [land], periods, period }).rows.length, 0);
   assert.deepEqual([ptEligibility(land).include, ptEligibility(land).fixed], [false, true]);
+});
+
+test('移動：履歴を足すと今の部門・設置場所が移動後になり、取り消すと戻る。履歴の検証', () => {
+  const { b, assets } = book();
+  const ctx = { entityType: 'corporation', accounts: b.accounts };
+  const old = assets.find((a) => a.id === 'old');
+  const moved = addMove(old, { id: 'm1', date: '2026-10-15', departmentId: 'd2', location: ' 支店 ', memo: '支店の開設' });
+  assert.deepEqual([moved.departmentId, moved.location], ['d2', '支店']);
+  assert.deepEqual(moved.moves[0], { id: 'm1', date: '2026-10-15', fromDepartmentId: 'd1', fromLocation: '本店', toDepartmentId: 'd2', toLocation: '支店', memo: '支店の開設' });
+  assert.deepEqual(validateAsset(moved, ctx), {});
+  // 移動した月から移動後
+  assert.deepEqual(placeAt(moved, '2026-09'), { departmentId: 'd1', location: '本店' });
+  assert.deepEqual(placeAt(moved, '2026-10'), { departmentId: 'd2', location: '支店' });
+  assert.deepEqual(placeAt(old, '2026-10'), { departmentId: 'd1', location: '本店' });
+  const twice = addMove(moved, { id: 'm2', date: '2027-01-05', departmentId: null, location: '倉庫' });
+  assert.equal(twice.moves[1].fromDepartmentId, 'd2');
+  assert.deepEqual(validateAsset(twice, ctx), {});
+  const back = undoLastMove(twice);
+  assert.deepEqual([back.departmentId, back.location, back.moves.length], ['d2', '支店', 1]);
+  assert.deepEqual(undoLastMove(back).moves, []);
+  assert.equal(undoLastMove(back).departmentId, 'd1');
+  // 検証：変えていない・取得日より前・つながっていない・今の値と違う・日付の順
+  assert.ok(validateAsset(addMove(old, { id: 'x', date: '2026-10-01', departmentId: 'd1', location: '本店' }), ctx).moves);
+  assert.ok(validateAsset(addMove(old, { id: 'x', date: '2025-01-01', departmentId: 'd2', location: '本店' }), ctx).moves);
+  assert.ok(validateAsset({ ...twice, moves: [twice.moves[0], { ...twice.moves[1], fromLocation: '別' }] }, ctx).moves);
+  assert.ok(validateAsset({ ...moved, location: '別の場所' }, ctx).moves);
+  assert.ok(validateAsset({ ...twice, moves: [twice.moves[1], twice.moves[0]] }, ctx).moves);
+  assert.ok(validateAsset({ ...moved, disposedOn: '2026-09-30', disposalType: 'retire' }, ctx).moves);
+});
+
+test('期中に部門を移した資産：償却費を月数で部門に分けて仕訳する（合計は変わらない）。月次償却も同じ割り振り', () => {
+  const { b, assets } = book();
+  const departments = [{ id: 'd1', name: '営業部', active: true }, { id: 'd2', name: '製造部', active: true }];
+  const list = assets.map((a) => (a.id === 'old' ? addMove(a, { id: 'm1', date: '2026-10-15', departmentId: 'd2', location: '支店' }) : a));
+  const p = { assets: list, periods, period, accounts: b.accounts, entityType: 'corporation', departments };
+  const entry = assetRegister(list, periods, period).find((x) => x.asset.id === 'old');
+  const m = monthlyDepreciation(entry, period);
+  const firstHalf = m.business.slice(0, 6).reduce((s, n) => s + n, 0);
+  assert.deepEqual(departmentSplit(entry, period), [{ departmentId: 'd1', business: firstHalf }, { departmentId: 'd2', business: 100000 - firstHalf }]);
+  const { lines, total } = assetDepreciationLines(p);
+  const debits = lines.filter((l) => l.memo === '減価償却 old' && l.side === 'debit');
+  assert.deepEqual(debits.map((l) => [l.departmentId, l.amount]), [['d1', firstHalf], ['d2', 100000 - firstHalf]]);
+  // 貸借一致・合計は分けないときと同じ
+  const sum = (side) => lines.filter((l) => l.side === side).reduce((s, l) => s + l.amount, 0);
+  assert.equal(sum('debit'), sum('credit'));
+  assert.equal(total, depreciationLines({ ...p }).total);
+  // 移動の無い資産は今の部門のまま
+  assert.equal(departmentSplit(assetRegister(assets, periods, period).find((x) => x.asset.id === 'old'), period), null);
+  // 月次償却：移動前の月は d1、移動後の月は d2
+  const sep = monthlyDepreciationLines({ ...p, months: ['2026-09'] }).lines.find((l) => l.memo.startsWith('減価償却 old') && l.side === 'debit');
+  const oct = monthlyDepreciationLines({ ...p, months: ['2026-10'] }).lines.find((l) => l.memo.startsWith('減価償却 old') && l.side === 'debit');
+  assert.deepEqual([sep.departmentId, oct.departmentId], ['d1', 'd2']);
+  // 移動資産台帳
+  const ds = assetRegister(list, periods, period).map((x) => registerDetail(x, period));
+  assert.deepEqual(movesIn(list, period).map((x) => x.asset.id), ['old']);
+  const doc = movedDoc(ds, { period, departmentById: new Map(departments.map((d) => [d.id, d])), head: {} });
+  assert.equal(doc.title, '移動資産台帳');
+  assert.deepEqual(doc.blocks[0].rows[0].cells.slice(5, 7), [['営業部', '本店'], ['製造部', '支店']]);
+  assert.ok(layoutDocument(doc).length >= 1);
+});
+
+test('一部の売却・除却：分けた資産には売却・除却した日までの移動だけを引き継ぐ', () => {
+  const { assets } = book();
+  const old = addMove(addMove(assets.find((a) => a.id === 'old'), { id: 'm1', date: '2026-06-01', departmentId: 'd2', location: '支店' }), { id: 'm2', date: '2026-12-01', departmentId: 'd3', location: '倉庫' });
+  const { part, errors } = splitAsset(old, periods, { date: '2026-09-30', cost: 100000 });
+  assert.deepEqual(errors, []);
+  assert.deepEqual([part.moves.map((m) => m.id), part.departmentId, part.location], [['m1'], 'd2', '支店']);
 });

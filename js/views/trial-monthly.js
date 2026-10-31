@@ -29,7 +29,8 @@ export async function render({ app, outlet, query }) {
   const partList = TRIAL_PARTS.filter(([key]) => key !== 'mfg' || hasMfg);
   let part = partList.some(([key]) => key === query.part) ? query.part : 'bs';
   const extra = () => ({ ...(part === 'bs' ? {} : { part }), ...Object.fromEntries(Object.entries(opts).filter(([, v]) => v).map(([k]) => [k, '1'])) });
-  const picker = monthRangePicker({ period, query, path: '/reports/trial-monthly', onChange: paint, extra });
+  // 列が月の帳票なので、期間は月の単位で選ぶ
+  const picker = monthRangePicker({ period, query, path: '/reports/trial-monthly', onChange: paint, extra, monthsOnly: true });
   let mtb;
   const unit = unitPicker({ key: '/reports/trial-monthly', onChange: () => paint() });
   const toggles = h(

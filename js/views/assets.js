@@ -11,6 +11,7 @@ import {
   depreciationForecast,
   monthlyTable,
   disposalList,
+  movesIn,
   bookedDepreciation,
   monthlyDepreciationLines,
   monthEnd,
@@ -27,7 +28,7 @@ import { errorText } from '../errors.js';
 import { compareAccounts } from '../accounts.js';
 import { compareDepartments } from '../departments.js';
 import { toCsv, csvFileName, assetsCsv } from '../csv.js';
-import { assetRegisterDoc, movementDoc, forecastDoc, monthlyDoc, acquiredDoc, disposedDoc, rangeLabel, ASSET_DOCS } from '../print-assets.js';
+import { assetRegisterDoc, movementDoc, forecastDoc, monthlyDoc, acquiredDoc, disposedDoc, movedDoc, rangeLabel, ASSET_DOCS } from '../print-assets.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
 const DISPOSAL = { sell: '売却', retire: '除却' };
@@ -36,7 +37,7 @@ const VIEWS = [
   { value: 'movement', label: '増減明細' },
   { value: 'forecast', label: '償却予定' },
   { value: 'monthly', label: '月次償却' },
-  { value: 'changes', label: '取得・除売却' },
+  { value: 'changes', label: '取得・除却・移動' },
 ];
 
 export async function render({ app, outlet, query = {} }) {
@@ -137,6 +138,7 @@ export async function render({ app, outlet, query = {} }) {
             if (v.doc === 'monthly') return monthlyDoc(register.filter((x) => ids.has(x.asset.id)), period, opts);
             if (v.doc === 'acquired') return acquiredDoc(list, opts);
             if (v.doc === 'disposed') return disposedDoc(list, opts);
+            if (v.doc === 'moved') return movedDoc(list, { ...opts, period });
             return assetRegisterDoc(register, { ...opts, period, details: list });
           },
         }
@@ -383,7 +385,17 @@ export async function render({ app, outlet, query = {} }) {
           h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '合計' }), h('td'), h('td'), cell(disposed.reduce((s, d) => s + d.cost, 0)), cell(disposed.reduce((s, d) => s + d.bookDecrease, 0)), cell(disposed.reduce((s, d) => s + d.price, 0)), cell(disposed.reduce((s, d) => s + d.gainLoss, 0))),
         )
       : h('p', { class: 'muted small', text: '当期に売却・除却した資産はありません。' });
-    return [acqTable, dispTable, disposed.length ? h('p', { class: 'muted small', text: '売却益（△損）＝売却額−売却した日の帳簿価額。除却は帳簿価額がそのまま除却損です。' }) : null];
+    const moved = movesIn(list.map((d) => d.asset), period);
+    const depName = (id) => (id ? (departmentById.get(id)?.name ?? '（削除した部門）') : '');
+    const place = (dep, loc) => [depName(dep), loc].filter(Boolean).join('・') || '指定なし';
+    const moveTable = moved.length
+      ? tableOf(
+          `当期に移動した資産（${moved.length}件）`,
+          ['資産', '移動した日', '移動前', '移動後', 'メモ'],
+          moved.map(({ asset, move }) => h('tr', {}, nameCell(asset), h('td', { class: 'nowrap', text: slash(move.date) }), h('td', { text: place(move.fromDepartmentId, move.fromLocation) }), h('td', { text: place(move.toDepartmentId, move.toLocation) }), h('td', { text: move.memo || '' }))),
+        )
+      : h('p', { class: 'muted small', text: '当期に移動した資産はありません（移動は各資産の画面の「移動を記録する」から）。' });
+    return [acqTable, dispTable, disposed.length ? h('p', { class: 'muted small', text: '売却益（△損）＝売却額−売却した日の帳簿価額。除却は帳簿価額がそのまま除却損です。' }) : null, moveTable];
   }
 
   function paint() {

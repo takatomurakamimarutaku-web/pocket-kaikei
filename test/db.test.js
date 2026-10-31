@@ -234,6 +234,11 @@ test('固定資産：検証して保存、法人は事業割合100%、削除は 
   const saved = await repo.saveAsset(a);
   assert.equal(saved.name, '複合機');
   assert.equal(saved.businessRatio, 100);
+  assert.deepEqual(saved.moves, []);
+  // 移動の履歴：今の部門・設置場所とずれた履歴は保存しない
+  const move = { id: 'm1', date: '2026-08-01', fromDepartmentId: null, fromLocation: '', toDepartmentId: null, toLocation: '倉庫', memo: '' };
+  assert.equal((await repo.saveAsset({ ...saved, moves: [move], location: '倉庫' })).moves.length, 1);
+  await assert.rejects(repo.saveAsset({ ...saved, moves: [move], location: '本店' }), (e) => e instanceof ValidationError && Boolean(e.errors.moves));
   await assert.rejects(repo.saveAsset({ ...a, cost: 0 }), (e) => e instanceof ValidationError && Boolean(e.errors.cost));
   const custom = createAccount({ code: '207', name: '器具', group: 'tangible_fixed_assets' });
   await repo.saveAccount(custom);

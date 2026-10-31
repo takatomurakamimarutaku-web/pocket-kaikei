@@ -228,7 +228,8 @@ export function subLedgers({ accountId, accounts, subAccounts = [], period, jour
 
 /** 繰越行の名前（期首からなら「前期繰越」、途中の月からなら「前月繰越」） */
 export function carriedLabel(period, from) {
-  return from <= period.startDate ? '前期繰越' : '前月繰越';
+  // 期間の途中の月の初日からなら前月繰越、月の途中の日からなら前日までの繰越（日付で範囲を選んだとき）
+  return from <= period.startDate ? '前期繰越' : from.endsWith('-01') ? '前月繰越' : '前日繰越';
 }
 
 

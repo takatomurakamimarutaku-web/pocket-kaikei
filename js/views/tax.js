@@ -9,7 +9,7 @@ import { taxByAccount, taxMonthly, taxChecks } from '../tax-reports.js';
 import { isAdjusting } from '../monthly.js';
 import { taxByAccountCsv, taxMonthlyCsv, csvFileName } from '../csv.js';
 import { monthsInPeriod } from '../period.js';
-import { monthRangePicker, monthRangeOptions, printRange } from './report-common.js';
+import { monthRangePicker, dateRangeOptions, printRange } from './report-common.js';
 import { docHead } from '../print-forms.js';
 import { fmt } from '../print-layout.js';
 import { journalLabel } from '../journal.js';
@@ -76,13 +76,13 @@ export async function render({ app, outlet, query }) {
   }
 
   // ---- 科目別税区分集計表 ----
-  function byAccount({ from, to, fromMonth, toMonth }) {
+  function byAccount({ from, to, query: rq }) {
     const r = taxByAccount({ journals: target(), accounts, from, to });
     if (!r.rows.length) return h('p', { class: 'empty', text: 'この期間に税区分のある仕訳はありません。' });
     const head = h('tr', {}, ['科目・税区分', '税込金額', '税抜(参考)', '消費税等(参考)'].map((t) => h('th', { scope: 'col', text: t })));
     const rows = [];
     for (const row of r.rows) {
-      const link = `#/reports/ledger?account=${encodeURIComponent(row.account.id)}&from=${fromMonth}&to=${toMonth}`;
+      const link = `#/reports/ledger?${new URLSearchParams({ account: row.account.id, ...rq })}`;
       rows.push(h('tr', { class: 'tb-group' }, h('th', { colspan: 4 }, h('a', { href: link, text: `${row.account.code} ${row.account.name}` }))));
       for (const x of row.items) {
         rows.push(h('tr', {}, h('th', { class: 'mt-acc' }, x.label, h('span', { class: 'muted small block', text: `${x.count}件` })), amountCell('td', x.gross), amountCell('td', x.net), amountCell('td', x.tax, { blankZero: true })));
@@ -166,7 +166,7 @@ export async function render({ app, outlet, query }) {
     return {
       options: [
         { key: 'kind', label: '集計表', type: 'select', choices: [['summary', '消費税集計表（税区分別）'], ['account', '科目別税区分集計表'], ['monthly', '税区分別の月別推移（税込金額）'], ['monthlyTax', '税区分別の月別推移（消費税等）']], value: tab === 'account' ? 'account' : tab === 'monthly' ? (monthlyValue === 'tax' ? 'monthlyTax' : 'monthly') : 'summary' },
-        ...monthRangeOptions(period, r0.fromMonth, r0.toMonth),
+        ...dateRangeOptions(period, r0),
         { key: 'adj', label: '決算整理の仕訳を含める', type: 'check', value: includeAdj },
       ],
       build: (v) => {

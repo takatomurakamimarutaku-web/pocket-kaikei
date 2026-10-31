@@ -7,7 +7,7 @@ import { isCashAccount } from '../quick.js';
 import { monthsInPeriod, monthRange, todayString } from '../period.js';
 import { formatYen } from '../money.js';
 import { ledgerBookDoc, docHead } from '../print-forms.js';
-import { monthRangeOptions, printRange, labelCell, ledgerBodyRows } from './report-common.js';
+import { dateRangeOptions, printRange, labelCell, ledgerBodyRows } from './report-common.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, subAccounts, journals } = await app.load();
@@ -79,7 +79,7 @@ export async function render({ app, outlet, query }) {
     app.printDoc = ({ printedAt }) => ({
       options: [
         { key: 'target', label: '印刷する口座', type: 'select', choices: [['current', `表示中の口座（${options.find((o) => o.accountId === accountId && o.subId === subId)?.label ?? ''}）`], ['all', 'すべての現金・預金の口座']], value: 'current' },
-        ...monthRangeOptions(period, isAll ? undefined : month, isAll ? undefined : month),
+        ...dateRangeOptions(period, { from, to }),
         { key: 'monthly', label: '月計を出す', type: 'check', value: true },
         { key: 'cumulative', label: '累計を出す', type: 'check', value: false },
         { key: 'pageBreak', label: '口座ごとに改ページ', type: 'check', value: true },

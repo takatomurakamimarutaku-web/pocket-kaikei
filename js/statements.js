@@ -30,6 +30,16 @@ export function closingRows({ accounts, period, journals, to = period.endDate })
   return trialBalance({ accounts, period, journals, from: period.startDate, to }).rows;
 }
 
+/**
+ * 期間の途中から（from〜to）の集計の元：損益の科目は範囲の中の発生額、貸借の科目は to の残高
+ * 損益計算書・製造原価報告書を月・四半期・日付の範囲で見るときに使う（貸借対照表は closingRows で期首から to までを使う）
+ */
+export function rangeRows({ accounts, period, journals, from = period.startDate, to = period.endDate }) {
+  const rows = trialBalance({ accounts, period, journals, from, to }).rows;
+  if (from <= period.startDate) return rows;
+  return rows.map((r) => (GROUP_BY_ID[r.account.group]?.section === 'pl' ? { ...r, dc: r.debit - r.credit } : r));
+}
+
 /** 損益計算書の売上原価に入れる「当期製品製造原価」の行（科目ではないが、科目の行と同じ形で並べる） */
 export const MFG_COST_LINE = Object.freeze({ id: 'mfg_cost', code: '', name: '当期製品製造原価', group: 'cost_of_sales', normalSide: 'debit', synthetic: true });
 
