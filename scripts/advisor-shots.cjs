@@ -78,6 +78,26 @@ mkdirSync(OUT, { recursive: true });
     await shot('07-simulation');
     await go('#/advisor/annual');
     await shot('08-annual');
+    if (entity === 'corporation') {
+      await go('#/advisor/succession');
+      if (!pc) {
+        const fill = async (label, v) => { const f = page.getByLabel(label, { exact: true }); await f.fill(v); await f.dispatchEvent('change'); await page.waitForTimeout(150); };
+        await fill('従業員数', '12');
+        await fill('発行済株式数', '200');
+        await fill('A 株価', '320');
+        await fill('B 配当金額', '5.2');
+        await fill('C 利益金額', '35');
+        await fill('D 簿価純資産価額', '310');
+        await fill('含み益（土地・有価証券などの相続税評価額 − 帳簿価額）', '40,000,000');
+        if ((await page.getByLabel('D 簿価純資産価額', { exact: true }).inputValue()) !== '310') errors.push('入力中の欄が描き直しで消える');
+        await fill('利益を下げる額（役員退職金など）', '3,000,000');
+        if ((await page.locator('.kpi-value').first().innerText()) === '—') errors.push('株価が出ない');
+        await page.getByRole('button', { name: '入力を保存する' }).click();
+        await page.waitForTimeout(600);
+        if ((await page.getByLabel('発行済株式数', { exact: true }).inputValue()) !== '200') errors.push('事業承継の入力が保存されない');
+      }
+      await shot('09-succession');
+    }
     await go('#/advisor/saving');
     await shot('06-saving');
     // 利益が出ない見込み（法人のサンプル）では金額の入力欄が出ない
