@@ -79,6 +79,8 @@ export function createAsset(fields = {}, now = new Date()) {
     compressionAmount: null, // 圧縮記帳の圧縮額（直接減額方式。cost は圧縮後の取得価額）
     compressionOn: null, // 圧縮記帳をした日
     compressionName: null, // 補助金等の名前
+    compressionSubsidy: null, // 交付を受けた補助金等の額（空欄なら圧縮額と同じ。別表十三（一））
+    compressionGrantor: null, // 補助金等を交付した者（別表十三（一））
     disposalType: null, // 売却（sell）・除却（retire）
     salePrice: null, // 売却額（税込）
     expenseAccountId: null, // 償却費の科目（null なら減価償却費。製造業の工場の資産は製造経費の科目）
