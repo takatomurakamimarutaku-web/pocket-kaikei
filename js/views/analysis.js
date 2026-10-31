@@ -5,6 +5,7 @@ import { openingRows, formatPermille } from '../compare.js';
 import { bsFigures, plFigures, indicators, formatMonths } from '../analysis.js';
 import { formatPeriod, monthsInPeriod } from '../period.js';
 import { formatYen } from '../money.js';
+import { hBarChart, bsBoxChart } from '../chart.js';
 import { loadPrevious } from './report-common.js';
 import { isWhite } from '../white-return.js';
 
@@ -29,12 +30,32 @@ export async function render({ app, outlet }) {
     white,
   });
   const noSales = pl.profits.sales <= 0;
+  const curBs = bsFigures(closingRows({ accounts, period, journals }));
+  const prevBs = bsFigures(openingRows({ accounts, period }));
+  const box = (title, b) =>
+    bsBoxChart({
+      title,
+      left: [{ label: '流動資産', value: b.currentAssets }, { label: '固定資産', value: b.fixedAssets }, { label: '繰延資産', value: b.totalAssets - b.currentAssets - b.fixedAssets }],
+      right: [{ label: '流動負債', value: b.currentLiabilities }, { label: '固定負債', value: b.liabilities - b.currentLiabilities }, { label: entityType === 'individual' ? '元入金など' : '純資産', value: b.netAssets, net: true }],
+    });
+  // 比率（％）の指標を当期・前期の横棒で
+  const ratioRows = current
+    .slice(0, 2)
+    .flatMap((sec, si) => sec.items.map((it, i) => ({ it, prev: prior[si].items[i] })))
+    .filter(({ it }) => it.unit === 'permille')
+    .map(({ it, prev }) => ({ label: it.label, values: [it.value, prev.value] }));
 
   put(
     outlet,
     h('p', { class: 'muted small', text: `${settings.businessName}　当期 ${formatPeriod(period)}${previous ? `／前期 ${formatPeriod(previous.period)}` : ''}` }),
     noSales ? h('p', { class: 'notice', text: '当期の売上がまだないため、売上を使う指標は「—」になります。' }) : null,
     previous ? null : h('p', { class: 'muted small', text: 'このアプリに前期の帳簿がないため、前期の列は期首残高（前期末）から求められる指標（安全性と運転資本）だけを出します。' }),
+    h(
+      'section',
+      { class: 'no-print' },
+      h('div', { class: 'bsbox-pair' }, box('貸借対照表の形（当期末）', curBs), prevBs.totalAssets > 0 ? box('貸借対照表の形（前期末）', prevBs) : null),
+      ratioRows.some((r) => r.values.some((v) => v !== null)) ? hBarChart({ title: '収益性・安全性の指標（当期と前期）', rows: ratioRows, series: [{ label: '当期', cls: 'hb-1' }, { label: '前期', cls: 'hb-4' }], format: (v) => formatPermille(v), scale: 'row' }) : null,
+    ),
     current.map((sec, si) =>
       h(
         'section',
