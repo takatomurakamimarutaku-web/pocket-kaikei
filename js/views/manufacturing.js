@@ -1,20 +1,20 @@
 // 製造原価報告書（法人）：材料費・労務費・製造経費 → 当期総製造費用 → 仕掛品の増減 → 当期製品製造原価
 // 期間の合計は決算書と同じ体裁（税務申告に添付する決算書の1枚。行は fs-rows.js）、月ごとに横に並べる表示に切り替えられる
 import { h, put, amountCell, saveFile, segmented } from '../ui.js';
-import { closingRows, manufacturingReport } from '../statements.js';
+import { closingRows, manufacturingReport, rangeRows } from '../statements.js';
 import { monthlyManufacturing, manufacturingMonthlyRows } from '../monthly.js';
 import { manufacturingCsv, monthlyCsv, csvFileName } from '../csv.js';
 import { formatPeriod } from '../period.js';
 import { formatYen, unitCaption, normalizeUnit } from '../money.js';
-import { zeroToggle, unitPicker, unitPrintOptions } from './report-common.js';
-import { fsPaper, fsPeriod, incomeStatementTable } from './fs-view.js';
-import { incomeStatementDoc, monthlyDoc, docHead } from '../print-forms.js';
+import { zeroToggle, unitPicker, unitPrintOptions, formatPicker, formatPrintOption, monthRangePicker } from './report-common.js';
+import { fsPaper, fsPeriod, incomeStatementByFormat } from './fs-view.js';
+import { incomeStatementFormatDoc, monthlyDoc, docHead } from '../print-forms.js';
 
 export async function render({ app, outlet, query }) {
   const { settings, period, accounts, journals } = await app.load();
   if (settings.entityType !== 'corporation') return put(outlet, h('p', { class: 'notice', text: '製造原価報告書は法人だけで使えます。' }));
-  const report = manufacturingReport(closingRows({ accounts, period, journals }));
-  if (!report.used) {
+  const whole = manufacturingReport(closingRows({ accounts, period, journals }));
+  if (!whole.used) {
     return put(
       outlet,
       h(
@@ -26,11 +26,16 @@ export async function render({ app, outlet, query }) {
     );
   }
   let mode = query.mode === 'monthly' ? 'monthly' : 'total';
+  // 期間の合計は、期間（月・四半期・日付の範囲）を選べる。月次推移は期間全体の各月
+  let report = whole;
+  const picker = monthRangePicker({ period, query, path: '/reports/manufacturing', onChange: () => paint(), extra: () => (mode === 'monthly' ? { mode } : {}) });
   let showZero = false;
   let monthly = null;
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
   const unit = unitPicker({ key: '/reports/manufacturing', onChange: () => paint() });
+  // 期間の合計の様式：報告式（材料費・労務費・製造経費を上から）と勘定式（左に製造費用・期首仕掛品、右に期末仕掛品・当期製品製造原価）
+  const format = formatPicker({ key: '/reports/manufacturing', value: 'report', onChange: () => paint() });
   const monthLabel = (m) => `${Number(m.slice(5))}月`;
   const getMonthly = () => (monthly = monthly || monthlyManufacturing({ accounts, period, journals }));
 
@@ -38,10 +43,10 @@ export async function render({ app, outlet, query }) {
   function totalTable() {
     return fsPaper({
       title: '製造原価報告書',
-      period: fsPeriod.range(period),
+      period: fsPeriod.range({ startDate: picker.range().from, endDate: picker.range().to }),
       company: settings.businessName,
       unit: unitCaption(unit.value()),
-      body: incomeStatementTable(report.items, { entityType: 'corporation', showZero, label: '製造原価報告書' }),
+      body: incomeStatementByFormat(report.items, { format: format.value(), entityType: 'corporation', showZero, label: '製造原価報告書' }),
     });
   }
 
@@ -67,12 +72,14 @@ export async function render({ app, outlet, query }) {
     return {
       options: [
         { key: 'mode', label: '印刷する表', type: 'select', choices: [['total', '製造原価報告書（期間の合計）'], ['monthly', '月次推移']], value: mode },
+        formatPrintOption({ label: '様式（期間の合計）', value: format.value() }),
         { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
         ...unitPrintOptions(unit.value()),
         { key: 'orientation', label: '用紙の向き', type: 'select', choices: [['portrait', 'A4縦'], ['landscape', 'A4横']], value: monthlyMode ? 'landscape' : 'portrait' },
       ],
       build: (v) => {
-        const head = docHead({ settings, period, printedAt });
+        const r = picker.range();
+        const head = docHead({ settings, period, ...(v.mode === 'monthly' ? {} : { from: r.from, to: r.to }), printedAt });
         if (v.mode === 'monthly') {
           const m = getMonthly();
           return monthlyDoc({
@@ -85,7 +92,7 @@ export async function render({ app, outlet, query }) {
             notes: ['各月の発生額です。仕掛品の棚卸高は決算整理の仕訳を登録した月に出ます。'],
           });
         }
-        return incomeStatementDoc(report.items, { head, title: '製造原価報告書', entityType: 'corporation', showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation });
+        return incomeStatementFormatDoc(report.items, { format: v.format, head, title: '製造原価報告書', entityType: 'corporation', showZero: v.zero, unit: normalizeUnit(v), orientation: v.orientation });
       },
     };
   };
@@ -96,7 +103,11 @@ export async function render({ app, outlet, query }) {
   }
 
   function paint() {
-    history.replaceState(history.state, '', `#/reports/manufacturing${mode === 'monthly' ? '?mode=monthly' : ''}`);
+    const r = picker.range();
+    report = manufacturingReport(rangeRows({ accounts, period, journals, from: r.from, to: r.to }));
+    picker.refreshUrl();
+    format.el.hidden = mode === 'monthly';
+    picker.el.hidden = mode === 'monthly';
     put(body, mode === 'monthly' ? monthlyTable() : totalTable());
   }
 
@@ -115,14 +126,16 @@ export async function render({ app, outlet, query }) {
         onChange: (v) => ((mode = v), paint()),
       }),
       unit.el,
+      format.el,
     ),
+    picker.el,
     h('div', { class: 'option-bar no-print' }, zero.el),
     body,
     h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', text: 'CSVで書き出す', onclick: csv })),
     h(
       'div',
       { class: 'panel small muted' },
-      h('p', { text: `当期製品製造原価 ${formatYen(report.cost)}円 は、損益計算書の売上原価に「当期製品製造原価」として入ります。` }),
+      h('p', { text: `期間全体の当期製品製造原価 ${formatYen(whole.cost)}円 は、損益計算書の売上原価に「当期製品製造原価」として入ります。` }),
       h('p', { text: '様式は決算書の製造原価報告書の並びです：材料費（期首材料棚卸高＋材料仕入高−期末材料棚卸高＝当期材料費）・労務費（当期労務費）・製造経費（当期製造経費）の合計が当期総製造費用、これに期首仕掛品棚卸高を足し、期末仕掛品棚卸高を引いたものが当期製品製造原価です。印刷すると、決算書と同じ体裁（表題・期間・会社名・単位）で申告書に添付できます。他勘定振替高（製品を自社で使ったときなど）は扱いません。' }),
       h('p', {}, '原材料・仕掛品・製品の期末の棚卸は ', h('a', { href: '#/closing', class: 'link', text: '決算・繰越' }), ' の画面から登録します。工場の機械などの減価償却費は、固定資産の画面で償却費の科目を「減価償却費（製造）」にすると製造経費に入ります。'),
     ),

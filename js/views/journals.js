@@ -1,8 +1,8 @@
 // 仕訳帳：月別表示・並び順（日付順・入力順・伝票No順）・検索・CSV 出力。タップで編集
 import { h, put, emptyState, saveFile, showToast, field, segmented } from '../ui.js';
 import { JOURNAL_ORDERS, matchJournal, linesToRows, voucherOf, parseVoucherNo } from '../journal.js';
-import { monthsInPeriod, todayString } from '../period.js';
-import { monthRangeOptions, printRange } from './report-common.js';
+import { monthsInPeriod, monthRange, todayString } from '../period.js';
+import { dateRangeOptions, printRange } from './report-common.js';
 import { journalBookDoc, docHead } from '../print-forms.js';
 import { formatYen } from '../money.js';
 import { TAX_BY_CODE } from '../tax.js';
@@ -124,13 +124,14 @@ export async function render({ app, outlet, query }) {
   }
 
   // 印刷：表示中の仕訳（月・検索・並び順）を仕訳日記帳の様式で
-  // 印刷条件：期間（月）・並び順・月計・月ごとの改ページ・画面の検索の絞り込み
+  // 印刷条件：期間（日）・並び順・月計・月ごとの改ページ・画面の検索の絞り込み
   app.printDoc = ({ printedAt }) => {
     const filtered = Boolean(q) || hasCriteria(crit);
     const all = month === 'all' || hasCriteria(crit);
     return {
       options: [
-        ...monthRangeOptions(period, all ? undefined : month, all ? undefined : month),
+        // 期間（日）：初めは画面の月（詳しい検索の日付があればその範囲）
+        ...dateRangeOptions(period, hasCriteria(crit) ? { from: crit.dateFrom || period.startDate, to: crit.dateTo || period.endDate } : all ? {} : monthRange(period, month, month)),
         { key: 'order', label: '並び順', type: 'select', choices: [['date', '日付順'], ['voucher', '伝票No順'], ['input', '入力順']], value: order },
         { key: 'monthTotal', label: '月計を出す', type: 'check', value: false },
         { key: 'monthBreak', label: '月ごとに改ページ', type: 'check', value: false },

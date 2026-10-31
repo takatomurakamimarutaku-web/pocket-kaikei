@@ -47,8 +47,8 @@ const env = () => ({
 });
 
 /**
- * 印刷条件の欄。options：[{ key, label, type: 'select'|'check'|'number', choices?: [[value, label]], value, min?, max?, placeholder? }]
- * number は整数の欄（期数など。空欄も選べる）
+ * 印刷条件の欄。options：[{ key, label, type: 'select'|'check'|'number'|'date', choices?: [[value, label]], value, min?, max?, placeholder? }]
+ * number は整数の欄（期数など。空欄も選べる）。date は日付の欄（帳票の開始日・終了日。消したときは元の値のまま）
  * 条件を変えると onChange(values) を呼ぶ
  */
 function optionsPanel(options, onChange) {
@@ -69,6 +69,14 @@ function optionsPanel(options, onChange) {
         { class: 'pp-select', for: id },
         h('span', { class: 'pp-opt-label', text: o.label }),
         h('input', { id, type: 'number', inputmode: 'numeric', class: 'pp-number', min: o.min ?? 0, max: o.max ?? '', step: 1, placeholder: o.placeholder ?? '', value: o.value ?? '', oninput: (e) => ((values[o.key] = e.target.value), onChange({ ...values })) }),
+      );
+    }
+    if (o.type === 'date') {
+      return h(
+        'label',
+        { class: 'pp-select', for: id },
+        h('span', { class: 'pp-opt-label', text: o.label }),
+        h('input', { id, type: 'date', class: 'pp-date', min: o.min ?? '', max: o.max ?? '', value: o.value ?? '', onchange: (e) => e.target.value && ((values[o.key] = e.target.value), onChange({ ...values })) }),
       );
     }
     return h(

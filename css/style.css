@@ -470,6 +470,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 /* 帳票 */
 .range-bar, .ledger-pick { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .range-bar select, .ledger-pick select { flex: 1; min-width: 0; }
+.range-bar { flex-direction: column; align-items: stretch; gap: 6px; }
+.range-row, .range-custom { display: flex; gap: 8px; align-items: center; }
+.range-row .range-preset { flex: 1 1 auto; min-width: 0; }
+.range-label { flex: 0 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.range-custom[hidden] { display: none; }
+.range-custom select, .range-custom input[type="date"] { flex: 1 1 0; min-width: 0; }
 .ledger-pick { flex-wrap: wrap; }
 .ledger-pick .btn-step { flex: none; min-width: 44px; padding: 0 12px; font-size: 1.2rem; }
 .ledger-pick select[aria-label="補助科目"] { flex-basis: 100%; }
@@ -825,6 +831,11 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 .fs-note-head { display: block; font-weight: 700; }
 .fs-editor summary { font-weight: 700; cursor: pointer; padding: 4px 0; }
 .fs-editor textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); resize: vertical; }
+.fs-editor-group { margin: 16px 0 8px; padding-top: 10px; border-top: 1px solid var(--separator); font-size: 0.86rem; font-weight: 800; color: var(--primary-strong); }
+.fs-editor summary + .fs-editor-group { border-top: 0; padding-top: 0; }
+.fs-note-lead { margin: 0 0 10px; font-size: 0.9rem; }
+.fs-note-pattern .section-title { margin-top: 0; }
+.fs-note-pattern select { width: 100%; }
 .chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
 .chip-row .chip { white-space: nowrap; flex: none; }
 .bd-section { scroll-margin-top: 64px; }
@@ -1331,6 +1342,7 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .pp-select { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; min-width: 0; max-width: 100%; }
 .pp-select select { max-width: 100%; }
 .pp-number { width: 7em; max-width: 100%; font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+.pp-date { width: 10.5em; max-width: 100%; font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
 .pp-opt-label { color: var(--muted); font-size: 0.78rem; }
 .pp-check { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; }
 .pp-sheet { width: min(100%, 820px); aspect-ratio: 210 / 297; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); flex: none; }
@@ -1462,6 +1474,23 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .tc-code-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border, #e5e5e5); }
 .tc-code-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.9rem; }
 input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+
+/* 摘要・科目の検索（js/views/find.js）と元帳の科目の検索・摘要の絞り込み */
+.ledger-pick .btn-step svg { width: 20px; height: 20px; vertical-align: middle; }
+.ledger-filter { margin: 0 0 8px; }
+.find-tools { display: grid; gap: 8px; margin: 0 0 8px; }
+.find-tools[hidden] { display: none; }
+.find-account-row { display: flex; gap: 8px; align-items: center; }
+.find-account-row .find-account { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.find-hint { margin: var(--sp-3) 4px; line-height: 1.6; }
+.find-memo th .link { text-align: left; font-weight: 700; }
+.find-memo td { white-space: nowrap; }
+.find-accounts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.find-account-item { background: var(--surface); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 10px 12px; }
+.find-account-main { display: flex; gap: 10px; align-items: center; color: var(--text); text-decoration: none; border-bottom: 0; }
+.find-account-name { flex: 1 1 auto; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.find-account-balance { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 700; }
+.find-account-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; padding-left: calc(3.2em + 10px); }
 
 /* 固定資産台帳：帳票のタブ・絞り込み */
 .asset-tabs { overflow-x: auto; margin: 8px 0; -webkit-overflow-scrolling: touch; }

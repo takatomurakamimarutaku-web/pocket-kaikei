@@ -1,42 +1,128 @@
-// 帳票の共通部品（月範囲の選択・0の科目を隠す切替・金額の単位・期首残高の警告）
+// 帳票の共通部品（期間の範囲の選択・0の科目を隠す切替・金額の単位・決算書の様式・期首残高の警告）
 import { h, put, amountCell, emptyState, segmented, setAmountUnit } from '../ui.js';
-import { monthsInPeriod, monthRange, addDays } from '../period.js';
+import { monthsInPeriod, monthRange, addDays, rangePresets, parseRange, rangeQuery, presetKeyOf, isMonthAligned, formatRange, isValidDate } from '../period.js';
 import { formatYen, AMOUNT_UNITS, ROUNDINGS, YEN_UNIT, normalizeUnit, unitCaption } from '../money.js';
 import { carriedLabel } from '../ledger.js';
 
 const monthText = (m) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
 
+/** 範囲の結果：日付の範囲・含まれる月・URL に書く形・表示・期間全体か */
+function rangeResult(period, r) {
+  return { from: r.from, to: r.to, fromMonth: r.from.slice(0, 7), toMonth: r.to.slice(0, 7), query: rangeQuery(period, r), label: formatRange(r), whole: r.from === period.startDate && r.to === period.endDate };
+}
+
 /**
- * 月範囲の選択。変更するとハッシュの from/to を書き換えて onChange を呼ぶ
- * @returns {{ el, range: () => {from,to,fromMonth,toMonth} }}
+ * 帳票の期間の選択（年・月・日を自由に）：期間全体・各月・四半期・半期の候補と、「月で指定」（開始月〜終了月）・「日付で指定」（開始日〜終了日）。
+ * 変更するとハッシュの from/to（月の区切りなら 'YYYY-MM'、そうでなければ 'YYYY-MM-DD'）を書き換えて onChange を呼ぶ
+ * @param {{ period, query, path: string, onChange: () => void, extra?: () => object, monthsOnly?: boolean }} opts
+ *   monthsOnly：月の単位だけ選べる（月次推移・予算実績など、列が月の帳票）
+ * @returns {{ el, refreshUrl, range: () => { from, to, fromMonth, toMonth, query: { from, to }, label: string, whole: boolean } }}
  */
-export function monthRangePicker({ period, query, path, onChange, extra = () => ({}) }) {
+export function monthRangePicker({ period, query, path, onChange, extra = () => ({}), monthsOnly = false }) {
   const months = monthsInPeriod(period);
-  let fromMonth = months.includes(query.from) ? query.from : months[0];
-  let toMonth = months.includes(query.to) ? query.to : months.at(-1);
-  if (toMonth < fromMonth) toMonth = fromMonth;
-  const sel = (value, label, set) =>
-    h(
-      'select',
-      { 'aria-label': label, onchange: (e) => (set(e.target.value), update()) },
-      months.map((m) => h('option', { value: m, text: monthText(m), selected: m === value })),
-    );
-  const fromSel = sel(fromMonth, '開始月', (v) => (fromMonth = v));
-  const toSel = sel(toMonth, '終了月', (v) => (toMonth = v));
+  let r = parseRange(period, query.from, query.to);
+  if (monthsOnly) r = monthRange(period, r.from.slice(0, 7), r.to.slice(0, 7));
+  const presets = rangePresets(period);
+  let mode = presetKeyOf(period, r) ?? (monthsOnly || isMonthAligned(period, r) ? 'months' : 'dates');
+  const option = (value, text) => h('option', { value, text, selected: value === mode });
+  const groups = ['月', '四半期', '半期'].map((g) => [g, presets.filter((p) => p.group === g)]).filter(([, list]) => list.length);
+  const presetSel = h(
+    'select',
+    { class: 'range-preset', 'aria-label': '期間', onchange: (e) => choose(e.target.value) },
+    option('all', '期間全体'),
+    groups.map(([g, list]) => h('optgroup', { label: g }, list.map((p) => option(p.key, p.label)))),
+    h('optgroup', { label: '範囲を指定' }, option('months', '月で指定…'), monthsOnly ? null : option('dates', '日付で指定…')),
+  );
+  const monthSel = (label, pick) => h('select', { 'aria-label': label, onchange: (e) => (pick(e.target.value), update()) }, months.map((m) => h('option', { value: m, text: monthText(m) })));
+  const fromMonthSel = monthSel('開始月', (v) => (r = parseRange(period, v, r.to.slice(0, 7))));
+  const toMonthSel = monthSel('終了月', (v) => (r = parseRange(period, r.from.slice(0, 7), v)));
+  const dateInput = (label, pick) =>
+    h('input', {
+      type: 'date',
+      'aria-label': label,
+      min: period.startDate,
+      max: period.endDate,
+      onchange: (e) => {
+        // 消したとき・期間の外の日は期間の初日・末日に寄せる（parseRange）
+        pick(e.target.value);
+        update();
+      },
+    });
+  const fromDate = dateInput('開始日', (v) => (r = parseRange(period, v || period.startDate, r.to)));
+  const toDate = dateInput('終了日', (v) => (r = parseRange(period, r.from, v || period.endDate)));
+  const monthsRow = h('div', { class: 'range-custom' }, fromMonthSel, h('span', { class: 'muted', text: '〜' }), toMonthSel);
+  const datesRow = h('div', { class: 'range-custom' }, fromDate, h('span', { class: 'muted', text: '〜' }), toDate);
+  const label = h('span', { class: 'range-label muted small' });
+
+  function choose(key) {
+    mode = key;
+    const p = presets.find((x) => x.key === key);
+    if (p) r = { from: p.from, to: p.to };
+    update();
+  }
+  function sync() {
+    monthsRow.hidden = mode !== 'months';
+    datesRow.hidden = mode !== 'dates';
+    fromMonthSel.value = r.from.slice(0, 7);
+    toMonthSel.value = r.to.slice(0, 7);
+    fromDate.value = r.from;
+    toDate.value = r.to;
+    label.textContent = formatRange(r);
+  }
   function refreshUrl() {
-    const params = new URLSearchParams({ ...extra(), from: fromMonth, to: toMonth });
+    const params = new URLSearchParams({ ...extra(), ...rangeQuery(period, r) });
     history.replaceState(history.state, '', `#${path}?${params}`);
   }
   function update() {
-    if (toMonth < fromMonth) {
-      toMonth = fromMonth;
-      toSel.value = toMonth;
-    }
+    sync();
     refreshUrl();
     onChange();
   }
-  const el = h('div', { class: 'range-bar' }, fromSel, h('span', { class: 'muted', text: '〜' }), toSel);
-  return { el, refreshUrl, range: () => ({ ...monthRange(period, fromMonth, toMonth), fromMonth, toMonth }) };
+  sync();
+  const el = h('div', { class: 'range-bar' }, h('div', { class: 'range-row' }, presetSel, label), monthsRow, datesRow);
+  return { el, refreshUrl, range: () => rangeResult(period, r) };
+}
+
+/**
+ * 貸借対照表の時点の選択：期末・各月末と「日付で指定」。変更するとハッシュの at（期末なら書かない）を書き換えて onChange を呼ぶ
+ * @param {{ period, query, path: string, onChange: () => void, extra?: () => object }} opts
+ * @returns {{ el, refreshUrl, value: () => string }} value：時点の日付（'YYYY-MM-DD'）
+ */
+export function asOfPicker({ period, query, path, onChange, extra = () => ({}) }) {
+  const clamp = (d) => (d < period.startDate ? period.startDate : d > period.endDate ? period.endDate : d);
+  const ends = monthsInPeriod(period)
+    .map((m) => monthRange(period, m, m).to)
+    .filter((d) => d !== period.endDate);
+  let at = isValidDate(query.at) ? clamp(query.at) : period.endDate;
+  let mode = at === period.endDate ? 'end' : ends.includes(at) ? at : 'date';
+  const option = (value, text) => h('option', { value, text, selected: value === mode });
+  const sel = h(
+    'select',
+    { class: 'range-preset', 'aria-label': '時点', onchange: (e) => ((mode = e.target.value), mode !== 'date' && (at = mode === 'end' ? period.endDate : mode), update()) },
+    option('end', '期末'),
+    ends.length ? h('optgroup', { label: '月末' }, ends.map((d) => option(d, `${d.slice(0, 4)}年${Number(d.slice(5, 7))}月末`))) : null,
+    h('optgroup', { label: '時点を指定' }, option('date', '日付で指定…')),
+  );
+  const input = h('input', { type: 'date', 'aria-label': '時点の日付', min: period.startDate, max: period.endDate, onchange: (e) => ((at = clamp(e.target.value || period.endDate)), update()) });
+  const row = h('div', { class: 'range-custom' }, input);
+  const label = h('span', { class: 'range-label muted small' });
+  function sync() {
+    row.hidden = mode !== 'date';
+    input.value = at;
+    label.textContent = `${at.replaceAll('-', '/')} 現在`;
+  }
+  function refreshUrl() {
+    const params = new URLSearchParams({ ...extra(), ...(at === period.endDate ? {} : { at }) });
+    const qs = String(params);
+    history.replaceState(history.state, '', `#${path}${qs ? `?${qs}` : ''}`);
+  }
+  function update() {
+    sync();
+    refreshUrl();
+    onChange();
+  }
+  sync();
+  return { el: h('div', { class: 'range-bar' }, h('div', { class: 'range-row' }, sel, label), row), refreshUrl, value: () => at };
 }
 
 // 画面ごとに選んだ金額の単位（アプリを開いている間だけ覚える。帳簿のデータではないので保存しない）
@@ -77,6 +163,39 @@ export function unitPicker({ key, onChange }) {
   refresh();
   const el = h('div', { class: 'unit-bar no-print' }, h('div', { class: 'unit-row' }, h('span', { class: 'unit-label small', text: '金額' }), seg, roundSel), note);
   return { el, value: () => u };
+}
+
+// 画面ごとに選んだ決算書の様式（アプリを開いている間だけ覚える。帳簿のデータではないので保存しない）
+const chosenFormats = new Map();
+const FORMAT_CHOICES = { report: '報告式（上下に並べる）', account: '勘定式（左右に並べる）' };
+
+/**
+ * 決算書の様式（報告式・勘定式）の切替。選ぶと onChange を呼ぶ。印刷条件の様式は画面で選んだものを最初に選んでおく
+ * @param {{ key: string, value: 'report'|'account', onChange: (v) => void }} opts key：画面ごとに覚えるための名前。value：初めの様式
+ * @returns {{ el, value: () => 'report'|'account' }}
+ */
+export function formatPicker({ key, value = 'report', onChange }) {
+  let v = chosenFormats.get(key) ?? value;
+  const seg = segmented({
+    name: '決算書の様式',
+    options: [
+      { value: 'report', label: '報告式' },
+      { value: 'account', label: '勘定式' },
+    ],
+    value: v,
+    onChange: (x) => {
+      v = x;
+      chosenFormats.set(key, x);
+      onChange(x);
+    },
+  });
+  const el = h('div', { class: 'unit-bar format-bar no-print' }, h('div', { class: 'unit-row' }, h('span', { class: 'unit-label small', text: '様式' }), seg));
+  return { el, value: () => v };
+}
+
+/** 印刷条件：決算書の様式（報告式・勘定式） */
+export function formatPrintOption({ key = 'format', label = '様式', value = 'report' } = {}) {
+  return { key, label, type: 'select', choices: Object.entries(FORMAT_CHOICES), value };
 }
 
 /** 印刷条件：金額の単位（画面で選んだ単位を最初に選んでおく） */
@@ -233,7 +352,7 @@ export function monthChoices(period) {
   return monthsInPeriod(period).map((m) => [m, monthText(m)]);
 }
 
-/** 印刷条件：開始月・終了月 */
+/** 印刷条件：開始月・終了月（月の単位の帳票） */
 export function monthRangeOptions(period, fromMonth, toMonth) {
   const choices = monthChoices(period);
   return [
@@ -242,8 +361,18 @@ export function monthRangeOptions(period, fromMonth, toMonth) {
   ];
 }
 
-/** 印刷条件の開始月・終了月から日付の範囲（終了月が前なら入れ替える） */
+/**
+ * 印刷条件：開始日・終了日（日の単位で選べる帳票）。初めは画面で選んだ範囲
+ * @param {{ from?: string, to?: string }} [range] 画面の範囲（省略時は期間全体）
+ */
+export function dateRangeOptions(period, range = {}) {
+  return [
+    { key: 'from', label: '開始日', type: 'date', min: period.startDate, max: period.endDate, value: range.from ?? period.startDate },
+    { key: 'to', label: '終了日', type: 'date', min: period.startDate, max: period.endDate, value: range.to ?? period.endDate },
+  ];
+}
+
+/** 印刷条件の開始・終了（月 'YYYY-MM' または日 'YYYY-MM-DD'）から日付の範囲（期間の外は寄せ、前後が逆なら入れ替える） */
 export function printRange(period, v) {
-  const [a, b] = v.from <= v.to ? [v.from, v.to] : [v.to, v.from];
-  return { ...monthRange(period, a, b), fromMonth: a, toMonth: b };
+  return rangeResult(period, parseRange(period, v.from, v.to));
 }

@@ -9,7 +9,7 @@ import { fmt, periodText, wrapText } from './print-layout.js';
 import { TAX_BY_CODE } from './tax.js';
 import { linesToRows, voucherOf } from './journal.js';
 import { toUnit, unitCaption, YEN_UNIT } from './money.js';
-import { incomeStatementRows, balanceSheetRows, singleAmount } from './fs-rows.js';
+import { incomeStatementRows, incomeStatementAccountRows, balanceSheetRows, singleAmount } from './fs-rows.js';
 import { trialRows, totalsOf } from './trial-rows.js';
 import { formatPermille } from './compare.js';
 
@@ -438,8 +438,36 @@ export function balanceSheetAccountDoc(bs, { head, title = '貸借対照表', en
 
 /** 勘定式の貸借対照表の表（決算書をまとめて印刷するときにも使う） */
 export function balanceSheetAccountBlock(bs, { entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
-  const { f } = unitFormat(unit);
   const b = balanceSheetRows(bs, { entityType, showZero });
+  return accountFormBlock({ left: b.assets, right: b.liabilities, leftTotal: b.assetTotal, rightTotal: b.liabilityTotal }, { unit, orientation });
+}
+
+/**
+ * 損益計算書・製造原価報告書（勘定式）：左に借方（費用・当期純利益金額）、右に貸方（収益）。
+ * 区分の合計は区分の見出しの行に書き、最後の行で借方と貸方の合計をそろえて二重線を引く（行は fs-rows.js の incomeStatementAccountRows）
+ * @param {Array} items statements.js の items（または condensedIncomeItems）
+ */
+export function incomeStatementAccountDoc(items, { head, title, entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  return { title: spaced(title), ...head, unit: unitCaption(unit), orientation, formal: true, blocks: [incomeStatementAccountBlock(items, { entityType, showZero, unit, orientation })] };
+}
+
+/** 勘定式の損益計算書・製造原価報告書の表（決算書をまとめて印刷するときにも使う） */
+export function incomeStatementAccountBlock(items, { entityType, showZero = false, unit = YEN_UNIT, orientation = 'portrait' }) {
+  const r = incomeStatementAccountRows(items, { entityType, showZero });
+  return accountFormBlock({ left: r.debit, right: r.credit, leftTotal: r.debitTotal, rightTotal: r.creditTotal }, { unit, orientation });
+}
+
+/** 様式（report：報告式、account：勘定式）を選べる損益計算書・製造原価報告書 */
+export function incomeStatementFormatDoc(items, { format = 'report', ...opts }) {
+  return format === 'account' ? incomeStatementAccountDoc(items, opts) : incomeStatementDoc(items, opts);
+}
+
+/**
+ * 勘定式の表：左右に「科目｜金額」を並べ、最後の行で左右の合計をそろえて二重線を引く（貸借対照表・損益計算書・製造原価報告書で共通）
+ * @param {{ left: Array, right: Array, leftTotal: {label, amount}, rightTotal: {label, amount} }} sides fs-rows.js の行
+ */
+function accountFormBlock({ left, right, leftTotal, rightTotal }, { unit = YEN_UNIT, orientation = 'portrait' }) {
+  const { f } = unitFormat(unit);
   const half = orientation === 'landscape' ? 125 : 93;
   const strong = (r) => boldKinds.has(r.kind) || (r.kind === 'calc' && r.level === 0);
   const side = (r) => {
@@ -451,16 +479,13 @@ export function balanceSheetAccountBlock(bs, { entityType, showZero = false, uni
       v == null ? '' : { text: r.paren ? `(${f(v)})` : f(v), bold: strong(r), rule: r.kind === 'total' ? 'over' : null },
     ];
   };
-  const n = Math.max(b.assets.length, b.liabilities.length);
+  const n = Math.max(left.length, right.length);
   const rows = [];
-  for (let i = 0; i < n; i++) rows.push({ cells: [...side(b.assets[i]), ...side(b.liabilities[i])] });
+  for (let i = 0; i < n; i++) rows.push({ cells: [...side(left[i]), ...side(right[i])] });
+  // 合計の行は左右とも同じ位置（最後の行）に書く。合計の名前が「合計」だけなら字を空けて中央寄りにする
+  const totalLabel = (t) => ({ text: t.label === '合計' ? '合　　　計' : t.label, bold: true, indent: t.label === '合計' ? 12 : 0 });
   rows.push({
-    cells: [
-      { text: b.assetTotal.label, bold: true },
-      { text: f(b.assetTotal.amount), bold: true, rule: 'double' },
-      { text: b.liabilityTotal.label, bold: true },
-      { text: f(b.liabilityTotal.amount), bold: true, rule: 'double' },
-    ],
+    cells: [totalLabel(leftTotal), { text: f(leftTotal.amount), bold: true, rule: 'double' }, totalLabel(rightTotal), { text: f(rightTotal.amount), bold: true, rule: 'double' }],
   });
   return {
     type: 'table',
@@ -529,9 +554,10 @@ export function equityStatementBlock(equity, { unit = YEN_UNIT, orientation = 'p
 /**
  * 個別注記表の文（financial.js の companyNotes の結果）
  * @param {Array<{ title, items: Array<{ heading?, text }> }>} sections
+ * @param {{ lead?: string }} [opts] lead：冒頭の文（中小会計要領・中小会計指針で作ったとき）
  */
-export function companyNotesBlocks(sections) {
-  const out = [];
+export function companyNotesBlocks(sections, { lead = '' } = {}) {
+  const out = lead ? [{ type: 'text', text: lead, size: 9 }] : [];
   sections.forEach((s, i) => {
     out.push({ type: 'heading', text: `${i + 1}．${s.title}` });
     if (!s.items.length) out.push({ type: 'text', text: '　該当事項はありません。', size: 9 });
@@ -571,23 +597,24 @@ export function coverBlock({ number = '', from, to, company = '', address = '', 
 /**
  * 決算書（法人）を1冊にする：貸借対照表・損益計算書・販売費及び一般管理費内訳書・製造原価報告書・株主資本等変動計算書・個別注記表
  * 帳票ごとに改ページし、各ページに表題と期間（貸借対照表は「…現在」）を出す。体裁は1つずつ印刷するときと同じ
- * @param {{ bs, plItems: Array, sga: { lines, total }, mfgItems: Array|null, equity, notes: Array }} data
- * @param {{ head, at: string, range: string, parts?: string[], bsFormat?: 'account'|'report', showZero?: boolean, unit?, orientation? }} opts
+ * @param {{ bs, plItems: Array, sga: { lines, total }, mfgItems: Array|null, equity, notes: Array, notesLead?: string }} data
+ * @param {{ head, at: string, range: string, parts?: string[], bsFormat?: 'account'|'report', plFormat?: 'account'|'report', mfgFormat?: 'account'|'report', showZero?: boolean, unit?, orientation? }} opts
  *   at：貸借対照表の日付の行（令和9年3月31日 現在）。range：期間の行（自…至…）。parts：印刷する帳票のキー
+ *   bsFormat・plFormat・mfgFormat：貸借対照表・損益計算書・製造原価報告書の様式（account：勘定式、report：報告式）
  *   cover：表紙（{ number, from, to, address }。事業者名は head.company。null なら付けない）
  */
-export function financialStatementsDoc(data, { head, at, range, parts = FINANCIAL_PARTS.map(([k]) => k), bsFormat = 'account', showZero = false, unit = YEN_UNIT, orientation = 'portrait', cover = null }) {
+export function financialStatementsDoc(data, { head, at, range, parts = FINANCIAL_PARTS.map(([k]) => k), bsFormat = 'account', plFormat = 'report', mfgFormat = 'report', showZero = false, unit = YEN_UNIT, orientation = 'portrait', cover = null }) {
   const o = { entityType: 'corporation', showZero, unit, orientation };
   const caption = (key, title, period, extra = {}) => ({ type: 'heading', text: title, caption: true, title: title.length <= 7 ? spaced(title) : title, period, ...extra });
   const blocks = cover ? [coverBlock({ ...cover, company: head.company })] : [];
   for (const [key, title] of FINANCIAL_PARTS) {
     if (!parts.includes(key)) continue;
     if (key === 'bs') blocks.push(caption(key, title, at), bsFormat === 'report' ? balanceSheetReportBlock(data.bs, o) : balanceSheetAccountBlock(data.bs, o));
-    if (key === 'pl') blocks.push(caption(key, title, range), incomeStatementBlock(data.plItems, o));
+    if (key === 'pl') blocks.push(caption(key, title, range), plFormat === 'account' ? incomeStatementAccountBlock(data.plItems, o) : incomeStatementBlock(data.plItems, o));
     if (key === 'sga') blocks.push(caption(key, title, range), breakdownBlock(data.sga.lines, data.sga.total, o));
-    if (key === 'mfg' && data.mfgItems) blocks.push(caption(key, title, range), incomeStatementBlock(data.mfgItems, o));
+    if (key === 'mfg' && data.mfgItems) blocks.push(caption(key, title, range), mfgFormat === 'account' ? incomeStatementAccountBlock(data.mfgItems, o) : incomeStatementBlock(data.mfgItems, o));
     if (key === 'equity') blocks.push(caption(key, title, range), equityStatementBlock(data.equity, o));
-    if (key === 'notes') blocks.push(caption(key, title, range, { unit: '' }), ...companyNotesBlocks(data.notes));
+    if (key === 'notes') blocks.push(caption(key, title, range, { unit: '' }), ...companyNotesBlocks(data.notes, { lead: data.notesLead }));
   }
   return { title: '決算報告書', ...head, unit: unitCaption(unit), orientation, formal: true, blocks };
 }

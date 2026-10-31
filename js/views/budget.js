@@ -28,7 +28,8 @@ async function renderReport({ app, outlet, query }) {
   const body = h('div');
   const zero = zeroToggle((v) => ((showZero = v), paint()));
   const unit = unitPicker({ key: '/reports/budget', onChange: () => paint() });
-  const picker = monthRangePicker({ period, query, path: '/reports/budget', onChange: () => paint() });
+  // 予算は月ごとなので、期間は月の単位で選ぶ
+  const picker = monthRangePicker({ period, query, path: '/reports/budget', onChange: () => paint(), monthsOnly: true });
   const series = monthlySales({ accounts, period, journals, budgets });
   const chart = barLineChart({
     labels: series.map((s) => monthLabel(s.month)),
