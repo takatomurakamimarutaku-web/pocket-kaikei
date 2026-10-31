@@ -38,8 +38,8 @@ export async function render({ app, outlet, isStale }) {
   const entityType = settings.entityType;
   if (isStale?.()) return;
   const input = clone({ actualThrough: null, methods: {}, manual: {}, monthly: {}, ...(period.forecast || {}) });
-  // 月ごとの表を開いている科目（描き直しても開いたままにする）
-  const open = new Set();
+  // 月別の見込みの表に前期を並べるか（画面を開いている間だけ）
+  let showPrev = false;
   let dirty = false;
   const body = h('div');
   const errorsEl = h('div');
@@ -85,9 +85,8 @@ export async function render({ app, outlet, isStale }) {
     }
     const summary = h('div', { class: 'table-wrap' }, h('table', { class: 'report advisor-summary', 'aria-label': '着地の損益' }, h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { text: throughLabel }), h('th', { text: '着地' }), h('th', { text: '前期' }))), h('tbody', {}, summaryRows)));
 
-    const isActual = new Set(landing.actualMonths);
     // ---- 科目ごとの見込み ----
-    const shown = landing.rows.filter((r) => r.actual || r.forecast || r.previous || r.budget || r.method !== 'auto').sort((a, b) => compareAccounts(a.account, b.account));
+    const shown = shownRows(landing);
     const byGroup = new Map();
     for (const r of shown) {
       if (!byGroup.has(r.account.group)) byGroup.set(r.account.group, []);
@@ -96,7 +95,7 @@ export async function render({ app, outlet, isStale }) {
     const accountRows = [];
     for (const [group, rows] of byGroup) {
       accountRows.push(h('tr', { class: 'fs-r-group' }, h('th', { colspan: '5', scope: 'rowgroup', text: GROUP_BY_ID[group]?.label || group })));
-      for (const r of rows) accountRows.push(...accountRow({ ...r, monthsOf: landing.months, actualSet: isActual, forecastMonthsCount: landing.forecastMonths.length }));
+      for (const r of rows) accountRows.push(...accountRow(r));
     }
     const table = h(
       'div',
@@ -104,34 +103,8 @@ export async function render({ app, outlet, isStale }) {
       h('table', { class: 'report advisor-accounts', 'aria-label': '科目ごとの見込み' }, h('thead', {}, h('tr', {}, h('th', { text: '科目' }), h('th', { text: throughLabel }), h('th', { text: '見込み' }), h('th', { text: '着地' }), h('th', { text: '前期' }))), h('tbody', {}, accountRows)),
     );
 
-    // ---- 月別の推移（売上と利益） ----
-    const salesBy = landing.months.map((_, i) => landing.rows.filter((r) => r.account.group === 'sales').reduce((s, r) => s + r.monthly[i], 0));
-    const profitBy = landing.months.map((_, i) => landing.rows.reduce((s, r) => s + (sideOf(r.account) === 'credit' ? r.monthly[i] : -r.monthly[i]), 0));
-    let cum = 0;
-    const monthTable = h(
-      'div',
-      { class: 'table-wrap' },
-      h(
-        'table',
-        { class: 'report advisor-months-table', 'aria-label': '月別の売上と利益' },
-        h('thead', {}, h('tr', {}, h('th', { text: '月' }), h('th', { text: '売上高' }), h('th', { text: entityType === 'corporation' ? '利益' : '所得' }), h('th', { text: '累計' }))),
-        h(
-          'tbody',
-          {},
-          landing.months.map((m, i) => {
-            cum += profitBy[i];
-            return h(
-              'tr',
-              { class: isActual.has(m) ? '' : 'is-plan' },
-              h('th', { scope: 'row' }, monthLabel(m), isActual.has(m) ? null : h('span', { class: 'badge advisor-plan', text: '見込み' })),
-              amountCell('td', salesBy[i]),
-              amountCell('td', profitBy[i]),
-              amountCell('td', cum),
-            );
-          }),
-        ),
-      ),
-    );
+    // ---- 月別の見込み（縦に科目・横に月）。見込みの月はマスで直接入れる ----
+    const monthTable = monthGrid(landing, shownRows(landing));
 
     // ---- 季節変動・特別な支出の注意 ----
     const advice = seasonalAdvice({ landing });
@@ -169,9 +142,9 @@ export async function render({ app, outlet, isStale }) {
       landing.depreciation.expected && !landing.depreciation.booked ? h('p', { class: 'muted small', text: `減価償却の仕訳がまだ無いため、固定資産台帳の当期の償却額 ${formatYen(landing.depreciation.expected)}円を期末に見込んでいます。` }) : null,
       landing.dropped ? h('p', { class: 'muted small', text: `見込みの月に入っている仕訳 ${landing.dropped}件（決算整理を除く）は着地に入れず、見込みの金額に置き換えています。実績にするときは「実績とみなす最後の月」を進めてください。` }) : null,
       landing.noCash ? h('p', { class: 'notice', text: '現金・預金の科目が無いため、見込みを計算できません。' }) : null,
-      h('h2', { class: 'section-title', text: '月別の推移' }),
+      h('div', { class: 'card-title-row advisor-grid-head' }, h('h2', { class: 'section-title', text: '月別の見込み' }), h('label', { class: 'small advisor-prev-toggle' }, h('input', { type: 'checkbox', checked: showPrev, disabled: !landing.rows.some((r) => r.prevMonthly), onchange: (e) => { showPrev = e.target.checked; paint(); } }), ' 前期を並べる')),
       monthTable,
-      h('p', { class: 'muted small', text: `「見込み」の月は、下の科目ごとの見込みを足した金額です。${entityType === 'corporation' ? '利益は税引前当期純利益（法人税等を引く前）。' : '所得は青色申告特別控除の前。'}` }),
+      h('p', { class: 'muted small', text: `色の付いた列が見込みの月です。マスに金額を入れると、その科目は「月ごとに入れる」になり、ほかの見込みの月は今の金額のまま残ります。${entityType === 'corporation' ? '利益は税引前当期純利益（法人税等を引く前）。' : '所得は青色申告特別控除の前。'}` }),
       landing.rows.some((r) => r.prevMonthly)
         ? [h('h2', { class: 'section-title', text: '季節変動・特別な支出の注意' }), advice.length ? h('ul', { class: 'plain-list advisor-advice-list' }, adviceList) : h('p', { class: 'muted small', text: '前期の推移には、目立った季節変動や特別な月はありませんでした。' }), h('p', { class: 'muted small', text: '前期の月ごとの金額から、ふだんの月の2倍以上の月（賞与・保険の年払いなど）と、売上の月ごとの差が大きい科目を挙げています。目安なので、内容は元帳で確かめてください。' })]
         : h('p', { class: 'muted small', text: '前期の帳簿があると、前期の推移から季節変動や賞与・年払いなどの特別な月を見つけて知らせます。' }),
@@ -212,47 +185,6 @@ export async function render({ app, outlet, isStale }) {
             },
           })
         : null;
-    // 月ごとの表（実績の月は帳簿の金額、見込みの月は「月ごとに入れる」なら入力欄）
-    const monthsBox = h(
-      'details',
-      {
-        class: 'advisor-months',
-        open: open.has(r.account.id),
-        ontoggle: (e) => (e.target.open ? open.add(r.account.id) : open.delete(r.account.id)),
-      },
-      h('summary', { text: '月ごと' }),
-      h(
-        'div',
-        { class: 'advisor-month-grid' },
-        h('span', { class: 'muted small', text: '月' }),
-        h('span', { class: 'muted small num', text: '当期' }),
-        h('span', { class: 'muted small num', text: '前期' }),
-        r.monthly.map((x, i) => {
-          const m = r.monthsOf[i];
-          const plan = !r.actualSet.has(m);
-          const cell =
-            plan && r.method === 'monthly'
-              ? h('input', {
-                  type: 'text',
-                  inputmode: 'numeric',
-                  class: 'advisor-month-input',
-                  'aria-label': `${r.account.name}の${monthLabel(m)}の見込み`,
-                  value: formatYen(input.monthly[r.account.id]?.[m] ?? 0),
-                  onchange: (e) => {
-                    const p = parseYen(e.target.value || '0', { allowZero: true, allowNegative: true });
-                    if (!p.ok) return put(errorsEl, errorBox([`${r.account.name}の${monthLabel(m)}：${p.error}`]));
-                    put(errorsEl);
-                    input.monthly[r.account.id] = { ...(input.monthly[r.account.id] || {}), [m]: p.value };
-                    dirty = true;
-                    paint();
-                  },
-                })
-              : h('span', { class: `num ${plan ? 'advisor-plan-num' : ''}`, text: formatYen(x) });
-          return [h('span', { class: 'small' }, monthLabel(m), plan ? h('span', { class: 'muted', text: ' 見込み' }) : null), cell, h('span', { class: 'num muted small', text: r.prevMonthly ? formatYen(r.prevMonthly[i]) : '—' })];
-        }),
-      ),
-      r.method !== 'monthly' && r.forecastMonthsCount ? h('button', { type: 'button', class: 'btn btn-small', text: 'この科目を月ごとに入れる', onclick: () => toMonthly(r) }) : null,
-    );
     // 立て方の選択は科目の行の下に、表の幅いっぱいで置く（スマホで切れないように）
     return [
       h(
@@ -264,8 +196,100 @@ export async function render({ app, outlet, isStale }) {
         amountCell('td', r.landing, { cls: 'strong' }),
         r.previous === null ? h('td', { class: 'num muted', text: '—' }) : amountCell('td', r.previous),
       ),
-      h('tr', { class: 'advisor-method-row' }, h('td', { colspan: '5' }, h('div', { class: 'advisor-pick' }, pick, manual), monthsBox)),
+      h('tr', { class: 'advisor-method-row' }, h('td', { colspan: '5' }, h('div', { class: 'advisor-pick' }, pick, manual))),
     ];
+  }
+
+  /** 表に出す科目（金額か設定がある科目）を科目の順に */
+  function shownRows(landing) {
+    return landing.rows.filter((r) => r.actual || r.forecast || r.previous || r.budget || r.method !== 'auto').sort((a, b) => compareAccounts(a.account, b.account));
+  }
+
+  /** 見込みの月のマスに金額を入れる（その科目は「月ごとに入れる」にし、ほかの月は今の見込みを引き継ぐ） */
+  function setCell(r, m, value) {
+    if (r.method !== 'monthly') {
+      input.methods[r.account.id] = 'monthly';
+      input.monthly[r.account.id] = { ...r.forecastMonthly };
+    }
+    input.monthly[r.account.id] = { ...(input.monthly[r.account.id] || {}), [m]: value };
+    dirty = true;
+  }
+
+  /** 月別の見込みの表：縦に科目（区分ごとの小計つき）、横に月・着地・前期。下に利益と累計 */
+  function monthGrid(landing, rows) {
+    const months = landing.months;
+    const actual = new Set(landing.actualMonths);
+    const sum = (list, i) => list.reduce((t, r) => t + r.monthly[i], 0);
+    const head = h(
+      'tr',
+      {},
+      h('th', { class: 'grid-account', text: '科目' }),
+      months.map((m) => h('th', { class: actual.has(m) ? '' : 'is-plan' }, monthLabel(m), h('span', { class: 'grid-kind', text: actual.has(m) ? '実績' : '見込み' }))),
+      h('th', { text: '着地' }),
+      h('th', { text: '前期' }),
+    );
+    const body = [];
+    const byGroup = new Map();
+    for (const r of rows) {
+      if (!byGroup.has(r.account.group)) byGroup.set(r.account.group, []);
+      byGroup.get(r.account.group).push(r);
+    }
+    const prevTotal = (list) => (list.some((r) => r.previous !== null) ? list.reduce((t, r) => t + (r.previous || 0), 0) : null);
+    const numCell = (v, cls = '') => (v === null ? h('td', { class: 'num muted', text: '—' }) : amountCell('td', v, { cls }));
+    for (const [group, list] of byGroup) {
+      body.push(h('tr', { class: 'fs-r-group' }, h('th', { class: 'grid-account', scope: 'rowgroup', text: GROUP_BY_ID[group]?.label || group }), h('td', { colspan: String(months.length + 2) })));
+      for (const r of list) {
+        body.push(
+          h(
+            'tr',
+            {},
+            h('th', { class: 'grid-account', scope: 'row', text: r.account.name }),
+            months.map((m, i) => {
+              if (actual.has(m)) return amountCell('td', r.monthly[i]);
+              const key = `${r.account.id}:${m}`;
+              return h(
+                'td',
+                { class: 'is-plan' },
+                h('input', {
+                  type: 'text',
+                  inputmode: 'numeric',
+                  class: 'grid-input',
+                  'data-cell': key,
+                  'aria-label': `${r.account.name}の${monthLabel(m)}の見込み`,
+                  value: formatYen(r.forecastMonthly[m] || 0),
+                  onchange: (e) => {
+                    const p = parseYen(e.target.value || '0', { allowZero: true, allowNegative: true });
+                    if (!p.ok) return put(errorsEl, errorBox([`${r.account.name}の${monthLabel(m)}：${p.error}`]));
+                    put(errorsEl);
+                    setCell(r, m, p.value);
+                    // Tab で次のマスに移るのを待ってから描き直し、移った先のマスにフォーカスを戻す
+                    setTimeout(() => {
+                      const next = document.activeElement?.dataset?.cell;
+                      paint();
+                      if (next) outlet.querySelector(`[data-cell="${next}"]`)?.focus();
+                    }, 0);
+                  },
+                }),
+              );
+            }),
+            numCell(r.landing, 'strong'),
+            numCell(r.previous),
+          ),
+        );
+        if (showPrev && r.prevMonthly) body.push(h('tr', { class: 'grid-prev' }, h('th', { class: 'grid-account', scope: 'row', text: '前期' }), r.prevMonthly.map((x) => amountCell('td', x)), h('td', {}), h('td', {})));
+      }
+      body.push(h('tr', { class: 'grid-subtotal' }, h('th', { class: 'grid-account', scope: 'row', text: `${GROUP_BY_ID[group]?.label || group} 計` }), months.map((_, i) => amountCell('td', sum(list, i))), numCell(list.reduce((t, r) => t + r.landing, 0)), numCell(prevTotal(list))));
+    }
+    const profit = months.map((_, i) => rows.reduce((t, r) => t + (sideOf(r.account) === 'credit' ? r.monthly[i] : -r.monthly[i]), 0));
+    let cum = 0;
+    const cumulative = profit.map((x) => (cum += x));
+    const profitWord = entityType === 'corporation' ? '利益（税引前）' : '所得（控除前）';
+    const prevProfit = rows.some((r) => r.previous !== null) ? rows.reduce((t, r) => t + (sideOf(r.account) === 'credit' ? r.previous || 0 : -(r.previous || 0)), 0) : null;
+    body.push(
+      h('tr', { class: 'mt-strong' }, h('th', { class: 'grid-account', scope: 'row', text: profitWord }), profit.map((x) => amountCell('td', x)), numCell(cum), numCell(prevProfit)),
+      h('tr', { class: 'grid-cum' }, h('th', { class: 'grid-account', scope: 'row', text: '累計' }), cumulative.map((x) => amountCell('td', x)), h('td', {}), h('td', {})),
+    );
+    return h('div', { class: 'table-wrap advisor-grid-wrap' }, h('table', { class: 'report advisor-grid', 'aria-label': '月別の見込み' }, h('thead', {}, head), h('tbody', {}, body)));
   }
 
   function setMethod(r, method) {
@@ -279,7 +303,6 @@ export async function render({ app, outlet, isStale }) {
   function toMonthly(r, patch = {}) {
     input.methods[r.account.id] = 'monthly';
     input.monthly[r.account.id] = { ...(r.method === 'monthly' ? input.monthly[r.account.id] : r.forecastMonthly), ...patch };
-    open.add(r.account.id);
     dirty = true;
     paint();
   }

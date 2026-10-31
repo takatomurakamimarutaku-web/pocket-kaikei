@@ -48,18 +48,17 @@ mkdirSync(OUT, { recursive: true });
       await page.waitForTimeout(800);
       if ((await page.locator('select.advisor-method').first().inputValue()) !== 'manual') errors.push(`${entity}: 立て方が保存されない`);
       await shot('04-forecast-manual');
-      // 月ごと：開いて「月ごとに入れる」にし、1か月の金額を変える
-      await page.locator('details.advisor-months > summary').first().click();
-      await page.waitForTimeout(200);
-      const toMonthly = page.getByRole('button', { name: 'この科目を月ごとに入れる' }).first();
-      if (await toMonthly.count()) await toMonthly.click();
-      await page.waitForTimeout(300);
-      const mi = page.locator('input.advisor-month-input').first();
-      if (!(await mi.count())) errors.push(`${entity}: 月ごとの入力欄が出ない`);
+      // 月別の見込みの表のマスに入れると、その科目が「月ごとに入れる」になる
+      const cell = page.locator('input.grid-input').nth(1);
+      if (!(await cell.count())) errors.push(`${entity}: 月別の見込みのマスが出ない`);
       else {
-        await mi.fill('2,000,000');
-        await mi.dispatchEvent('change');
-        await page.waitForTimeout(300);
+        await cell.fill('2,000,000');
+        await cell.press('Tab');
+        await page.waitForTimeout(400);
+        const label = await cell.getAttribute('aria-label');
+        if ((await page.getByLabel(label).inputValue()) !== '2,000,000') errors.push(`${entity}: マスの金額が残らない`);
+        const focused = await page.evaluate(() => document.activeElement?.dataset?.cell || '');
+        if (!focused) errors.push(`${entity}: Tab で次のマスに移らない`);
       }
       await shot('04b-forecast-monthly');
     }
