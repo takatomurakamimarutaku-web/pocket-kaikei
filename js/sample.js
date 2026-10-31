@@ -1,47 +1,28 @@
 // 動作確認用のサンプルデータ（純粋関数）。バックアップと同じ形のデータを作り、復元と同じ方法で読み込む
 // 個人：小売・デザインの個人事業（課税事業者、2026年）。法人：製造業の会社（課税事業者、2026/4〜2027/3、製造原価を使う）
+// 法人はほかに業種・規模・消費税の計算方法の違うサンプルがある（sample-corporations.js。一覧は SAMPLES）
 // 期末の棚卸・減価償却・消費税の決算整理は入れていない（決算・繰越の画面で試すため）
-import { templateAccounts, manufacturingAccounts, findByRole } from './accounts.js';
-import { createAccount, createSubAccount, createPeriod, createJournal, createAsset, createSettings, createDepartment } from './models.js';
+import { findByRole } from './accounts.js';
+import { createPeriod, createAsset, createSettings } from './models.js';
 import { monthsInPeriod } from './period.js';
+import { day, MONTH_END, book, finish } from './sample-kit.js';
+import { CORPORATION_SAMPLE_BUILDERS } from './sample-corporations.js';
 
-export const SAMPLE_NAMES = { individual: 'サンプル商店', corporation: 'サンプル製作所株式会社' };
+/**
+ * 選べるサンプルの一覧（画面の並び順）。id は buildSample に渡す。individual・corporation は最初からある2つ
+ * size：規模の目安、tax：消費税、summary：画面に出す説明
+ */
+export const SAMPLES = [
+  { id: 'individual', entityType: 'individual', name: 'サンプル商店', industry: '小売・デザイン', size: '個人事業', tax: '課税（一般）', fiscal: '12月決算', summary: '家賃の家事按分、インボイスのない外注、中古の軽自動車（事業70%）、部門（デザイン・店舗）など' },
+  { id: 'corporation', entityType: 'corporation', name: 'サンプル製作所株式会社', industry: '製造業', size: '中小（年商約4,000万円・従業員5名）', tax: '課税（一般）', fiscal: '3月決算', summary: '製造原価、工場の機械（定率法）、輸出売上、仕入の返品、税区分の誤りの例など' },
+  { id: 'corp-retail', entityType: 'corporation', name: 'サンプルストア株式会社', industry: '小売業（雑貨・食品）', size: '小規模（年商約4,000万円・パート2名）', tax: '課税（簡易課税 第2種）', fiscal: '3月決算', summary: '現金とカードの売上、カード手数料（非課税）、軽減税率の食品、季節の売上の増減、借入金の返済、レジ過不足の誤りの例など' },
+  { id: 'corp-construction', entityType: 'corporation', name: 'サンプル建設株式会社', industry: '建設業（工務店）', size: '中規模（年商約1.3億円・従業員6名）', tax: '課税（一般）', fiscal: '6月決算', summary: '完成工事高、着手金（未成工事受入金）、未成工事支出金、外注工事、ダンプ（前のソフトから帳簿価額を引き継ぎ）、借入金など' },
+  { id: 'corp-it', entityType: 'corporation', name: 'サンプルシステム株式会社', industry: 'IT（受託開発・保守）', size: '一人社長（年商約900万円）', tax: '免税事業者', fiscal: '12月決算', summary: '設立2期目、役員借入金の返済、ソフトウェア（無形固定資産）、少額減価償却資産の特例のパソコンなど' },
+  { id: 'corp-restaurant', entityType: 'corporation', name: 'サンプル食堂合同会社', industry: '飲食業（食堂）', size: '小規模（年商約1,300万円・パート2名）', tax: '課税（2割特例）', fiscal: '3月決算', summary: '店内飲食（10%）と持ち帰り（8%）、繰越利益剰余金がマイナス（欠損）、内装（前のソフトから引き継ぎ）、10万円未満の備品など' },
+];
 
-/** 月の日付（日が月末を超えるときは月末） */
-function day(month, d) {
-  const last = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
-  return `${month}-${String(Math.min(d, last)).padStart(2, '0')}`;
-}
-
-// 支払条件：末日締め 翌月末日払い
-const MONTH_END = { closingDay: 31, months: 1, payDay: 31 };
-
-function book(entityType, { manufacturing = false, subs = [], departmentNames = [] } = {}) {
-  const base = templateAccounts(entityType);
-  const accounts = [...base, ...(manufacturing ? manufacturingAccounts(base) : [])].map((a) => createAccount(a));
-  const byName = Object.fromEntries(accounts.map((a) => [a.name, a]));
-  const subAccounts = subs.map(([accountName, name, paymentTerms], i) => createSubAccount({ accountId: byName[accountName].id, name, sortOrder: i, ...(paymentTerms ? { paymentTerms: { ...paymentTerms } } : {}) }));
-  const subId = (accountName, name) => subAccounts.find((s) => s.accountId === byName[accountName].id && s.name === name)?.id ?? null;
-  const departments = departmentNames.map((name, i) => createDepartment({ name, sortOrder: i }));
-  const journals = [];
-  /** 行は [科目名, 金額, 税区分?, 補助科目名?, 部門名?]。税区分を省くと科目の初期値 */
-  const j = (period, date, debits, credits, memo, extra = {}) => {
-    const line = (side, [name, amount, tax, sub, dep]) => {
-      if (!byName[name]) throw new Error(`サンプルの科目がありません: ${name}`);
-      const departmentId = dep ? departments.find((d) => d.name === dep).id : null;
-      return { side, accountId: byName[name].id, subAccountId: sub ? subId(name, sub) : null, amount, taxCategory: tax ?? byName[name].defaultTaxCategory, memo, ...(departmentId ? { departmentId } : {}) };
-    };
-    journals.push(createJournal({ periodId: period.id, date, lines: [...debits.map((d) => line('debit', d)), ...credits.map((c) => line('credit', c))], ...extra }));
-  };
-  return { accounts, byName, subAccounts, subId, departments, journals, j };
-}
-
-/** 入力No・伝票No を日付順に振り、期間の次の番号を入れる */
-function finish(period, journals) {
-  journals.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).forEach((x, i) => ((x.no = i + 1), (x.voucherNo = i + 1)));
-  period.nextJournalNo = journals.length + 1;
-  period.nextVoucherNo = journals.length + 1;
-}
+/** サンプルの事業所名（id → 名前） */
+export const SAMPLE_NAMES = Object.fromEntries(SAMPLES.map((x) => [x.id, x.name]));
 
 function individualSample(year) {
   // 部門：デザインの仕事と店舗の物販。家賃・通信費などは部門を付けない（共通）
@@ -157,11 +138,13 @@ function corporationSample(year) {
 
 /**
  * サンプルデータ（Repository.replaceAll に渡せる形。バックアップと同じ項目）
- * @param {'individual'|'corporation'} entityType
+ * @param {string} id SAMPLES の id（'individual'・'corporation'・'corp-retail' など）
  * @param {{ year?: number }} opts year：個人は暦年、法人は期首の年（既定 2026）
  */
-export function buildSample(entityType, { year = 2026 } = {}) {
-  const s = entityType === 'corporation' ? corporationSample(year) : individualSample(year);
+export function buildSample(id, { year = 2026 } = {}) {
+  const more = CORPORATION_SAMPLE_BUILDERS[id];
+  if (!more && id !== 'individual' && id !== 'corporation') throw new Error(`不明なサンプルです: ${id}`);
+  const s = more ? more(year, SAMPLE_NAMES[id]) : id === 'corporation' ? corporationSample(year) : individualSample(year);
   if (!findByRole(s.accounts, 'cash')) throw new Error('サンプルの科目が不正です');
   return { settings: s.settings, currentPeriodId: s.period.id, accounts: s.accounts, subAccounts: s.subAccounts, departments: s.departments || [], periods: [s.period], journals: s.journals, assets: s.assets, tombstones: [] };
 }
