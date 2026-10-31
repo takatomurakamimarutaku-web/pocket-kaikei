@@ -12,7 +12,7 @@ mkdirSync(OUT, { recursive: true });
 (async () => {
   const browser = await chromium.launch();
   const errors = [];
-  const ids = ['individual', 'corporation', 'corp-retail', 'corp-construction', 'corp-it', 'corp-restaurant'].filter((id) => !process.env.ONLY || id === process.env.ONLY);
+  const ids = ['individual', 'ind-freelance', 'ind-izakaya', 'ind-apartment', 'ind-delivery', 'corporation', 'corp-retail', 'corp-construction', 'corp-it', 'corp-restaurant'].filter((id) => !process.env.ONLY || id === process.env.ONLY);
   for (const entity of ids) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block', locale: 'ja-JP' });
     const page = await ctx.newPage();
@@ -60,6 +60,28 @@ mkdirSync(OUT, { recursive: true });
       await go('#/books');
       await shot('06-books');
     }
+    await ctx.close();
+  }
+  // 3期分：前々期・前期は締めてあり、期首残高は繰越済み（期間の画面で期首残高の食い違いの注意が出ない）
+  for (const entity of ids) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block', locale: 'ja-JP' });
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errors.push(`${entity} 3期 pageerror: ${e.message}`));
+    page.on('console', (m) => m.type() === 'error' && errors.push(`${entity} 3期 console: ${m.text()}`));
+    await page.goto(BASE);
+    await page.waitForSelector('form.setup');
+    await page.selectOption('#sample-id', entity);
+    await page.getByRole('radio', { name: '前々期から3期分' }).click();
+    if (entity === 'corporation') await page.screenshot({ path: join(OUT, 'sample-3p-00-chooser.png'), fullPage: true });
+    await page.getByRole('button', { name: 'このサンプルを読み込む' }).click();
+    await page.waitForTimeout(800);
+    await page.evaluate(() => (location.hash = '#/periods'));
+    await page.waitForTimeout(600);
+    if (['corporation', 'ind-izakaya'].includes(entity)) await page.screenshot({ path: join(OUT, `sample-3p-${entity}-periods.png`), fullPage: true });
+    if ((await page.getByText('前期末の残高で期首残高を更新').count()) > 0) errors.push(`${entity} 3期：期首残高が繰越と食い違う`);
+    await page.evaluate(() => (location.hash = '#/reports/bs'));
+    await page.waitForTimeout(600);
+    if (!(await page.locator('.check-line.ok').count())) errors.push(`${entity} 3期：BSが一致しない`);
     await ctx.close();
   }
   await browser.close();

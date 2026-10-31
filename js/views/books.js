@@ -80,8 +80,8 @@ export async function render({ app, outlet }) {
     await addWithData(data, `「${data.settings.businessName}」を取り込みました`);
   }
 
-  async function addSample(id) {
-    const data = parseBackup(JSON.stringify(createBackup(buildSample(id), { appVersion: APP_VERSION })));
+  async function addSample(id, { periods = 1 } = {}) {
+    const data = parseBackup(JSON.stringify(createBackup(buildSample(id, { periods }), { appVersion: APP_VERSION })));
     await addWithData(data, `サンプルの事業所（${SAMPLE_NAMES[id]}）を作りました`);
   }
 
@@ -125,7 +125,7 @@ export async function render({ app, outlet }) {
       h('button', { type: 'button', class: 'btn btn-block', text: 'バックアップから作る', onclick: () => file.click() }),
       h('p', { class: 'muted small', text: 'ほかの端末や会社のバックアップファイルを、新しい事業所として取り込みます。今の事業所を置き換えたいときは「バックアップ」の画面の復元を使います。' }),
       h('h3', { class: 'section-title', text: 'サンプルの事業所を作る' }),
-      h('p', { class: 'muted small', text: '操作を試すための1年分のデータを、新しい事業所として作ります。法人は業種・規模・消費税の計算方法の違う5種類から選べます。' }),
+      h('p', { class: 'muted small', text: '操作を試すためのデータを、新しい事業所として作ります。個人・法人とも業種・規模・消費税の違う5種類ずつから選べ、前々期からの3期分にもできます。' }),
       sampleChooser({ onPick: addSample, buttonLabel: 'このサンプルで事業所を作る' }),
       file,
     ),
