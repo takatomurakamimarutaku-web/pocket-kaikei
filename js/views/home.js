@@ -1,7 +1,7 @@
 // ホーム：当期の概要（売上・利益・資金）、今月の動き、やること、最近の仕訳、よく使う操作
 import { h, put, charaSay } from '../ui.js';
 import { formatYen } from '../money.js';
-import { formatPeriod, todayString, addDays } from '../period.js';
+import { formatPeriod, todayString, addDays, monthsInPeriod } from '../period.js';
 import { buildStatements, closingRows } from '../statements.js';
 import { monthlyIncome } from '../monthly.js';
 import { barLineChart } from '../chart.js';
@@ -11,7 +11,7 @@ import { ENTITY_LABELS, TAX_STATUS_LABELS } from '../models.js';
 import { openingDiff } from '../ledger.js';
 import { taxChecks } from '../tax-reports.js';
 import { findInventoryJournals } from '../closing.js';
-import { findDepreciationJournals } from '../depreciation.js';
+import { bookedDepreciation } from '../asset-reports.js';
 import { icon } from '../icons.js';
 import { PARTY_KINDS, partyBalances } from '../receivables.js';
 import { periodContext, closedNotice } from './period-common.js';
@@ -56,7 +56,9 @@ export async function render({ app, outlet }) {
   }
   if (!period.closed && today >= addDays(period.endDate, -45)) {
     const inv = findInventoryJournals(journals, accounts).length;
-    const dep = findDepreciationJournals(journals).length;
+    // 月次償却で一部の月だけ登録しているときは、残りの月が未登録
+    const booked = bookedDepreciation(journals);
+    const dep = booked.annual || monthsInPeriod(period).every((m) => booked.months.has(m));
     if (!inv || !dep) todos.push({ href: '#/closing', title: '決算整理をする', sub: `期末 ${slash(period.endDate)}。${[!inv ? '棚卸' : '', !dep ? '減価償却' : ''].filter(Boolean).join('・')}の仕訳が未登録`, level: today > period.endDate ? 'warn' : 'info' });
   }
 

@@ -11,7 +11,7 @@
 // - 資本的支出：元の資産と種類・耐用年数が同じ資産を新たに取得したものとして、支出額を取得価額にして償却する（平成19年4月1日以後の支出）
 //   No.2107 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2107.htm 、法人税法施行令55条
 //   （国税庁「2 固定資産の取得価額等」https://www.nta.go.jp/law/joho-zeikaishaku/hojin/070622-2/03.htm）
-import { CATEGORY_BY_ID, usesLife, depreciationSchedule, hasCarryOver, MIN_LIFE, NEW_METHOD_FROM } from './depreciation.js';
+import { CATEGORY_BY_ID, usesLife, isDisposable, depreciationSchedule, hasCarryOver, MIN_LIFE, NEW_METHOD_FROM } from './depreciation.js';
 import { isValidDate } from './period.js';
 import { newId } from './models.js';
 
@@ -31,9 +31,9 @@ export function usedAssetLife(legalLife, elapsedMonths) {
   return Math.max(MIN_LIFE, Math.floor(months / 12));
 }
 
-/** 売却・除却の仕訳を作れる資産か（一括償却資産は除却しても3年で償却を続け、少額は取得時に全額を費用にしている） */
+/** 売却・除却の仕訳を作れる資産か（定額法・定率法・償却しない資産。一括償却資産は除却しても3年で償却を続け、少額は取得時に全額を費用にしている） */
 export function canDispose(asset) {
-  return usesLife(asset.method);
+  return isDisposable(asset.method);
 }
 
 /** ある日に売却・除却したときの帳簿価額（その日までの償却を引いた額） */
@@ -69,7 +69,7 @@ export function disposalLines({ asset, periods, accounts, entityType, date, type
   const line = (side, accountId, amount, taxCategory = 'none', suffix = '') => {
     if (amount > 0) lines.push({ side, accountId, subAccountId: null, amount, taxCategory, memo: `${memo}${suffix}`.slice(0, 100) });
   };
-  if (!canDispose(asset)) errors.push('定額法・定率法の資産だけ売却・除却の仕訳を作れます（一括償却資産は除却後も3年で償却し、少額の資産は取得した年に全額を費用にしています）');
+  if (!canDispose(asset)) errors.push('定額法・定率法・償却しない資産だけ売却・除却の仕訳を作れます（一括償却資産は除却後も3年で償却し、少額の資産は取得した年に全額を費用にしています）');
   if (date < asset.startedOn) errors.push('売却・除却した日は使い始めた日以後にしてください');
   if (accumulated > 0) {
     line('debit', accumulatedAccount.id, accumulated);
@@ -91,8 +91,9 @@ export function disposalLines({ asset, periods, accounts, entityType, date, type
     if (!errors.length) {
       line('debit', receipt?.id, price);
       // 事業用の資産の売却は課税売上。個人で私用にも使っていた資産は、事業で使う割合の分だけが課税対象
+      // 土地の譲渡は非課税（消費税法6条・別表第二 一。国税庁 No.6225 https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6225.htm）
       const taxable = Math.floor((price * ratio) / 100);
-      line('credit', asset.accountId, taxable, 'sales_10');
+      line('credit', asset.accountId, taxable, CATEGORY_BY_ID[asset.category]?.nonDepreciable ? 'sales_exempt' : 'sales_10');
       line('credit', asset.accountId, price - taxable, 'none', '（私用分）');
       line('debit', asset.accountId, gain);
       line('credit', gainAccount?.id, gain);
@@ -183,7 +184,7 @@ export function validateCapex(asset, parent) {
 
 /** 一部の売却・除却ができる資産か */
 export function canSplit(asset) {
-  return canDispose(asset) && !asset.disposalType && !asset.splitFrom;
+  return usesLife(asset.method) && !asset.disposalType && !asset.splitFrom;
 }
 
 /**

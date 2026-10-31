@@ -1491,3 +1491,14 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .find-account-name { flex: 1 1 auto; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
 .find-account-balance { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 700; }
 .find-account-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; padding-left: calc(3.2em + 10px); }
+
+/* 固定資産台帳：帳票のタブ・絞り込み */
+.asset-tabs { overflow-x: auto; margin: 8px 0; -webkit-overflow-scrolling: touch; }
+.asset-tabs .segmented { min-width: max-content; }
+.asset-filters { display: grid; gap: 8px; margin-bottom: 12px; }
+.asset-filter-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
+.asset-filter { display: grid; gap: 2px; min-width: 0; }
+.asset-filter select { width: 100%; }
+@media (min-width: 900px) { .asset-table.asset-wide { min-width: 100%; } }
+.asset-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
+.asset-more[open] > summary { margin-bottom: 6px; }

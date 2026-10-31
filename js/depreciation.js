@@ -125,12 +125,14 @@ export const ASSET_CATEGORIES = [
   { id: 'machinery', label: '機械装置', intangible: false, decliningUntil: null },
   { id: 'vehicle', label: '車両運搬具', intangible: false, decliningUntil: null },
   { id: 'tools', label: '工具器具備品', intangible: false, decliningUntil: null },
+  // 土地は減価償却しない（v0.71.0 で追加。所得税法施行令6条・法人税法施行令13条の減価償却資産に当たらない）
+  { id: 'land', label: '土地', intangible: false, decliningUntil: null, nonDepreciable: true },
   { id: 'intangible', label: 'ソフトウェアなど（無形）', intangible: true, decliningUntil: '0000-01-01' },
 ];
 /** 種類ごとの初期値の科目（テンプレートのコード。科目名では判定しない） */
 export const CATEGORY_ACCOUNT_CODES = {
-  individual: { building: '200', building_equipment: '201', machinery: '202', vehicle: '203', tools: '204', intangible: '220' },
-  corporation: { building: '200', building_equipment: '201', structure: '202', machinery: '203', vehicle: '204', tools: '205', intangible: '220' },
+  individual: { building: '200', building_equipment: '201', machinery: '202', vehicle: '203', tools: '204', land: '205', intangible: '220' },
+  corporation: { building: '200', building_equipment: '201', structure: '202', machinery: '203', vehicle: '204', tools: '205', land: '206', intangible: '220' },
 };
 
 /** 種類に合う初期値の科目 id（テンプレートの科目が無効・変更済みなら候補の先頭） */
@@ -147,12 +149,18 @@ export const METHODS = [
   { id: 'lump3', label: '一括償却資産（3年で均等に償却）', short: '一括償却' },
   { id: 'small', label: '少額減価償却資産（10万円未満・全額を経費）', short: '少額' },
   { id: 'sme', label: '少額減価償却資産の特例（中小企業者等・全額を経費）', short: '少額特例' },
+  { id: 'none', label: '償却しない（土地・建設仮勘定・美術品・電話加入権など）', short: '非償却' },
 ];
 export const METHOD_BY_ID = Object.fromEntries(METHODS.map((m) => [m.id, m]));
 
 /** 定額法・定率法で計算する方法か（耐用年数を使う） */
 export function usesLife(method) {
   return method === 'straight' || method === 'declining';
+}
+
+/** 売却・除却で台帳から外す方法か（定額法・定率法・償却しない資産。一括償却は除却しても3年で償却を続け、少額は取得時に全額を費用にしている） */
+export function isDisposable(method) {
+  return usesLife(method) || method === 'none';
 }
 
 /** 定額法・定率法の対象日（平成19年3月31日以前取得・4月1日以後に事業供用したものは供用日に取得したとみなす。出典 No.5410）。前は旧定額法・旧定率法 */
@@ -262,6 +270,7 @@ export function validateAsset(asset, { entityType, accounts }) {
   if (!isYen(asset.cost) || asset.cost < 1 || asset.cost >= 1e12) e.cost = '取得価額は1円以上の整数で入力してください';
   const m = METHOD_BY_ID[asset.method];
   if (!m) e.method = '償却の方法を選んでください';
+  else if (cat?.nonDepreciable && asset.method !== 'none') e.method = `${cat.label}は減価償却しません（「償却しない」を選んでください）`;
   const cost = isYen(asset.cost) ? asset.cost : 0;
   if (m && !e.startedOn && !e.acquiredOn) {
     if (usesLife(asset.method)) {
@@ -330,6 +339,9 @@ export function validateAsset(asset, { entityType, accounts }) {
   // v0.38.0 で追加した耐用年数表の区分（任意。別表十六・少額減価償却資産の明細書の「構造又は用途」「細目」）
   if (asset.structure != null && (typeof asset.structure !== 'string' || asset.structure.length > 60)) e.structure = '構造又は用途は60文字以内にしてください';
   if (asset.detail != null && (typeof asset.detail !== 'string' || asset.detail.length > 60)) e.detail = '細目は60文字以内にしてください';
+  // v0.68.0 で追加した管理の項目（任意）：部門（償却費の仕訳の部門）・購入先
+  if (asset.departmentId != null && (typeof asset.departmentId !== 'string' || !asset.departmentId)) e.departmentId = '部門が正しくありません';
+  if (asset.supplier != null && (typeof asset.supplier !== 'string' || asset.supplier.length > 40)) e.supplier = '購入先は40文字以内にしてください';
   if (asset.disposalType != null) {
     if (!['sell', 'retire'].includes(asset.disposalType)) e.disposedOn = '売却か除却かが正しくありません';
     else if (!asset.disposedOn) e.disposedOn = '売却・除却した日を入力してください';
@@ -387,6 +399,7 @@ function* ranges(periods, startedOn) {
  */
 export function depreciationSchedule(asset, periods) {
   const out = [];
+  if (asset.method === 'none') return out; // 償却しない資産（土地など）
   const cat = CATEGORY_BY_ID[asset.category];
   const floor = cat?.intangible || !usesLife(asset.method) ? 0 : 1; // 有形の定額法・定率法は1円（備忘価額）を残す
   const ratio = Number.isInteger(asset.businessRatio) ? asset.businessRatio : 100;
@@ -558,9 +571,11 @@ export function smeUsage(assets, period) {
 /**
  * 減価償却の決算整理仕訳の明細
  *   減価償却費（事業分）・事業主貸（個人の私用分） / 資産の科目（直接法）または減価償却累計額（法人の有形固定資産で、累計額の科目があるとき）
+ *   資産に部門を指定していれば、償却費の明細に部門を付ける（部門別損益）
+ *   pick：台帳の1行 → { amount, business }（月次償却で一部の月の分だけ登録するとき。省略すると期間の全額）、memoSuffix：摘要の後ろに付ける文字
  * @returns {{ lines: Array, total: number, errors: string[] }}
  */
-export function depreciationLines({ assets, periods, period, accounts, entityType }) {
+export function depreciationLines({ assets, periods, period, accounts, entityType, departments = [], pick = null, memoSuffix = '' }) {
   const errors = [];
   const expense = accounts.find((a) => a.hint === 'depreciation' && a.active);
   const drawings = accounts.find((a) => a.role === 'owner_drawings');
@@ -570,13 +585,19 @@ export function depreciationLines({ assets, periods, period, accounts, entityTyp
   const lines = [];
   let total = 0;
   const line = (side, accountId, amount, memo) => ({ side, accountId, subAccountId: null, amount, taxCategory: 'none', memo });
-  for (const { asset, row } of assetRegister(assets, periods, period)) {
-    if (!row || !row.amount) continue;
-    const memo = `減価償却 ${asset.name}`.slice(0, 100);
+  for (const entry of assetRegister(assets, periods, period)) {
+    const { asset } = entry;
+    if (!entry.row || !entry.row.amount) continue;
+    const part = pick ? pick(entry) : null;
+    const row = part ? { amount: part.amount, business: part.business, private: part.amount - part.business } : entry.row;
+    if (!row.amount) continue;
+    const memo = `減価償却 ${asset.name}${memoSuffix}`.slice(0, 100);
     const own = asset.expenseAccountId ? accounts.find((a) => a.id === asset.expenseAccountId && a.active) : null;
     if (asset.expenseAccountId && !own) errors.push(`「${asset.name}」の償却費の科目が見つかりません（無効にした場合は固定資産の画面で選び直してください）`);
     const debit = own || expense;
-    if (debit && row.business) lines.push(line('debit', debit.id, row.business, memo));
+    // 資産に部門を指定していれば、償却費（損益の科目）に部門を付ける（使わない設定にした部門は付けない）
+    const dep = asset.departmentId ? departments.find((d) => d.id === asset.departmentId && d.active !== false) : null;
+    if (debit && row.business) lines.push({ ...line('debit', debit.id, row.business, memo), ...(dep ? { departmentId: dep.id } : {}) });
     if (row.private) {
       if (drawings) lines.push(line('debit', drawings.id, row.private, `${memo}（私用分）`.slice(0, 100)));
       else errors.push('事業主貸の科目が見つかりません');
