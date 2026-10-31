@@ -437,3 +437,34 @@ test('絞り込み：設置場所・償却方法・取得日の範囲。集計�
   const m = monthlyDoc(register, period, { accountById, head: {}, groupBy: 'category' }).blocks[0].rows;
   assert.ok(m.some((r) => r.kind === 'subtotal' && String(r.cells[0]).endsWith('件）')));
 });
+
+test('絞り込み：取得価額の範囲・資産の特徴（当期で償却が終わる・特別償却・圧縮記帳など）・逆順', async () => {
+  const { ASSET_FEATURES, hasFeature, endsInPeriod } = await import('../js/asset-reports.js');
+  const { register } = book();
+  const ds = register.map((x) => registerDetail(x, period));
+  const pick = (f) => ds.filter((d) => matchAsset(d.asset, d.status, f, d)).map((d) => d.asset.id).sort();
+  // 以上・未満
+  assert.deepEqual(pick({ costMin: 100000, costMax: 200000 }), ['done', 'lump']);
+  assert.deepEqual(pick({ costMax: 100000 }), ['small']);
+  assert.deepEqual(pick({ costMin: 600000 }), ['new', 'special']);
+  assert.deepEqual(pick({ feature: 'special' }), ['special']);
+  // 当期で償却が終わる：少額（全額を費用）。old は2年目で期末 200,000円
+  assert.deepEqual(pick({ feature: 'ending' }), ['small']);
+  const last = registerDetail(assetRegister([{ ...ds.find((d) => d.asset.id === 'old').asset, startedOn: '2023-04-01', acquiredOn: '2023-04-01' }], periods, period)[0], period);
+  assert.deepEqual([last.bookClosing, endsInPeriod(last)], [1, true]);
+  assert.equal(endsInPeriod(ds.find((d) => d.asset.id === 'new')), false);
+  // 明細が無いと ending は合わない
+  assert.equal(hasFeature(ds[0].asset, 'ending'), false);
+  assert.equal(hasFeature({ compressionAmount: 10 }, 'compression'), true);
+  assert.equal(hasFeature({ parentId: 'x' }, 'capex'), true);
+  assert.equal(hasFeature({ splits: [{}] }, 'split'), true);
+  assert.equal(hasFeature({ businessRatio: 70 }, 'private'), true);
+  assert.equal(hasFeature({ businessRatio: 100 }, 'private'), false);
+  assert.ok(ASSET_FEATURES.length >= 7);
+  // 逆順
+  const asc = sortDetails(ds, 'no').map((d) => d.asset.id);
+  assert.deepEqual(sortDetails(ds, 'no', {}, true).map((d) => d.asset.id), [...asc].reverse());
+  const doc = assetRegisterDoc(register, { period, accountById: new Map(), individual: false, head: {}, groupBy: 'none', sortBy: 'cost', reverse: true });
+  const names = doc.blocks[0].rows.filter((r) => !r.kind).map((r) => r.cells[1][0]);
+  assert.equal(names[0], 'small'); // 取得価額の小さい順
+});

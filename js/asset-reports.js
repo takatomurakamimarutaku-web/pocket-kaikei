@@ -174,7 +174,7 @@ export const SORT_KEYS = [
  * 資産の並べ替え（同じなら資産番号・名前の順。指定なし・空欄は最後）
  * @param {{ accountById?: Map, departmentById?: Map }} names 勘定科目のコード・部門の並び順に使う
  */
-export function sortDetails(details, by = 'no', names = {}) {
+export function sortDetails(details, by = 'no', names = {}, reverse = false) {
   const LAST = '￿';
   const no = (a) => a.assetNo || LAST;
   const tie = (x, y) => no(x.asset).localeCompare(no(y.asset), 'ja', { numeric: true }) || String(x.asset.name).localeCompare(String(y.asset.name), 'ja');
@@ -199,16 +199,51 @@ export function sortDetails(details, by = 'no', names = {}) {
     book: num((d) => d.bookClosing ?? d.closing?.at?.(-1) ?? 0),
     life: text((a) => (usesLife(a.method) && a.usefulLife ? String(a.usefulLife).padStart(3, '0') : LAST)),
   }[by] || tie;
-  return [...details].sort(cmp);
+  const sorted = [...details].sort(cmp);
+  return reverse ? sorted.reverse() : sorted;
+}
+
+/** 資産の特徴（絞り込み） */
+export const ASSET_FEATURES = [
+  { id: 'ending', label: '当期で償却が終わる資産' },
+  { id: 'special', label: '特別償却・即時償却をした資産' },
+  { id: 'compression', label: '圧縮記帳をした資産' },
+  { id: 'capex', label: '資本的支出' },
+  { id: 'split', label: '一部を売却・除却した資産' },
+  { id: 'carry', label: '前の帳簿から引き継いだ資産' },
+  { id: 'private', label: '事業割合が100%未満の資産（個人）', individual: true },
+];
+
+/**
+ * 当期で償却が終わるか：当期に償却費があり、期末の帳簿価額が備忘価額（1円）以下になる（一括償却資産は3年目）
+ * @param {object} d registerDetail の結果
+ */
+export function endsInPeriod(d) {
+  if (!d.amount || d.status === 'disposed') return false;
+  if (d.asset.method === 'lump3') return d.bookClosing === 0;
+  return d.bookClosing <= 1;
+}
+
+/** 資産の特徴に合うか（ending は台帳の明細が要る。明細が無ければ合わない） */
+export function hasFeature(asset, feature, detail = null) {
+  if (feature === 'ending') return Boolean(detail) && endsInPeriod(detail);
+  if (feature === 'special') return Boolean(asset.specialRate);
+  if (feature === 'compression') return asset.compressionAmount > 0;
+  if (feature === 'capex') return Boolean(asset.parentId);
+  if (feature === 'split') return Boolean(asset.splits?.length || asset.splitFrom);
+  if (feature === 'carry') return hasCarryOver(asset);
+  if (feature === 'private') return Number.isInteger(asset.businessRatio) && asset.businessRatio < 100;
+  return true;
 }
 
 /**
  * 絞り込み
  * @param {{ statuses?: string[], q?: string, accountId?: string, category?: string, departmentId?: string, location?: string, method?: string, from?: string, to?: string }} f
- *   from・to：取得日の範囲（YYYY-MM-DD。片方だけでもよい）
+ *   from・to：取得日の範囲（YYYY-MM-DD。片方だけでもよい）、costMin・costMax：取得価額の範囲（以上・未満）、feature：ASSET_FEATURES の id
+ * @param {object|null} detail registerDetail の結果（feature が ending のときに使う）
  *   statuses：状態（空ならすべて）、q：名前・資産番号・設置場所・購入先・細目・メモに含む文字
  */
-export function matchAsset(asset, status, f = {}) {
+export function matchAsset(asset, status, f = {}, detail = null) {
   if (f.statuses?.length && !f.statuses.includes(status)) return false;
   if (f.accountId && asset.accountId !== f.accountId) return false;
   if (f.category && asset.category !== f.category) return false;
@@ -217,6 +252,10 @@ export function matchAsset(asset, status, f = {}) {
   if (f.method && asset.method !== f.method) return false;
   if (f.from && !(asset.acquiredOn >= f.from)) return false;
   if (f.to && !(asset.acquiredOn <= f.to)) return false;
+  // 取得価額の範囲（以上・未満。帳簿の取得価額＝圧縮記帳をした資産は圧縮後）
+  if (Number.isInteger(f.costMin) && !(asset.cost >= f.costMin)) return false;
+  if (Number.isInteger(f.costMax) && !(asset.cost < f.costMax)) return false;
+  if (f.feature && !hasFeature(asset, f.feature, detail)) return false;
   const q = String(f.q ?? '').trim().toLowerCase();
   if (q) {
     const text = [asset.name, asset.assetNo, asset.location, asset.supplier, asset.structure, asset.detail, asset.memo].filter(Boolean).join(' ').toLowerCase();
