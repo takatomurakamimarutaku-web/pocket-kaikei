@@ -4,7 +4,7 @@ import { trialBalance, carriedLabel } from '../ledger.js';
 import { trialBalanceDoc, docHead, ratioText, TRIAL_PARTS } from '../print-forms.js';
 import { trialRows } from '../trial-rows.js';
 import { trialBalanceCsv, csvFileName } from '../csv.js';
-import { monthRangePicker, zeroToggle, openingWarning, monthRangeOptions, printRange, unitPicker, unitPrintOptions } from './report-common.js';
+import { monthRangePicker, zeroToggle, openingWarning, dateRangeOptions, printRange, unitPicker, unitPrintOptions } from './report-common.js';
 import { normalizeUnit, formatAmount } from '../money.js';
 import { isWhite } from '../white-return.js';
 
@@ -37,7 +37,7 @@ export async function render({ app, outlet, query }) {
       options: [
         { key: 'format', label: '様式', type: 'select', choices: [['balance', '残高試算表（繰越・借方・貸方・残高・構成比）'], ['total', '合計残高試算表（合計・残高の借方・貸方）']], value: 'balance' },
         { key: 'parts', label: '印刷する部', type: 'select', choices: [['all', 'すべて（部ごとに改ページ）'], ...partList.map(([key, name]) => [key, `${name}だけ`])], value: 'all' },
-        ...monthRangeOptions(period, range.fromMonth, range.toMonth),
+        ...dateRangeOptions(period, range),
         { key: 'subs', label: '補助科目の内訳を出す', type: 'check', value: false },
         { key: 'zero', label: '0円の科目も出す', type: 'check', value: showZero },
         { key: 'ratio', label: '構成比（残高試算表）', type: 'check', value: true },
@@ -91,7 +91,7 @@ export async function render({ app, outlet, query }) {
                 { scope: 'row' },
                 hasSubs
                   ? h('button', { type: 'button', class: 'link tb-toggle', 'aria-expanded': String(open), text: `${open ? '▾' : '▸'} ${a.name}`, onclick: () => (open ? expanded.delete(a.id) : expanded.add(a.id), paint()) })
-                  : h('a', { href: `#/reports/ledger?account=${a.id}&from=${range.fromMonth}&to=${range.toMonth}`, text: a.name }),
+                  : h('a', { href: `#/reports/ledger?${new URLSearchParams({ account: a.id, ...range.query })}`, text: a.name }),
               ),
               ...lineCells(r.row, withOpening),
               rate(r.sign * r.row.closing, base),

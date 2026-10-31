@@ -124,6 +124,70 @@ export function monthRange(period, fromMonth, toMonth) {
   return { from, to };
 }
 
+const MONTH_RE = /^\d{4}-\d{2}$/;
+const monthLabel = (m) => `${Number(m.slice(5))}月`;
+
+/**
+ * 帳票の期間の候補：期間全体・各月・四半期・半期（会計期間の最初の月から3か月・6か月ずつ数える。月次推移試算表と同じ数え方）
+ * @returns {Array<{ key: string, label: string, group: string, from: string, to: string }>} group：選択肢のまとまり（''・月・四半期・半期）
+ */
+export function rangePresets(period) {
+  const months = monthsInPeriod(period);
+  const out = [{ key: 'all', label: '期間全体', group: '', ...monthRange(period) }];
+  for (const m of months) out.push({ key: `m:${m}`, label: `${m.slice(0, 4)}年${Number(m.slice(5))}月`, group: '月', ...monthRange(period, m, m) });
+  const chunk = (size, name) => {
+    if (months.length <= size) return;
+    for (let i = 0; i < months.length; i += size) {
+      const list = months.slice(i, i + size);
+      const n = i / size + 1;
+      out.push({ key: `${size === 3 ? 'q' : 'h'}${n}`, label: `${name(n)}（${monthLabel(list[0])}〜${monthLabel(list.at(-1))}）`, group: size === 3 ? '四半期' : '半期', ...monthRange(period, list[0], list.at(-1)) });
+    }
+  };
+  chunk(3, (n) => `第${n}四半期`);
+  chunk(6, (n) => (n === 1 ? '上半期' : n === 2 ? '下半期' : `第${n}半期`));
+  return out;
+}
+
+/**
+ * 帳票の期間（URL の from・to）を期間内の日付の範囲にする。'YYYY-MM'（月）と 'YYYY-MM-DD'（日）のどちらも受け付け、
+ * 期間の外は期間の初日・末日に寄せ、前後が逆なら入れ替える。読めない値は期間全体
+ * @returns {{ from: string, to: string }}
+ */
+export function parseRange(period, from, to) {
+  const start = (v) => (MONTH_RE.test(v ?? '') ? monthRange(period, v, null).from : isValidDate(v) ? v : period.startDate);
+  const end = (v) => (MONTH_RE.test(v ?? '') ? monthRange(period, null, v).to : isValidDate(v) ? v : period.endDate);
+  const clamp = (d) => (d < period.startDate ? period.startDate : d > period.endDate ? period.endDate : d);
+  const a = clamp(start(from));
+  const b = clamp(end(to));
+  // 前後が逆なら入れ替える（月なら入れ替えてから月の初日・末日にする）
+  return b < a ? { from: clamp(start(to)), to: clamp(end(from)) } : { from: a, to: b };
+}
+
+/** 範囲が月の区切り（期間の初日・末日を含む）にそろっているか */
+export function isMonthAligned(period, { from, to }) {
+  const r = monthRange(period, from.slice(0, 7), to.slice(0, 7));
+  return r.from === from && r.to === to;
+}
+
+/**
+ * 帳票の期間を URL に書く形：月の区切りなら 'YYYY-MM'（今までのリンクと同じ）、そうでなければ 'YYYY-MM-DD'
+ * @returns {{ from: string, to: string }}
+ */
+export function rangeQuery(period, range) {
+  return isMonthAligned(period, range) ? { from: range.from.slice(0, 7), to: range.to.slice(0, 7) } : { from: range.from, to: range.to };
+}
+
+/** 範囲に当たる候補のキー（無ければ null） */
+export function presetKeyOf(period, { from, to }) {
+  return rangePresets(period).find((p) => p.from === from && p.to === to)?.key ?? null;
+}
+
+/** 範囲の表示（2026/04/01〜2026/06/30。1日だけなら 2026/04/01） */
+export function formatRange({ from, to }) {
+  const f = (d) => d.replaceAll('-', '/');
+  return from === to ? f(from) : `${f(from)}〜${f(to)}`;
+}
+
 /** 期間の表示（2026/01/01〜2026/12/31） */
 export function formatPeriod(period) {
   return `${period.startDate.replaceAll('-', '/')}〜${period.endDate.replaceAll('-', '/')}`;

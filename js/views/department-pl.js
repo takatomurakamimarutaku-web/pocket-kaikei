@@ -5,7 +5,7 @@ import { isAllZero } from '../monthly.js';
 import { plFigures, permille } from '../analysis.js';
 import { formatPermille } from '../compare.js';
 import { monthlyCsv, csvFileName } from '../csv.js';
-import { formatPeriod } from '../period.js';
+import { formatPeriod, formatRange } from '../period.js';
 import { isWhite } from '../white-return.js';
 import { monthRangePicker, zeroToggle, unitPicker } from './report-common.js';
 
@@ -54,7 +54,7 @@ export async function render({ app, outlet, query }) {
     return defs.map(([label, fn]) => h('tr', { class: 'mt-ratio' }, h('th', { scope: 'row', text: label }), figs.map((f) => h('td', { class: 'num', text: formatPermille(fn(f)) }))));
   }
 
-  function table({ columns, items, statements, total }, { fromMonth, toMonth }) {
+  function table({ columns, items, statements, total }, { fromMonth, toMonth, from, to, query: rq }) {
     const headRow = h('tr', {}, h('th', { scope: 'col', text: '科目' }), columns.map((c) => h('th', { scope: 'col', class: c.department ? '' : 'dep-common', text: c.label })), h('th', { scope: 'col', text: '合計' }));
     const rows = [];
     for (const item of items) {
@@ -70,7 +70,8 @@ export async function render({ app, outlet, query }) {
         rows.push(h('tr', { class: item.strong ? 'mt-strong' : 'tb-subtotal' }, h('th', { scope: 'row', title: item.label, text: item.label }), item.values.map((v) => amountCell('td', v)), amountCell('td', item.total)));
       }
     }
-    const range = fromMonth === toMonth ? monthText(fromMonth) : `${monthText(fromMonth)}〜${monthText(toMonth)}`;
+    // 月の区切りなら「2026年4月〜2026年6月」、日で選んだときは日付の範囲
+    const range = rq.from.length > 7 ? formatRange({ from, to }) : fromMonth === toMonth ? monthText(fromMonth) : `${monthText(fromMonth)}〜${monthText(toMonth)}`;
     return h(
       'div',
       { class: 'table-wrap' },

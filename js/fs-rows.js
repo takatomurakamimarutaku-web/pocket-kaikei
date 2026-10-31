@@ -14,7 +14,7 @@
 //   kind：part（資産の部などの見出し）・heading（【区分】）・heading2・heading3（区分の中の区分）・line（科目）・note（うち当期純利益）・
 //         calc（合計・期首棚卸高・当期材料費〔sum: true〕などの計算の行）・profit（段階利益）・net（当期純利益金額などの最後の行）・total（負債合計など）・grand（資産合計など）
 //   level：字下げの段（0〜3）。inner：左の列の金額、outer：右の列の金額（無ければ null）。rule：右の列の金額の上の線（over）・二重線（double）
-import { isContra } from './accounts.js';
+import { isContra, GROUP_BY_ID, MFG_GROUPS } from './accounts.js';
 
 // 期の途中・前期と比べる表の段階利益の名前（利益と損失のどちらにもなるので「損益」と書き、マイナスは△）
 export const NEUTRAL_PROFIT = { 売上総利益: '売上総損益金額', 営業利益: '営業損益金額', 経常利益: '経常損益金額', 税引前当期純利益: '税引前当期純損益金額', 当期純利益: '当期純損益金額' };
@@ -115,6 +115,71 @@ export function incomeStatementRows(items, { entityType, showZero = false, neutr
     if (visible) rows.push(...groupLines(it, { showZero, level: 1, individual }));
   }
   return rows;
+}
+
+/**
+ * 損益計算書・製造原価報告書（勘定式）の行：左（借方）に費用、右（貸方）に収益を並べ、借方と貸方の合計をそろえる
+ *   損益計算書：借方＝売上原価・販売費及び一般管理費・営業外費用・特別損失・法人税等と当期純利益金額、
+ *     貸方＝売上高・営業外収益・特別利益（当期純損失のときは貸方に当期純損失金額）。段階利益は書かない（報告式で見る）
+ *     個人は借方に所得金額（青色申告特別控除前。赤字なら△のまま借方に書く。青色申告決算書の所得金額の欄と同じ）
+ *   製造原価報告書：借方＝材料費・労務費・製造経費・期首仕掛品棚卸高、貸方＝期末仕掛品棚卸高・当期製品製造原価
+ *   区分の合計は区分の見出しの行に書く（貸借対照表の勘定式と同じ）。売上原価・材料費の期末の棚卸高は報告式と同じく区分の中で差し引く
+ * @param {Array} items statements.js の incomeStatement・manufacturingReport の items（または condensedIncomeItems）
+ * @returns {{ debit: Array, credit: Array, debitTotal: {label, amount}, creditTotal: {label, amount} }}
+ *   debit・credit：左右の行（先頭は「借方」「貸方」の見出し、最後の合計は含めない）
+ */
+export function incomeStatementAccountRows(items, { entityType, showZero = false }) {
+  const individual = entityType === 'individual';
+  const mfg = items.some((it) => it.groups?.some((g) => MFG_GROUPS.includes(g)));
+  const sides = { debit: [row('part', '借方', 0)], credit: [row('part', '貸方', 0)] };
+  const sums = { debit: 0, credit: 0 };
+  const add = (side, rows, amount) => {
+    sides[side].push(...rows);
+    sums[side] += amount;
+  };
+  for (const it of items) {
+    if (it.type === 'subtotal') {
+      // 販売費及び一般管理費を合計の1行にしたもの（決算書をまとめるとき。内訳は販売費及び一般管理費内訳書）
+      if (it.sga) {
+        add('debit', [row('heading', it.label, 0, null, it.amount)], it.amount);
+        continue;
+      }
+      // 期首仕掛品棚卸高は借方、期末仕掛品棚卸高（評価勘定でマイナス）は貸方に正の数で書く
+      if (it.plain) {
+        const amount = it.deduct ? -it.amount : it.amount;
+        if (showZero || amount) add(it.deduct ? 'credit' : 'debit', [row('calc', it.label, 0, null, amount)], amount);
+        continue;
+      }
+      // 段階利益・当期総製造費用・合計は勘定式では書かない。最後の行（当期純利益・当期製品製造原価・所得金額）だけを書く
+      if (!it.strong) continue;
+      if (mfg) {
+        add('credit', [row('net', it.label, 0, null, it.amount)], it.amount);
+      } else if (individual) {
+        add('debit', [row('net', it.label, 0, null, it.amount)], it.amount);
+      } else {
+        const p = corporateProfit(it.label, it.amount);
+        add(it.amount < 0 ? 'credit' : 'debit', [{ ...row('net', p.label, 0, null, p.amount), base: it.label }], p.amount);
+      }
+      continue;
+    }
+    const lines = it.lines.filter((l) => showZero || l.amount);
+    if (!showZero && !lines.length && !it.total) continue;
+    const side = GROUP_BY_ID[it.groups?.[0]]?.side === 'credit' ? 'credit' : 'debit';
+    // 法人税等は見出しを付けず「法人税、住民税及び事業税」の行だけを書く
+    const headless = it.groups?.some((g) => HEADLESS_GROUPS.includes(g));
+    const level = headless ? 0 : 1;
+    const out = headless ? [] : [row('heading', it.label, 0, null, it.total)];
+    const isCost = it.groups?.some((g) => COST_GROUPS.includes(g));
+    const firstContra = isCost ? lines.findIndex((l) => isContra(l.account)) : -1;
+    lines.forEach((l, i) => {
+      if (firstContra > 0 && i === firstContra) out.push(row('calc', individual ? '小計' : '合計', level + 1, lines.slice(0, firstContra).reduce((s, x) => s + x.amount, 0)));
+      const amount = firstContra > 0 && i >= firstContra ? 0 - l.amount : l.amount;
+      out.push({ ...row('line', l.account.name, level, amount), id: l.account.id });
+      if (l.note) out.push({ ...row('note', l.note.label, level + 1, l.note.amount), paren: true });
+    });
+    add(side, out, it.total);
+  }
+  return { debit: sides.debit, credit: sides.credit, debitTotal: { label: '合計', amount: sums.debit }, creditTotal: { label: '合計', amount: sums.credit } };
 }
 
 // 純資産の科目の区分（法人）：role・目印で分ける（名前では判定しない）
