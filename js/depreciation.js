@@ -342,7 +342,7 @@ export function validateAsset(asset, { entityType, accounts }) {
   // v0.68.0 で追加した管理の項目（任意）：部門（償却費の仕訳の部門）・購入先
   if (asset.departmentId != null && (typeof asset.departmentId !== 'string' || !asset.departmentId)) e.departmentId = '部門が正しくありません';
   if (asset.supplier != null && (typeof asset.supplier !== 'string' || asset.supplier.length > 40)) e.supplier = '購入先は40文字以内にしてください';
-  // v0.74.0 で追加した圧縮記帳（任意。直接減額方式）：cost は圧縮後の取得価額、compressionAmount は圧縮額
+  // v0.75.0 で追加した圧縮記帳（任意。直接減額方式）：cost は圧縮後の取得価額、compressionAmount は圧縮額
   if (asset.compressionAmount != null) {
     if (!isYen(asset.compressionAmount) || asset.compressionAmount < 1) e.compressionAmount = '圧縮額は1円以上の整数で入力してください';
     else if (!canCompress(asset.method)) e.compressionAmount = '圧縮記帳は定額法・定率法の資産と、償却しない資産（土地など）だけです';

@@ -73,7 +73,7 @@ export function compressionErrors(asset, periods) {
 }
 
 /**
- * 固定資産圧縮損の科目が無い帳簿（v0.74.0 より前に始めた法人）に足す科目の項目（コードは 732 から空いている番号）
+ * 固定資産圧縮損の科目が無い帳簿（v0.75.0 より前に始めた法人）に足す科目の項目（コードは 732 から空いている番号）
  * @returns {object|null} createAccount に渡す項目。空いているコードが無ければ null
  */
 export function compressionLossAccount(accounts) {

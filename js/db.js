@@ -5,6 +5,7 @@ import { validateJournal } from './journal.js';
 import { historyEntry, journalChanged } from './journal-history.js';
 import { validateTemplate } from './templates.js';
 import { validateBudget } from './budget.js';
+import { cleanForecast, validateForecast } from './advisor/forecast.js';
 import { validateAttachment, sha256Hex, toArrayBuffer, EDITABLE_FIELDS } from './attachments.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts, realEstateAccounts } from './accounts.js';
@@ -749,6 +750,21 @@ export class Repository {
       const errors = validateCorporateTax(value);
       if (errors.length) throw new ValidationError(errors);
       const next = { ...period, corporateTax: value, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 経営サポートの着地見込みの設定（実績とみなす月・予測の立て方・手入力の金額）を期間に保存する（締めた期間も保存できる） */
+  saveForecast(periodId, input) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const value = cleanForecast(input);
+      const errors = validateForecast(value);
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...period, forecast: value, updatedAt: now() };
       store.put(next);
       return next;
     });

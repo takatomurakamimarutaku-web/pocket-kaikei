@@ -16,6 +16,7 @@ import { icon } from '../icons.js';
 import { PARTY_KINDS, partyBalances } from '../receivables.js';
 import { periodContext, closedNotice } from './period-common.js';
 import { journalLabel } from '../journal.js';
+import { modeSwitch } from './advisor-common.js';
 
 const slash = (d) => d.replaceAll('-', '/');
 const dayMs = 86400000;
@@ -82,6 +83,7 @@ export async function render({ app, outlet }) {
 
   put(
     outlet,
+    modeSwitch('books'),
     install === 'ios-browser'
       ? h(
           'div',
