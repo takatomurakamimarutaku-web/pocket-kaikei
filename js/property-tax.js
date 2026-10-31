@@ -12,7 +12,7 @@
 // - 賦課期日は1月1日、申告期限は1月31日（地方税法 第359条・第383条）
 // 1円未満は切り捨てる（甲府市の計算例：1,171,200 × 0.464 = 543,436.8 → 543,436円）
 import { isYen } from './money.js';
-import { usesLife } from './depreciation.js';
+import { usesLife, costBeforeCompression } from './depreciation.js';
 
 /** 耐用年数ごとの減価率（1/1000）。固定資産評価基準 別表第15 */
 export const DEPRECIATION_RATES = {
@@ -173,21 +173,23 @@ export function propertyTaxReturn({ assets, year }) {
     }
     const kind = kinds[ptKindOf(asset) - 1];
     const life = ptLifeOf(asset);
-    if (heldBefore) kind.before += asset.cost;
+    // 固定資産税には圧縮記帳の制度が無いので、圧縮前の取得価額で申告する
+    const cost = costBeforeCompression(asset);
+    if (heldBefore) kind.before += cost;
     if (heldBefore && !heldNow) {
-      kind.decrease += asset.cost;
-      decreases.push({ asset, kind: kind.id, life, reason: asset.disposalType === 'sell' ? '売却' : '滅失' });
+      kind.decrease += cost;
+      decreases.push({ asset, cost, kind: kind.id, life, reason: asset.disposalType === 'sell' ? '売却' : '滅失' });
       continue;
     }
-    if (increase) kind.increase += asset.cost;
+    if (increase) kind.increase += cost;
     if (!residualRates(life)) {
       missingLife.push(asset);
-      items.push({ asset, kind: kind.id, life: null, residual: null, value: 0, increase });
+      items.push({ asset, cost, kind: kind.id, life: null, residual: null, value: 0, increase });
       continue;
     }
-    const { value, residual } = assessedValue({ cost: asset.cost, acquiredOn: asset.acquiredOn, life }, year);
+    const { value, residual } = assessedValue({ cost, acquiredOn: asset.acquiredOn, life }, year);
     kind.value += value;
-    items.push({ asset, kind: kind.id, life, residual, value, increase });
+    items.push({ asset, cost, kind: kind.id, life, residual, value, increase });
   }
   for (const k of kinds) k.total = k.before - k.decrease + k.increase;
   const byKind = (a, b) => a.kind - b.kind || a.asset.acquiredOn.localeCompare(b.asset.acquiredOn) || String(a.asset.name).localeCompare(String(b.asset.name), 'ja');

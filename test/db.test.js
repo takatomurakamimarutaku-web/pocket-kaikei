@@ -235,6 +235,11 @@ test('固定資産：検証して保存、法人は事業割合100%、削除は 
   assert.equal(saved.name, '複合機');
   assert.equal(saved.businessRatio, 100);
   assert.deepEqual(saved.moves, []);
+  assert.deepEqual([saved.compressionAmount, saved.compressionOn, saved.compressionName], [null, null, null]);
+  // 圧縮記帳：cost は圧縮後。圧縮額を空にすると日付・名前も消す
+  const comp = await repo.saveAsset({ ...saved, cost: 400000, compressionAmount: 200000, compressionOn: '2026-05-31', compressionName: ' 補助金 ' });
+  assert.deepEqual([comp.cost, comp.compressionAmount, comp.compressionName], [400000, 200000, '補助金']);
+  assert.equal((await repo.saveAsset({ ...comp, compressionAmount: null })).compressionOn, null);
   // 移動の履歴：今の部門・設置場所とずれた履歴は保存しない
   const move = { id: 'm1', date: '2026-08-01', fromDepartmentId: null, fromLocation: '', toDepartmentId: null, toLocation: '倉庫', memo: '' };
   assert.equal((await repo.saveAsset({ ...saved, moves: [move], location: '倉庫' })).moves.length, 1);
