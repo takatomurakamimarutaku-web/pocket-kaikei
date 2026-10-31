@@ -15,8 +15,9 @@ import {
   defaultAssetAccount,
   EXPENSE_GROUPS,
   costAt,
+  canCompress,
 } from '../depreciation.js';
-import { usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults } from '../asset-tools.js';
+import { usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults, compressionErrors, compressionLines, findCompressionJournals, compressionLossAccount } from '../asset-tools.js';
 import { searchLifeTable, lifeEntryName } from '../life-table.js';
 import { formatYen } from '../money.js';
 import { compareAccounts, findByHint } from '../accounts.js';
@@ -24,7 +25,7 @@ import { hasRealEstate } from '../real-estate.js';
 import { compareDepartments } from '../departments.js';
 import { parseYen } from '../money.js';
 import { todayString } from '../period.js';
-import { createAsset, newId } from '../models.js';
+import { createAsset, createAccount, createJournal, newId } from '../models.js';
 import { assetMoves, addMove, undoLastMove } from '../asset-reports.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
@@ -74,7 +75,8 @@ export async function render({ app, outlet, params, query = {} }) {
   const account = h('select', { id: 'f-account' });
   const acquiredOn = h('input', { id: 'f-acquired', type: 'date', value: state.acquiredOn });
   const startedOn = h('input', { id: 'f-started', type: 'date', value: state.startedOn });
-  const cost = h('input', { id: 'f-cost', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.cost ? String(state.cost) : '', placeholder: '0' });
+  // 圧縮記帳した資産の cost は圧縮後。入力欄には圧縮前の取得価額を出す
+  const cost = h('input', { id: 'f-cost', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.cost ? String(state.cost + (state.compressionAmount ?? 0)) : '', placeholder: '0' });
   const method = h('select', { id: 'f-method' }, METHODS.map((m) => h('option', { value: m.id, text: m.label, selected: m.id === state.method })));
   const life = h('input', { id: 'f-life', type: 'text', inputmode: 'numeric', maxlength: 2, value: state.usefulLife ?? '' });
   const ratio = h('input', { id: 'f-ratio', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.businessRatio ?? 100 });
@@ -93,6 +95,12 @@ export async function render({ app, outlet, params, query = {} }) {
   const department = deps.length
     ? h('select', { id: 'f-department' }, h('option', { value: '', text: '指定しない', selected: !state.departmentId }), deps.map((d) => h('option', { value: d.id, text: d.active === false ? `${d.name}（使わない）` : d.name, selected: d.id === state.departmentId })))
     : null;
+  // 圧縮記帳（直接減額方式。任意）
+  const compAmount = h('input', { id: 'f-comp-amount', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.compressionAmount ?? '', placeholder: '例：1000000' });
+  const compOn = h('input', { id: 'f-comp-on', type: 'date', value: state.compressionOn || '' });
+  const compName = h('input', { id: 'f-comp-name', type: 'text', maxlength: 40, value: state.compressionName || '', placeholder: '例：ものづくり補助金' });
+  const compSubsidy = h('input', { id: 'f-comp-subsidy', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.compressionSubsidy ?? '', placeholder: '空欄なら圧縮額と同じ' });
+  const compGrantor = individual ? null : h('input', { id: 'f-comp-grantor', type: 'text', maxlength: 40, value: state.compressionGrantor || '', placeholder: '例：○○県' });
   // 特別償却（事業供用年度に 取得価額×率。即時償却は100）
   const specialRate = h('input', { id: 'f-special-rate', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.specialRate ?? '', placeholder: '例：30' });
   const specialName = h('input', { id: 'f-special-name', type: 'text', maxlength: 40, value: state.specialName || '', placeholder: '例：中小企業投資促進税制' });
@@ -136,6 +144,7 @@ export async function render({ app, outlet, params, query = {} }) {
   /** 入力欄から資産のレコードを作る（金額が不正なら cost は NaN） */
   function read() {
     const p = parseYen(cost.value || '0');
+    const comp = readCompression();
     return {
       ...state,
       name: name.value.trim(),
@@ -143,7 +152,7 @@ export async function render({ app, outlet, params, query = {} }) {
       accountId: account.value,
       acquiredOn: acquiredOn.value,
       startedOn: startedOn.value,
-      cost: p.ok ? p.value : NaN,
+      cost: p.ok ? p.value - (Number.isInteger(comp.compressionAmount) ? comp.compressionAmount : 0) : NaN,
       method: method.value,
       usefulLife: usesLife(method.value) ? toInt(life.value) : null,
       businessRatio: individual ? toInt(ratio.value) : 100,
@@ -159,6 +168,19 @@ export async function render({ app, outlet, params, query = {} }) {
       detail: detail ? detail.value.trim() : (state.detail ?? ''),
       expenseAccountId: expense ? expense.value || null : (state.expenseAccountId ?? null),
       ...readSpecial(),
+      ...comp,
+    };
+  }
+
+  /** 圧縮記帳の入力（圧縮額が空欄なら受けない。数字でなければ NaN にして検証で止める） */
+  function readCompression() {
+    if (compWrap.hidden || (!compAmount.value.trim() && !compName.value.trim())) return { compressionAmount: null, compressionOn: null, compressionName: null, compressionSubsidy: null, compressionGrantor: null };
+    return {
+      compressionAmount: compAmount.value.trim() === '' ? null : (toInt(compAmount.value) ?? NaN),
+      compressionOn: compOn.value || null,
+      compressionName: compName.value.trim() || null,
+      compressionSubsidy: compSubsidy.value.trim() === '' ? null : (toInt(compSubsidy.value) ?? NaN),
+      compressionGrantor: compGrantor ? compGrantor.value.trim() || null : (state.compressionGrantor ?? null),
     };
   }
 
@@ -183,6 +205,10 @@ export async function render({ app, outlet, params, query = {} }) {
     lifeWrap.hidden = !usesLife(a.method);
     usedWrap.hidden = !usesLife(a.method);
     specialWrap.hidden = !usesLife(a.method) || Boolean(a.startedOn && a.startedOn < NEW_METHOD_FROM);
+    compWrap.hidden = !canCompress(method.value) || splitLocked || Boolean(original?.splits?.length || original?.splitFrom);
+    if (!compOn.value && compAmount.value.trim()) compOn.value = startedOn.value || acquiredOn.value;
+    const pre = parseYen(cost.value || '0');
+    compNote.textContent = a.compressionAmount > 0 && pre.ok ? `圧縮後の取得価額：${formatYen(pre.value)}円 − ${formatYen(a.compressionAmount)}円 ＝ ${formatYen(pre.value - a.compressionAmount)}円（この額で償却します）` : '';
     const limit = smeLimit(a.acquiredOn || today);
     const variant = a.startedOn && a.acquiredOn ? methodVariant(a) : a.method;
     const hints = {
@@ -259,6 +285,24 @@ export async function render({ app, outlet, params, query = {} }) {
     h('summary', { text: '特別償却を受ける（任意）' }),
     h('div', { class: 'field-row' }, field('特別償却の率（%）', specialRate, { name: 'specialRate', hint: '即時償却は100' }), field('制度の名前', specialName, { name: 'specialName' })),
     h('p', { class: 'muted small', text: '使い始めた期間に 取得価額×率 を普通償却に加えます（中小企業投資促進税制は30%、中小企業経営強化税制の即時償却は100：取得価額−普通償却費。国税庁 No.5433・No.5434）。対象の資産・期限・中小企業者等の要件は、制度ごとに確かめてください。特別償却不足額の繰越し・準備金方式には対応していません。' }),
+  );
+  const compNote = h('p', { class: 'field-hint', 'aria-live': 'polite' });
+  const compWrap = h(
+    'details',
+    { class: 'used-box', open: state.compressionAmount != null ? true : null },
+    h('summary', { text: '圧縮記帳（国庫補助金など。任意）' }),
+    h('div', { class: 'field-row' }, field('圧縮額（円）', compAmount, { name: 'compressionAmount' }), field('圧縮記帳をした日', compOn, { name: 'compressionOn' })),
+    field('補助金等の名前', compName, { name: 'compressionName' }),
+    h('div', { class: 'field-row' }, field('交付を受けた補助金等の額（円）', compSubsidy, { name: 'compressionSubsidy' }), compGrantor ? field('交付した者', compGrantor, { name: 'compressionGrantor' }) : null),
+    compNote,
+    h(
+      'p',
+      { class: 'muted small',
+        text: individual
+          ? '国庫補助金等で取得した資産は、補助金等を収入に入れず、取得価額から補助金等の額を差し引いた額で減価償却します（国税庁 No.2202。確定申告書に「国庫補助金等の総収入金額不算入に関する明細書」を付けます）。取得価額は補助金等を差し引く前の額で入れてください。'
+          : '直接減額方式で、圧縮額を取得価額から差し引き、差し引いた後の額で減価償却します。帳簿価額は1円以上残します（別表十三（一））。取得価額は圧縮前の額で入れてください。積立金方式・使い始めた後の期間の圧縮記帳には対応していません。償却資産申告は圧縮前の取得価額で申告します。',
+      },
+    ),
   );
   const usedWrap = h(
     'details',
@@ -376,6 +420,49 @@ export async function render({ app, outlet, params, query = {} }) {
         original.disposalType ? null : moveForm,
       )
     : null;
+  // 圧縮記帳の仕訳（法人：固定資産圧縮損 / 資産、個人：事業主借 / 資産）。圧縮記帳をした日の会計期間で登録する
+  const compJournals = original ? findCompressionJournals(journals, original.id) : [];
+  const compInPeriod = Boolean(original?.compressionOn && original.compressionOn >= period.startDate && original.compressionOn <= period.endDate);
+  const lossChoices = accounts.filter((a) => a.group === 'extraordinary_losses' && a.active).sort(compareAccounts);
+  const NEW_LOSS = '__new';
+  const lossSelect = individual
+    ? null
+    : h(
+        'select',
+        { id: 'f-comp-loss' },
+        lossChoices.map((a) => h('option', { value: a.id, text: `${a.code} ${a.name}`, selected: a.hint === 'compression_loss' })),
+        lossChoices.some((a) => a.hint === 'compression_loss') ? null : h('option', { value: NEW_LOSS, text: '「固定資産圧縮損」の科目を作って使う', selected: true }),
+      );
+  const compError = h('p', { class: 'field-error', role: 'alert' });
+  const compBox =
+    original?.compressionAmount != null
+      ? h(
+          'section',
+          { class: 'panel' },
+          h('h3', { class: 'section-title', text: '圧縮記帳の仕訳' }),
+          h('p', { class: 'small', text: `${slash(original.compressionOn)}　圧縮額 ${formatYen(original.compressionAmount)}円${original.compressionName ? `（${original.compressionName}）` : ''}　圧縮前の取得価額 ${formatYen(original.cost + original.compressionAmount)}円` }),
+          individual ? null : h('p', { class: 'small' }, h('a', { class: 'link', href: '#/reports/schedule13', text: '別表十三（一）を見る' })),
+          compJournals.length
+            ? h(
+                'div',
+                {},
+                h('p', { class: 'small' }, '仕訳：', compJournals.map((j) => h('a', { class: 'link', href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)} ` }))),
+                compJournals.reduce((t, j) => t + j.lines.filter((l) => l.side === 'credit' && l.accountId === original.accountId).reduce((u, l) => u + l.amount, 0), 0) !== original.compressionAmount
+                  ? h('p', { class: 'notice', text: '仕訳の額が圧縮額と違います。仕訳を直すか、削除して登録し直してください。' })
+                  : null,
+              )
+            : !compInPeriod
+              ? h('p', { class: 'muted small', text: '圧縮記帳をした日の会計期間に切り替えると、仕訳を登録できます（アプリを使う前の圧縮記帳なら仕訳は要りません）。' })
+              : h(
+                  'div',
+                  {},
+                  h('p', { class: 'muted small', text: individual ? '事業主借 / 資産の科目 で、取得価額を圧縮後の額にします。補助金等の入金は 普通預金 / 事業主借 で記帳してください（収入に入れません）。' : '固定資産圧縮損（特別損失） / 資産の科目 で、取得価額を圧縮後の額にします。補助金等の入金は 普通預金 / 国庫補助金受贈益（特別利益） で記帳してください。' }),
+                  lossSelect ? field('圧縮損の科目', lossSelect, { name: 'compLoss' }) : null,
+                  compError,
+                  h('button', { type: 'button', class: 'btn btn-block', text: '圧縮記帳の仕訳を登録する', onclick: postCompression }),
+                ),
+        )
+      : null;
   const capexBox =
     original && (children.length || canAddCapex(original))
       ? h(
@@ -401,6 +488,7 @@ export async function render({ app, outlet, params, query = {} }) {
     detail ? field('細目（任意）', detail, { name: 'detail', hint: '別表十六・少額減価償却資産の明細書の「構造」「細目」になります。耐用年数表から選ぶと入ります' }) : null,
     usedWrap,
     specialWrap,
+    compWrap,
     expense
       ? field('償却費の科目', expense, {
           name: 'expenseAccountId',
@@ -503,6 +591,7 @@ export async function render({ app, outlet, params, query = {} }) {
     outlet,
     form,
     h('section', { class: 'panel' }, preview),
+    compBox,
     moveBox,
     capexBox,
     original ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn btn-danger-text', text: 'この固定資産を削除', onclick: remove })) : null,
@@ -511,6 +600,10 @@ export async function render({ app, outlet, params, query = {} }) {
 
   async function save() {
     const record = read();
+    // 圧縮額は取得価額より少なく（帳簿価額を1円以上残す）。圧縮記帳は使い始めた期間の中で
+    if (Number.isInteger(record.compressionAmount) && !(record.cost >= 1)) return showErrors(form, { compressionAmount: '圧縮額は、取得価額より1円以上少なくしてください（帳簿価額を1円以上残します）' });
+    const timing = compressionErrors(record, periods);
+    if (timing.length) return showErrors(form, { compressionOn: timing.join(' ') });
     try {
       await app.db.saveAsset(record);
       showToast(original ? '保存しました' : `「${record.name}」を登録しました`);
@@ -518,6 +611,28 @@ export async function render({ app, outlet, params, query = {} }) {
     } catch (e) {
       if (e instanceof ValidationError && !Array.isArray(e.errors)) showErrors(form, e.errors);
       else showToast(errorText(e, '保存'));
+    }
+  }
+
+  async function postCompression() {
+    compError.textContent = '';
+    try {
+      let lossAccountId = lossSelect ? lossSelect.value : '';
+      let list = accounts;
+      if (lossAccountId === NEW_LOSS) {
+        const fields = compressionLossAccount(accounts);
+        if (!fields) throw new ValidationError(['固定資産圧縮損の科目を作れませんでした（勘定科目の画面で特別損失の科目を足してください）']);
+        const created = await app.db.saveAccount(createAccount(fields));
+        lossAccountId = created.id;
+        list = [...accounts, created];
+      }
+      const { lines, errors } = compressionLines({ asset: original, accounts: list, entityType: settings.entityType, lossAccountId });
+      if (errors.length) throw new ValidationError(errors);
+      await app.db.saveJournal(createJournal({ periodId: period.id, date: original.compressionOn, lines, source: 'asset_compression', sourceId: original.id }));
+      showToast('圧縮記帳の仕訳を登録しました');
+      app.refresh();
+    } catch (e) {
+      compError.textContent = e instanceof ValidationError && Array.isArray(e.errors) ? e.errors.join(' ') : errorText(e, '登録');
     }
   }
 

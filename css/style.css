@@ -558,6 +558,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
   .stack-sm tr > :first-child { grid-column: 1 / -1; text-align: left; }
   .stack-sm td.num { text-align: right; font-size: 0.86rem; }
   .stack-sm td:empty { display: none; }
+  .ct-local.stack-sm td:last-child { grid-column: 3; }
   .stack-sm td[data-label]::before { content: attr(data-label); display: block; font-size: 0.68rem; font-weight: 700; color: var(--muted); text-align: right; }
   .stack-sm :is(tfoot tr, tr.st-total, tr.tb-subtotal) { background: var(--row-accent); font-weight: 700; }
   .stack-sm tr.tb-group { background: var(--row-accent); box-shadow: inset 3px 0 0 var(--primary); }
@@ -1301,6 +1302,10 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .ct-table thead tr > :first-child { z-index: 2; background: var(--surface-2); }
 .ct-table .mt-strong > :first-child, .ct-table .ct-heading > :first-child { background: var(--surface-2); }
 .ct-s4, .ct-s5, .ct-s52, .ct-s7, .ct-dues { font-size: 0.74rem; }
+/* 第六号様式・第二十号様式（課税標準・税率・税額）。スマホは stackTable で2段 */
+.ct-local { font-size: 0.8rem; }
+.ct-local th[scope="row"] { min-width: 14em; }
+.ct-local .ct-heading th { text-align: left; }
 .ct-s4 th[scope="row"], .ct-s5 th[scope="row"], .ct-s52 th[scope="row"], .ct-s7 th[scope="row"] { min-width: 7.5em; max-width: 10em; }
 .ct-s4 td.num, .ct-s5 td.num, .ct-s52 td.num, .ct-s7 td.num { padding-left: 4px; padding-right: 4px; }
 .ct-s7 thead th { white-space: normal; vertical-align: bottom; }

@@ -1,6 +1,6 @@
 // Service Worker
 // ファイルを変更したら CACHE_VERSION を上げる。ファイルを追加・削除したら PRECACHE_URLS も更新する（npm run check で検出）
-const CACHE_VERSION = 'v82';
+const CACHE_VERSION = 'v86';
 const CACHE_NAME = `pocket-kaikei-${CACHE_VERSION}`;
 
 // 事前にキャッシュするファイル（相対パス）
@@ -74,6 +74,8 @@ const PRECACHE_URLS = [
   'js/fs-rows.js',
   'js/trial-rows.js',
   'js/print-tax-forms.js',
+  'js/print-form-heads.js',
+  'js/filer.js',
   'js/print-layout.js',
   'js/print-pdf.js',
   'js/router.js',
@@ -88,6 +90,7 @@ const PRECACHE_URLS = [
   'js/financial.js',
   'js/property-tax.js',
   'js/schedule16.js',
+  'js/schedule13.js',
   'js/real-estate.js',
   'js/views/advisor-common.js',
   'js/views/advisor-forecast.js',
@@ -157,6 +160,7 @@ const PRECACHE_URLS = [
   'js/views/invoice-view.js',
   'js/views/invoice-doc.js',
   'js/views/invoice-settings.js',
+  'js/views/filer.js',
   'js/views/payroll.js',
   'js/views/payroll-form.js',
   'js/views/payroll-view.js',
@@ -184,6 +188,7 @@ const PRECACHE_URLS = [
   'js/views/fs-view.js',
   'js/views/property-tax.js',
   'js/views/schedule16.js',
+  'js/views/schedule13.js',
   'js/views/enterprise-tax.js',
   'js/views/corporate-tax.js',
   'js/views/corporate-tax-input.js',

@@ -8,6 +8,8 @@ import { formatYen } from '../money.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { warekiText } from '../print-layout.js';
+import { propertyHead } from '../print-form-heads.js';
+import { filerOf } from '../filer.js';
 
 const era = (d) => {
   const e = eraOf(d);
@@ -22,7 +24,8 @@ export async function render({ app, outlet, query }) {
   const body = h('div');
   const errorsEl = h('div');
   // 印刷：画面の表から作る。期間の行は会計期間ではなく、申告する年度と賦課期日（1月1日現在）
-  app.printDoc = () => ({ period: `${fiscalYearLabel(year)}　賦課期日 ${warekiText(`${year}-01-01`)}現在` });
+  // 頭書き：所有者の欄（住所・名称・番号・事業種目）と提出先の市町村
+  app.printDoc = () => ({ period: `${fiscalYearLabel(year)}　賦課期日 ${warekiText(`${year}-01-01`)}現在`, headBlocks: [propertyHead(filerOf(settings), { corporation: settings.entityType === 'corporation' })] });
 
   const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('span', { class: 'kpi-label', text: label }), h('span', { class: 'kpi-value num', text: value }), sub ? h('span', { class: 'kpi-sub', text: sub }) : null);
   const tableWrap = (label, head, rows, cls = '') => h('div', { class: 'table-wrap' }, h('table', { class: `report taxform pt-table ${cls}`, 'aria-label': label }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)));
@@ -61,13 +64,13 @@ export async function render({ app, outlet, query }) {
         h('td', { text: it.asset.name }, it.increase ? h('span', { class: 'pt-badge', text: '増' }) : null),
         h('td', { class: 'num', text: String(it.asset.quantity ?? 1) }),
         h('td', { class: 'num', text: era(it.asset.acquiredOn) }),
-        amountCell('td', it.asset.cost),
+        amountCell('td', it.cost ?? it.asset.cost),
         h('td', { class: 'num', text: it.life ? `${it.life}年` : '未入力' }),
         h('td', { class: 'num', text: it.residual ? (it.residual / 1000).toFixed(3) : '' }),
         amountCell('td', it.value),
       ),
     );
-    if (r.items.length) rows.push(h('tr', { class: 'st-total' }, h('th', { scope: 'row', colspan: 4, text: '計' }), amountCell('td', r.items.reduce((s, it) => s + it.asset.cost, 0)), h('td'), h('td'), amountCell('td', r.valueTotal)));
+    if (r.items.length) rows.push(h('tr', { class: 'st-total' }, h('th', { scope: 'row', colspan: 4, text: '計' }), amountCell('td', r.items.reduce((s, it) => s + (it.cost ?? it.asset.cost), 0)), h('td'), h('td'), amountCell('td', r.valueTotal)));
     return tableWrap('種類別明細書（全資産用）', ['種類', '資産の名称等', '数量', '取得年月', '取得価額', '耐用年数', '減価残存率', '評価額'], rows);
   }
 
@@ -75,7 +78,7 @@ export async function render({ app, outlet, query }) {
     return tableWrap(
       '種類別明細書（減少資産用）',
       ['種類', '資産の名称等', '数量', '取得年月', '取得価額', '耐用年数', '減少の事由'],
-      r.decreases.map((d) => h('tr', {}, h('td', { class: 'tf-no', text: String(d.kind) }), h('td', { text: d.asset.name }), h('td', { class: 'num', text: String(d.asset.quantity ?? 1) }), h('td', { class: 'num', text: era(d.asset.acquiredOn) }), amountCell('td', d.asset.cost), h('td', { class: 'num', text: d.life ? `${d.life}年` : '' }), h('td', { text: `${d.reason}（全部）` }))),
+      r.decreases.map((d) => h('tr', {}, h('td', { class: 'tf-no', text: String(d.kind) }), h('td', { text: d.asset.name }), h('td', { class: 'num', text: String(d.asset.quantity ?? 1) }), h('td', { class: 'num', text: era(d.asset.acquiredOn) }), amountCell('td', d.cost ?? d.asset.cost), h('td', { class: 'num', text: d.life ? `${d.life}年` : '' }), h('td', { text: `${d.reason}（全部）` }))),
     );
   }
 

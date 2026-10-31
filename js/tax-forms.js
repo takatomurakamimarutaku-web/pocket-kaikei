@@ -178,6 +178,16 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
   const first = {
     title: `${FORM_KINDS[method].first}`,
     // 「課税標準額に対する消費税額の計算の特例の適用」欄は使わない（申告書（一般用）の書き方 令和7年10月以後終了課税期間用）
+    // 付記事項・参考事項（第一表の右下の欄）。このアプリは割賦基準・延払基準・工事進行基準・現金主義を扱わないので「無」
+    remarks: [
+      ['割賦基準の適用', '無'],
+      ['延払基準等の適用', '無'],
+      ['工事進行基準の適用', '無'],
+      ['現金主義会計の適用', '無'],
+      ...(method === 'general' ? [['控除税額の計算方法', r.fullDeduction ? '全額控除（課税売上高5億円以下かつ課税売上割合95%以上）' : r.allocation === 'individual' ? '個別対応方式' : '一括比例配分方式']] : []),
+      ['基準期間の課税売上高', baseSales === null ? '' : `${Math.floor(baseSales / 1000).toLocaleString('ja-JP')}千円`],
+      ['税額控除に係る経過措置の適用（2割特例）', method === 'twenty' ? '有' : '無'],
+    ],
     flags: method === 'twenty' ? ['税額控除に係る経過措置の適用（2割特例）：○'] : method === 'thirty' ? ['税額控除に係る経過措置の適用（3割特例）：○'] : [],
     rows: [
       cell('①', '課税標準額', r.base8 + r.base10, { note: '第二表 ①' }),

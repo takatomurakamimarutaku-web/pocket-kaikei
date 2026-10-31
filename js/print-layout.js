@@ -154,7 +154,7 @@ function chooseOrientation(orientation, blocks) {
  *     { type: 'heading', text: string, caption?: boolean, title?: string } |  caption：改ページして各ページの左上に出す（元帳の科目名など）。title：そのページの表題
  *     { type: 'text', text: string, size?: number } |
  *     { type: 'table', columns: Array<{label, align?, w?, grow?, min?, max?, headSpan?, joinLeft?}>,  headSpan：見出しを右の列とまとめる。joinLeft：左の縦線を引かない
- *       rows: Array<{ cells: Array<string|string[]|{text, span?, align?, indent?, bold?, rule?: 'over'|'double'}>,
+ *       rows: Array<{ cells: Array<string|string[]|{text, span?, align?, indent?, bold?, rule?: 'over'|'double', shade?: boolean, size?: number}>,
  *                     kind?: 'group'|'subtotal'|'total'|'carried', keep?: string, nums?: object, breakAfter?: boolean }>,
  *       carry?: { label: number, sum: number[], balance?: number },
  *       style?: 'grid'|'open',   open：決算書の体裁（縦罫・塗りなし）
@@ -320,6 +320,8 @@ export function layoutDocument(doc) {
         const align = c.align || (span === 1 ? block.columns[i].align : null) || 'left';
         const ls = linesOf(c.text);
         const bold = c.bold ?? rowBold;
+        // shade：見出しのセル（申告書の頭書きの項目名など）を薄く塗る
+        if (c.shade && !open) rect(x0, y, x1 - x0, hh, 0.93);
         // セルの線：over＝金額の上に線（計）、double＝下に二重線（最後の合計）
         if (c.rule === 'over' || c.rule === 'double') line(x0 + PAD, y + 0.15, x1 - PAD * 0.5, y + 0.15, 0.15);
         if (c.rule === 'double') {
@@ -330,7 +332,8 @@ export function layoutDocument(doc) {
           if (!l) return;
           const yy = y + lineH * k + lineH / 2 + font * PT * 0.36;
           const ax = align === 'right' ? x1 - PAD : align === 'center' ? (x0 + x1) / 2 : x0 + PAD + (c.indent || 0);
-          fitted(ax, yy, l, k > 0 && ls.length > 1 && c.subSmall !== false ? font - 0.5 : font, x1 - x0 - PAD * 2 - (c.indent || 0), { align, bold });
+          const size = c.size ?? (k > 0 && ls.length > 1 && c.subSmall !== false ? font - 0.5 : font);
+          fitted(ax, yy, l, size, x1 - x0 - PAD * 2 - (c.indent || 0), { align, bold });
         });
         if (vlines && !open && i > 0 && !block.columns[i].joinLeft) line(x0, y, x0, y + hh, 0.1);
         i += span;

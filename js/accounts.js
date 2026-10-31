@@ -108,6 +108,8 @@ export const HINTS = {
   asset_sale_gain: '固定資産売却益',
   asset_sale_loss: '固定資産売却損',
   asset_retirement_loss: '固定資産除却損',
+  subsidy_income: '国庫補助金受贈益',
+  compression_loss: '固定資産圧縮損',
   misc_expense: '雑費',
   // 給与計算で使う（通勤手当・社会保険料の会社負担の初期値）
   travel: '旅費交通費',
@@ -281,8 +283,10 @@ const CORPORATION = [
   ['710', '支払利息', 'non_operating_expenses', 'purchase_exempt', { hint: 'interest_expense' }],
   ['711', '雑損失', 'non_operating_expenses', N, { hint: 'misc_loss' }],
   ['720', '固定資産売却益', 'extraordinary_income', N, { hint: 'asset_sale_gain' }],
+  ['721', '国庫補助金受贈益', 'extraordinary_income', N, { hint: 'subsidy_income' }],
   ['730', '固定資産売却損', 'extraordinary_losses', N, { hint: 'asset_sale_loss' }],
   ['731', '固定資産除却損', 'extraordinary_losses', N, { hint: 'asset_retirement_loss' }],
+  ['732', '固定資産圧縮損', 'extraordinary_losses', N, { hint: 'compression_loss' }],
   ['740', '法人税、住民税及び事業税', 'income_taxes', N],
 ];
 

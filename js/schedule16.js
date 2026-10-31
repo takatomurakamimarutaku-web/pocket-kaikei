@@ -8,7 +8,7 @@
 // - 別表十六（八）一括償却資産の損金算入（法人税法施行令133条の2）
 //   https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2022/pdf/16(08).pdf
 // このアプリは台帳の計算額（＝償却限度額）で減価償却の仕訳を作るので、当期償却額＝限度額として書く（償却不足額・超過額は 0）。
-// 圧縮記帳・増加償却・償却超過額の繰越し・特別償却不足額の繰越しには対応していない（その欄は 0）
+// 圧縮記帳は直接減額方式だけ（取得価額は圧縮後。積立金方式の欄は 0）。増加償却・償却超過額の繰越し・特別償却不足額の繰越しには対応していない（その欄は 0）
 import { CATEGORY_BY_ID, usesLife, methodVariant, ratesFor, formatRate, assetRegister, depreciationSchedule, costAt, periodMonths, smeUsage, findDepreciationJournals } from './depreciation.js';
 import { assetKind } from './life-table.js';
 import { eraOf } from './property-tax.js';
@@ -163,6 +163,7 @@ function assetColumn({ asset, cost, row }, period) {
   if (asset.disposedOn && asset.disposedOn <= period.endDate) notes.push(`期中に${asset.disposalType === 'sell' ? '売却' : '除却'}（帳簿記載金額は${asset.disposalType === 'sell' ? '売却' : '除却'}の直前の額）`);
   if (months < periodMonths(period)) notes.push(`償却費は供用月数 ${months}か月で按分（×${months}/12）`);
   if (row.splits) notes.push('期首に一部を売却・除却（取得価額は残りの額）');
+  if (asset.compressionAmount) notes.push(`圧縮記帳（直接減額）後の取得価額（圧縮額 ${asset.compressionAmount.toLocaleString('ja-JP')}円。別表十三（一））`);
   const straight = v === 'old_straight' || v === 'straight';
   const old = v === 'old_straight' || v === 'old_declining';
   const five = old && tangible ? yenFloor((cost * 5) / 100) : null;
