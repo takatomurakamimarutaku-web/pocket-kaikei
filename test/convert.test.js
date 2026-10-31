@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { yayoiOpeningRows, groupYayoiRows, splitYayoiGroups, convertChecks, buildConvertPack, accountListCsv, CONVERT_TARGETS } from '../js/convert.js';
+import { yayoiOpeningRows, groupYayoiRows, splitYayoiGroups, convertChecks, buildConvertPack, accountListCsv, CONVERT_TARGETS, validateConvertCodes, usedIds } from '../js/convert.js';
 import { yayoiRows } from '../js/yayoi.js';
-import { mfTaxName, mfInvoice, mfGroups, MF_HEADER, freeeTaxName, freeeGroups, FREEE_HEADER } from '../js/convert-formats.js';
+import { mfTaxName, mfInvoice, mfGroups, MF_HEADER, freeeTaxName, freeeGroups, FREEE_HEADER, bugyoGroups, BUGYO_HEADER, bugyoTaxCheckRows } from '../js/convert-formats.js';
 import { detectFormat, parseEntries } from '../js/journal-import.js';
 import { parseCsv } from '../js/bank-import.js';
-import { createSettings } from '../js/models.js';
+import { createSettings, createAccount, createPeriod } from '../js/models.js';
+import { templateAccounts } from '../js/accounts.js';
+import { openDB, ValidationError } from '../js/db.js';
+import { IDBFactory } from 'fake-indexeddb';
 import { makeBook } from './helpers.js';
 
 const sjisText = (bytes) => new TextDecoder('shift_jis').decode(bytes);
@@ -201,4 +204,61 @@ test('移行パック（freee）：見出しの[表題行]つきの UTF-8、期�
   const guide = new TextDecoder().decode(fileOf(pack, '00_').bytes);
   assert.match(guide, /口座を作ります/);
   assert.match(guide, /［取引入力］→［振替伝票］/);
+});
+
+test('勘定奉行の OBC受入形式：受入記号の見出し、伝票の先頭行だけ「*」と日付、科目はコード、税区分は空欄', () => {
+  const b = makeBook('individual', { subs: [['普通預金', 'みらい銀行']] });
+  const journals = [
+    b.j('2026-06-27', [['地代家賃', 66000, 'purchase_10'], ['事業主貸', 44000]], [['普通預金', 110000, 'none', 'みらい銀行']], '家賃'),
+    b.j('2026-05-01', [['消耗品費', 1100, 'purchase_8r']], [['現金', 1100]], '紙'),
+  ];
+  const id = (name) => b.accounts.find((a) => a.name === name).id;
+  const bank = b.subAccounts.find((s) => s.name === 'みらい銀行');
+  const codes = { accounts: { [id('地代家賃')]: '8310', [id('事業主貸')]: '1900', [id('普通預金')]: '1110', [id('消耗品費')]: '8200', [id('現金')]: '1000' }, subs: { [bank.id]: '1' } };
+  assert.equal(BUGYO_HEADER[0], 'OBCD001');
+  assert.equal(BUGYO_HEADER.length, 13);
+  const groups = bugyoGroups(journals, { codes });
+  assert.ok(groups.flat().every((r) => r.length === 13));
+  assert.deepEqual(groups[0], [['*', '2026-05-01', '', '8200', '', '', 1100, '', '1000', '', '', 1100, '紙']]);
+  assert.deepEqual(groups[1], [
+    ['*', '2026-06-27', '', '8310', '', '', 66000, '', '1110', '1', '', 110000, '家賃'],
+    ['', '', '', '1900', '', '', 44000, '', '', '', '', '', '家賃'],
+  ]);
+  // 税区分を確かめる明細：科目の初期値と違うもの（消耗品費の軽減税率）
+  const ctx = { accountById: new Map(b.accounts.map((a) => [a.id, a])), subById: new Map(b.subAccounts.map((s) => [s.id, s])) };
+  const tax = bugyoTaxCheckRows(journals, ctx);
+  assert.deepEqual(tax.map((r) => [r[3], r[5]]), [['消耗品費', 1100]]);
+});
+
+test('勘定奉行：コードのない科目は書き出せない、コードの形の確認、パックは Shift_JIS で税区分の確認つき', () => {
+  const { b, journals, accountById, subById } = book();
+  assert.deepEqual(validateConvertCodes({ accounts: { a: '8310', b: '' } }), []);
+  assert.match(validateConvertCodes({ accounts: { a: '83-10' } })[0], /半角の英数字/);
+  assert.match(validateConvertCodes({ subs: { a: '12345678901' } })[0], /10桁/);
+  const none = convertChecks(journals, { target: 'bugyo', accountById, subById, period: b.period, codes: {} });
+  assert.match(none.errors[0], /勘定科目コードが入っていない科目があります：.*消耗品費/);
+  const used = usedIds(journals, b.period);
+  const codes = { accounts: Object.fromEntries([...used.accounts].map((id, i) => [id, String(1000 + i)])) };
+  const ok = convertChecks(journals, { target: 'bugyo', accountById, subById, period: b.period, codes });
+  assert.deepEqual(ok.errors, []);
+  const settings = createSettings({ entityType: 'individual', convertCodes: { bugyo: codes } });
+  const pack = buildConvertPack({ target: 'bugyo', settings, period: b.period, accounts: b.accounts, subAccounts: b.subAccounts, journals });
+  const text = sjisText(fileOf(pack, '02_仕訳_勘定奉行OBC受入形式').bytes);
+  assert.ok(text.startsWith('OBCD001,CSJS005,CSJS200,CSJS201'));
+  assert.equal(text.trim().split('\r\n').length, 3);
+  assert.ok(fileOf(pack, '01_期首残高の一覧'));
+  assert.match(new TextDecoder().decode(fileOf(pack, '03_').bytes), /移行先の科目コード/);
+  const guide = new TextDecoder().decode(fileOf(pack, '00_').bytes);
+  assert.match(guide, /仕訳伝票データ受入/);
+  assert.match(guide, /OBC受入形式/);
+});
+
+test('移行先のコードの対応表を設定に保存する（空欄は外す・形の誤りは保存しない）', async () => {
+  const repo = await openDB({ indexedDB: new IDBFactory() });
+  const accounts = templateAccounts('individual').map((a) => createAccount(a));
+  await repo.setup({ settings: createSettings({ businessName: 'テスト' }), period: createPeriod({ startDate: '2026-01-01', endDate: '2026-12-31' }), accounts });
+  const saved = await repo.saveConvertCodes('bugyo', { accounts: { [accounts[0].id]: '1000', [accounts[1].id]: '' } });
+  assert.deepEqual(saved.convertCodes, { bugyo: { accounts: { [accounts[0].id]: '1000' }, subs: {}, departments: {} } });
+  await assert.rejects(repo.saveConvertCodes('bugyo', { accounts: { x: 'あ' } }), ValidationError);
+  assert.equal((await repo.getSettings()).convertCodes.bugyo.accounts[accounts[0].id], '1000');
 });
