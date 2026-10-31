@@ -11,6 +11,8 @@ import { corporateTaxDoc, CORPORATE_SHEETS, localFormRows } from '../print-tax-f
 import { filerOf, hasFiler } from '../filer.js';
 import { formatRatio } from '../family-company.js';
 import { formatHoldingRatio } from '../withholding-credit.js';
+import { applicationRows } from '../application-statement.js';
+import { smeUsage } from '../depreciation.js';
 
 const TABS = [
   { value: 'summary', label: '概要' },
@@ -22,6 +24,7 @@ const TABS = [
   { value: 's61', label: '別表六(一)' },
   { value: 's7', label: '別表七(一)' },
   { value: 's15', label: '別表十五' },
+  { value: 'tekiyo', label: '適用額明細書' },
   { value: 'pref', label: '県民税・事業税' },
   { value: 'city', label: '市民税' },
 ];
@@ -48,6 +51,9 @@ export async function render({ app, outlet, query }) {
   const { settings, period, accounts, journals } = await app.load();
   if (settings.entityType !== 'corporation') return put(outlet, h('p', { class: 'notice', text: '法人税の申告は法人で使います。個人は「所得税の確定申告書」を使ってください。' }), h('a', { class: 'btn', href: '#/reports', text: '帳票へ' }));
   const r = corporateTaxReturn({ accounts, period, journals, input: period.corporateTax || {}, enterpriseInput: period.enterpriseTax || {} });
+  // 適用額明細書の少額減価償却資産の特例（その期間に使い始めた資産の取得価額の合計）
+  const smeAssets = smeUsage(await app.db.listAssets(), period);
+  const tekiyo = applicationRows({ corp: r.corp, sme: r.input.sme, smeAssets, rows: r.input.applicationRows });
   // 以前の「住民税・事業税」のタブ（tab=local）は県民税・事業税のタブで開く
   const asked = query.tab === 'local' ? 'pref' : query.tab;
   let tab = TABS.some((t) => t.value === asked) ? asked : 'summary';
@@ -224,6 +230,15 @@ export async function render({ app, outlet, query }) {
       : null,
   ];
 
+  // ---- 適用額明細書 ----
+  sections.tekiyo = [
+    h('p', { class: 'small muted', text: '租税特別措置（法人税率の特例・少額減価償却資産の特例など）の適用を受けるときに、申告書に添付する明細書です。添付しないと特例を受けられません。' }),
+    tekiyo.length
+      ? wrap('適用額明細書', 'ct-s1', ['条項・区分番号', '適用額'], tekiyo.map((x) => h('tr', {}, rowHead(x.article, [x.code, x.name, x.auto ? '帳簿から' : '入力'].filter(Boolean).join('・')), cell(x.amount))))
+      : h('p', { class: 'notice small', text: '適用を受ける租税特別措置がありません（所得金額が0以下のときは法人税率の特例を書きません）。適用がなければ提出は不要です。' }),
+    h('p', { class: 'small muted', text: '賃上げ促進税制・特別償却など、ほかの措置は「計算の条件を入力する」の「適用額明細書に足す措置」に、条項・区分番号・適用額を入れてください。区分番号は国税庁「適用額明細書の記載の手引」の一覧で確かめられます。' }),
+  ];
+
   sections.s7 = [
     h('h3', { class: 'tf-title', text: '別表七(一) 欠損金の損金算入等に関する明細書' }),
     h('dl', { class: 'pay-summary' }, h('div', {}, h('dt', { text: '控除前所得金額' }), h('dd', { class: 'num', text: formatYen(Math.max(0, s4.total.total)) })), h('div', {}, h('dt', { text: '損金算入限度額' }), h('dd', { class: 'num', text: formatYen(loss.limit) })), h('div', {}, h('dt', { text: '当期控除額' }), h('dd', { class: 'num', text: formatYen(loss.deducted) }))),
@@ -300,7 +315,7 @@ export async function render({ app, outlet, query }) {
     options: [
       { key: 'sheet', label: '印刷する別表', type: 'select', choices: [['all', '別表一〜十五（全部）'], ...CORPORATE_SHEETS.map((x) => [x.value, x.label])], value: CORPORATE_SHEETS.some((x) => x.value === tab) ? tab : 'all' },
     ],
-    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), filer: filerOf(settings), sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
+    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), filer: filerOf(settings), smeAssets, sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
   });
 
   // ---- 画面 ----
