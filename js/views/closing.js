@@ -15,7 +15,7 @@ import { householdPlan, householdBases, householdEligible, findHouseholdJournals
 
 export async function render({ app, outlet }) {
   const data = await app.load();
-  const { settings, period, accounts, subAccounts, journals, accountById, subById } = data;
+  const { settings, period, accounts, subAccounts, journals, accountById, subById, departments } = data;
   const entityType = settings.entityType;
   const individual = entityType === 'individual';
   const ctx = await periodContext(app, data);
@@ -86,7 +86,7 @@ export async function render({ app, outlet }) {
   function depreciationSection() {
     const title = h('h2', { class: 'section-title', text: '2. 減価償却' });
     const link = h('a', { href: '#/assets', class: 'btn btn-block', text: '固定資産台帳を開く' });
-    const { lines, total, errors } = depreciationLines({ assets, periods, period, accounts, entityType });
+    const { lines, total, errors } = depreciationLines({ assets, periods, period, accounts, entityType, departments });
     const done = findDepreciationJournals(journals);
     if (done.length) {
       const booked = done.reduce((s, j) => s + j.lines.filter((l) => l.side === 'credit').reduce((t, l) => t + l.amount, 0), 0);

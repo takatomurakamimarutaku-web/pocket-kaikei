@@ -3,6 +3,7 @@ import { linesToRows } from './journal.js';
 import { TAX_BY_CODE } from './tax.js';
 import { groupLabel } from './accounts.js';
 import { CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
+import { registerDetail } from './asset-reports.js';
 import { eraOf } from './property-tax.js';
 import { SCHEDULE16_LINES } from './schedule16.js';
 
@@ -116,23 +117,27 @@ export function manufacturingCsv(items, { includeZero = false } = {}) {
 }
 
 /**
- * 固定資産台帳（depreciation.assetRegister の結果）。1資産1行
- * @param {{ accountById: Map, individual: boolean }} opts individual：事業で使う割合・経費になる額の列を付ける
+ * 固定資産台帳（depreciation.assetRegister の結果、または asset-reports.registerDetail の結果）。1資産1行
+ * 期中増加・期中減少・減価償却累計額の列は、registerDetail の結果か period を渡したときに入れる（売却・除却した資産の期末帳簿価額は0）
+ * @param {{ accountById: Map, departmentById?: Map, individual: boolean, period?: object }} opts individual：事業で使う割合・経費になる額の列を付ける
  */
-export function assetsCsv(register, { accountById, individual }) {
+export function assetsCsv(register, { accountById, departmentById, individual, period }) {
   const slash = (d) => (d ? d.replaceAll('-', '/') : '');
   const head = ['資産番号', '資産名', '種類', '勘定科目', '数量', '設置場所', '取得日', '使い始めた日', '取得価額', '償却方法', '耐用年数', '償却率'];
   if (individual) head.push('事業で使う割合');
   head.push('期首帳簿価額', '償却費', 'うち特別償却');
   if (individual) head.push('うち経費');
-  head.push('期末帳簿価額', '売却・除却日', '売却・除却', '売却額', 'メモ');
+  head.push('期末帳簿価額', '売却・除却日', '売却・除却', '売却額', 'メモ', '購入先', '部門', '償却月数', '期中増加', '期中減少', '減価償却累計額');
   const rows = [head];
-  for (const { asset: a, cost, opening, row, closing } of register) {
+  for (const entry of register) {
+    const d = entry.bookClosing !== undefined ? entry : period ? registerDetail(entry, period) : null;
+    const { asset: a, cost, opening, row, closing } = entry;
     const r = [a.assetNo || '', a.name, CATEGORY_BY_ID[a.category]?.label ?? '', accountById.get(a.accountId)?.name ?? '', a.quantity ?? 1, a.location || '', slash(a.acquiredOn), slash(a.startedOn), cost ?? a.cost, methodLabel(a) || a.method, usesLife(a.method) ? a.usefulLife : '', row?.rate ? (row.rate / 1000).toFixed(3) : ''];
     if (individual) r.push(`${a.businessRatio ?? 100}%`);
-    r.push(opening ?? '', row?.amount ?? 0, row?.special ?? 0);
+    r.push(d ? d.bookOpening : (opening ?? ''), row?.amount ?? 0, row?.special ?? 0);
     if (individual) r.push(row?.business ?? 0);
-    r.push(closing ?? '', slash(a.disposedOn), { sell: '売却', retire: '除却' }[a.disposalType] ?? '', a.disposalType === 'sell' ? a.salePrice : '', a.memo || '');
+    r.push(d ? d.bookClosing : (closing ?? ''), slash(a.disposedOn), { sell: '売却', retire: '除却' }[a.disposalType] ?? '', a.disposalType === 'sell' ? a.salePrice : '', a.memo || '');
+    r.push(a.supplier || '', a.departmentId ? (departmentById?.get(a.departmentId)?.name ?? '') : '', row?.months ?? '', d ? d.bookIncrease : '', d ? d.bookDecrease : '', d ? d.accumulatedClosing : '');
     rows.push(r);
   }
   return toCsv(rows);

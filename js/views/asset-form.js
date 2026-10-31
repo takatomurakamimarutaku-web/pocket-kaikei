@@ -14,12 +14,14 @@ import {
   formatRate,
   defaultAssetAccount,
   EXPENSE_GROUPS,
+  costAt,
 } from '../depreciation.js';
 import { usedAssetLife, canDispose, findDisposalJournals, canAddCapex, capexDefaults } from '../asset-tools.js';
 import { searchLifeTable, lifeEntryName } from '../life-table.js';
 import { formatYen } from '../money.js';
 import { compareAccounts, findByHint } from '../accounts.js';
 import { hasRealEstate } from '../real-estate.js';
+import { compareDepartments } from '../departments.js';
 import { parseYen } from '../money.js';
 import { todayString } from '../period.js';
 import { createAsset } from '../models.js';
@@ -35,7 +37,7 @@ const toInt = (v) => {
 };
 
 export async function render({ app, outlet, params, query = {} }) {
-  const { settings, period, accounts, journals } = await app.load();
+  const { settings, period, accounts, journals, departments } = await app.load();
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
   const individual = settings.entityType === 'individual';
   const original = params.id ? assets.find((a) => a.id === params.id) : null;
@@ -83,6 +85,12 @@ export async function render({ app, outlet, params, query = {} }) {
   const assetNo = h('input', { id: 'f-no', type: 'text', maxlength: 20, value: state.assetNo || '', placeholder: '例：A-001' });
   const quantity = h('input', { id: 'f-qty', type: 'text', inputmode: 'numeric', maxlength: 5, value: state.quantity ?? 1 });
   const location = h('input', { id: 'f-location', type: 'text', maxlength: 40, value: state.location || '', placeholder: '例：本店、倉庫' });
+  const supplier = h('input', { id: 'f-supplier', type: 'text', maxlength: 40, value: state.supplier || '', placeholder: '例：○○電機' });
+  // 部門（部門を登録しているときか、選んであるときだけ出す）。償却費の仕訳に付けて、部門別損益に入れる
+  const deps = departments.filter((d) => d.active !== false || d.id === state.departmentId).sort(compareDepartments);
+  const department = deps.length
+    ? h('select', { id: 'f-department' }, h('option', { value: '', text: '指定しない', selected: !state.departmentId }), deps.map((d) => h('option', { value: d.id, text: d.active === false ? `${d.name}（使わない）` : d.name, selected: d.id === state.departmentId })))
+    : null;
   // 特別償却（事業供用年度に 取得価額×率。即時償却は100）
   const specialRate = h('input', { id: 'f-special-rate', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.specialRate ?? '', placeholder: '例：30' });
   const specialName = h('input', { id: 'f-special-name', type: 'text', maxlength: 40, value: state.specialName || '', placeholder: '例：中小企業投資促進税制' });
@@ -143,6 +151,8 @@ export async function render({ app, outlet, params, query = {} }) {
       assetNo: assetNo.value.trim(),
       quantity: toInt(quantity.value) ?? NaN,
       location: location.value.trim(),
+      supplier: supplier.value.trim(),
+      departmentId: department ? department.value || null : (state.departmentId ?? null),
       structure: structure ? structure.value.trim() : (state.structure ?? ''),
       detail: detail ? detail.value.trim() : (state.detail ?? ''),
       expenseAccountId: expense ? expense.value || null : (state.expenseAccountId ?? null),
@@ -207,7 +217,7 @@ export async function render({ app, outlet, params, query = {} }) {
         h(
           'table',
           { class: 'report' },
-          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: '期間' }), h('th', { scope: 'col', text: '月数' }), h('th', { scope: 'col', text: '償却費' }), hasSpecial ? h('th', { scope: 'col', text: 'うち特別償却' }) : null, individual ? h('th', { scope: 'col', text: '経費' }) : null, h('th', { scope: 'col', text: '期末残高' }))),
+          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: '期間' }), h('th', { scope: 'col', text: '月数' }), h('th', { scope: 'col', text: '償却費' }), hasSpecial ? h('th', { scope: 'col', text: 'うち特別償却' }) : null, individual ? h('th', { scope: 'col', text: '経費' }) : null, h('th', { scope: 'col', text: '期末残高' }), h('th', { scope: 'col', text: '償却累計額' }))),
           h(
             'tbody',
             {},
@@ -221,6 +231,8 @@ export async function render({ app, outlet, params, query = {} }) {
                 hasSpecial ? (r.special ? amountCell('td', r.special) : h('td')) : null,
                 individual ? amountCell('td', r.business) : null,
                 amountCell('td', r.closing),
+                // 償却累計額＝その期間の取得価額−期末残高（一部を売却・除却した資産は、分けた期間より前は分けた分を足した取得価額）
+                amountCell('td', costAt(a, r) - r.closing),
               ),
             ),
           ),
@@ -349,7 +361,8 @@ export async function render({ app, outlet, params, query = {} }) {
     carryWrap,
     disposalBox,
     h('div', { class: 'field-row' }, field('資産番号（任意）', assetNo, { name: 'assetNo' }), field('数量', quantity, { name: 'quantity' })),
-    field('設置場所（任意）', location, { name: 'location' }),
+    h('div', { class: 'field-row' }, field('設置場所（任意）', location, { name: 'location' }), field('購入先（任意）', supplier, { name: 'supplier' })),
+    department ? field('部門（任意）', department, { name: 'departmentId', hint: '償却費の仕訳にこの部門を付けて、部門別損益に入れます' }) : null,
     field('メモ（任意）', memo, { name: 'memo' }),
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '登録する' }),
   );

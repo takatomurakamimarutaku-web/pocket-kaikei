@@ -222,7 +222,7 @@ export function buildConvertPack({ target, settings, period, accounts, subAccoun
   // 参考：科目の一覧・固定資産台帳・期末の残高試算表（照合用）
   files.push(utf8File('03_勘定科目と補助科目の一覧.csv', accountListCsv(accounts, subAccounts, settings.entityType)));
   const register = assetRegister(assets, periods, period);
-  if (register.length) files.push(utf8File('04_固定資産台帳.csv', assetsCsv(register, { accountById, individual: settings.entityType === 'individual' })));
+  if (register.length) files.push(utf8File('04_固定資産台帳.csv', assetsCsv(register, { accountById, departmentById, individual: settings.entityType === 'individual', period })));
   const tb = trialBalance({ accounts, subAccounts, period, journals });
   files.push(utf8File('05_残高試算表_期末（照合用）.csv', trialBalanceCsv(tb, settings.entityType)));
 

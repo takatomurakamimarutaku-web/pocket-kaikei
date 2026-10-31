@@ -330,6 +330,9 @@ export function validateAsset(asset, { entityType, accounts }) {
   // v0.38.0 で追加した耐用年数表の区分（任意。別表十六・少額減価償却資産の明細書の「構造又は用途」「細目」）
   if (asset.structure != null && (typeof asset.structure !== 'string' || asset.structure.length > 60)) e.structure = '構造又は用途は60文字以内にしてください';
   if (asset.detail != null && (typeof asset.detail !== 'string' || asset.detail.length > 60)) e.detail = '細目は60文字以内にしてください';
+  // v0.68.0 で追加した管理の項目（任意）：部門（償却費の仕訳の部門）・購入先
+  if (asset.departmentId != null && (typeof asset.departmentId !== 'string' || !asset.departmentId)) e.departmentId = '部門が正しくありません';
+  if (asset.supplier != null && (typeof asset.supplier !== 'string' || asset.supplier.length > 40)) e.supplier = '購入先は40文字以内にしてください';
   if (asset.disposalType != null) {
     if (!['sell', 'retire'].includes(asset.disposalType)) e.disposedOn = '売却か除却かが正しくありません';
     else if (!asset.disposedOn) e.disposedOn = '売却・除却した日を入力してください';
@@ -558,9 +561,10 @@ export function smeUsage(assets, period) {
 /**
  * 減価償却の決算整理仕訳の明細
  *   減価償却費（事業分）・事業主貸（個人の私用分） / 資産の科目（直接法）または減価償却累計額（法人の有形固定資産で、累計額の科目があるとき）
+ *   資産に部門を指定していれば、償却費の明細に部門を付ける（部門別損益）
  * @returns {{ lines: Array, total: number, errors: string[] }}
  */
-export function depreciationLines({ assets, periods, period, accounts, entityType }) {
+export function depreciationLines({ assets, periods, period, accounts, entityType, departments = [] }) {
   const errors = [];
   const expense = accounts.find((a) => a.hint === 'depreciation' && a.active);
   const drawings = accounts.find((a) => a.role === 'owner_drawings');
@@ -576,7 +580,9 @@ export function depreciationLines({ assets, periods, period, accounts, entityTyp
     const own = asset.expenseAccountId ? accounts.find((a) => a.id === asset.expenseAccountId && a.active) : null;
     if (asset.expenseAccountId && !own) errors.push(`「${asset.name}」の償却費の科目が見つかりません（無効にした場合は固定資産の画面で選び直してください）`);
     const debit = own || expense;
-    if (debit && row.business) lines.push(line('debit', debit.id, row.business, memo));
+    // 資産に部門を指定していれば、償却費（損益の科目）に部門を付ける（使わない設定にした部門は付けない）
+    const dep = asset.departmentId ? departments.find((d) => d.id === asset.departmentId && d.active !== false) : null;
+    if (debit && row.business) lines.push({ ...line('debit', debit.id, row.business, memo), ...(dep ? { departmentId: dep.id } : {}) });
     if (row.private) {
       if (drawings) lines.push(line('debit', drawings.id, row.private, `${memo}（私用分）`.slice(0, 100)));
       else errors.push('事業主貸の科目が見つかりません');
