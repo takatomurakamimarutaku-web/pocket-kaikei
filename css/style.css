@@ -851,6 +851,12 @@ details.panel > summary { cursor: pointer; list-style: revert; }
 
 /* サンプルデータ */
 .sample-panel { margin-top: 16px; }
+.sample-chooser { display: grid; gap: 8px; margin-top: 8px; }
+.sample-chooser .field { margin: 0; }
+.sample-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; }
+.sample-facts dt { color: var(--muted); }
+.sample-facts dd { margin: 0; font-weight: 600; }
+.sample-detail p { margin: 6px 0 0; }
 
 /* 償却資産申告書 */
 .pt-table td:nth-child(2) { white-space: normal; min-width: 8em; }
