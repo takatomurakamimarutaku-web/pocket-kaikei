@@ -19,7 +19,8 @@ export async function render({ app, outlet, isStale }) {
   const profitWord = corp ? '利益（税引前）' : '所得（控除前）';
   const labels = r.months.map(monthLabel);
   let target = 'total'; // グラフの項目：total（売上と利益）か科目の id
-  let mode = 'annual'; // 表：annual（年計）か monthly（各月の金額）
+  // 表：annual（年計）か monthly（各月の金額）。前期が無いと年計はほぼ「—」なので、各月の金額から見せる
+  let mode = previous ? 'annual' : 'monthly';
 
   const chartEl = h('div', { class: 'card advisor-chart' });
   const tableEl = h('div', {});
