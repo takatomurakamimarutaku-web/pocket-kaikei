@@ -7,7 +7,7 @@
 //     経費18科目の並び（租税公課〜貸倒金・雑費）、貸借対照表の科目の並び（現金〜事業主貸、支払手形〜元入金）
 // 科目と欄の対応は、テンプレートの科目コードで決める（科目名は利用者が変えられるため名前では判定しない）。
 // テンプレートにない科目は、経費は空欄の行（㉕〜㉚）、資産・負債は空欄の行に入れる
-import { trialBalance } from './ledger.js';
+import { trialBalance, bySubAccount } from './ledger.js';
 import { monthsInPeriod, monthRange } from './period.js';
 import { isBsGroup } from './accounts.js';
 import { assetRegister, CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
@@ -296,4 +296,60 @@ export function blueBalanceSheet({ accounts, period, journals, incomeBeforeDeduc
   const total = (list, k) => list.reduce((s, x) => s + (x[k] || 0), 0);
   const totals = { assetsOpening: total(assets, 'opening'), assetsClosing: total(assets, 'closing'), liabilitiesOpening: total(liabilities, 'opening'), liabilitiesClosing: total(liabilities, 'closing') };
   return { assets, liabilities, totals, balanced: totals.assetsOpening === totals.liabilitiesOpening && totals.assetsClosing === totals.liabilitiesClosing };
+}
+
+/**
+ * 2・3ページ目の内訳と明細のうち帳簿から作れるもの（補助科目を相手先・氏名として使う）
+ * 様式（令和5年分以降用）https://www.nta.go.jp/taxes/shiraberu/shinkoku/yoshiki/01/shinkokusho/pdf/r07/10.pdf （2026-10-31 に様式の画像で確認）
+ *   2ページ：給料賃金の内訳（4行＋その他）・専従者給与の内訳（4行）・地代家賃の内訳（2行）・貸倒引当金繰入額の計算（①〜⑤）・青色申告特別控除額の計算（⑥〜⑨）
+ *   3ページ：売上（収入）金額の明細（4行＋上記以外）・仕入金額の明細（4行＋上記以外）・利子割引料の内訳（金融機関を除く）・税理士等の報酬・料金の内訳
+ * 科目はテンプレートのコード（給料賃金 612・利子割引料 614・地代家賃 615・雑収入 501）と区分・目印で決める
+ * @param {{ accounts, subAccounts?, period, journals }} p
+ */
+export function blueDetails({ accounts, subAccounts = [], period, journals }) {
+  const rows = trialBalance({ accounts, subAccounts, period, journals }).rows;
+  const byCode = (code) => rows.filter((r) => r.account.template && r.account.code === code);
+  // 補助科目のある分だけを相手先として並べ、補助科目の無い分は「上記以外」に入れる
+  const partners = (list, max = 4) => {
+    const named = [];
+    let others = 0;
+    for (const r of list) {
+      if (!r.subs.length) {
+        others += r.closing;
+        continue;
+      }
+      for (const x of r.subs) if (x.subAccount && x.closing) named.push({ name: x.subAccount.name, amount: x.closing });
+      else if (x.closing) others += x.closing;
+    }
+    named.sort((a, b) => b.amount - a.amount);
+    const top = named.slice(0, max);
+    others += named.slice(max).reduce((t, x) => t + x.amount, 0);
+    return { rows: top, others, total: top.reduce((t, x) => t + x.amount, 0) + others };
+  };
+  const miscIncome = templateAccount(accounts, '501');
+  const sales = rows.filter((r) => r.account.group === 'sales' && r.account.id !== miscIncome?.id);
+  const purchases = rows.filter((r) => r.account.group === 'cost_of_sales' && r.account.hint === 'purchases');
+  return {
+    sales: partners(sales),
+    purchases: partners(purchases),
+    wages: bySubAccount(byCode('612')),
+    family: bySubAccount(rows.filter((r) => r.account.group === 'family_salary')),
+    rent: bySubAccount(byCode('615')),
+    interest: bySubAccount(byCode('614')),
+  };
+}
+
+/**
+ * 2ページ目「青色申告特別控除額の計算」⑥〜⑨（書き方：⑨ は1ページの㊹へ転記）
+ *   65万円又は55万円（令和9年分以後は75万円・65万円も）の控除：⑧＝控除額と⑥の少ない方、⑨＝（控除額−⑧）と⑦の少ない方
+ *   上記以外（10万円）：⑧＝10万円と⑥の少ない方、⑨＝（10万円−⑧）と⑦の少ない方
+ * ⑥・⑦ は赤字のときは0
+ * @param {{ deduction: number, businessIncome: number, realEstateIncome?: number }} p
+ */
+export function blueDeductionCalc({ deduction, businessIncome, realEstateIncome = 0 }) {
+  const six = Math.max(0, realEstateIncome);
+  const seven = Math.max(0, businessIncome);
+  const eight = Math.min(deduction, six);
+  const nine = Math.min(deduction - eight, seven);
+  return { large: deduction > 100000, six, seven, eight, nine };
 }

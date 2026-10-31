@@ -1,6 +1,6 @@
 // 青色申告決算書（一般用）：4ページの各欄を様式の並びで表示する（確定申告書等作成コーナー・e-Tax に転記する数字）
 import { h, put, field, segmented, amountCell } from '../ui.js';
-import { monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionReplaced } from '../blue-return.js';
+import { monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionReplaced, blueDetails, blueDeductionCalc } from '../blue-return.js';
 import { blueReturnSet, hasRealEstate, isRealEstateAsset } from '../real-estate.js';
 import { isWhite } from '../white-return.js';
 import { formatYen } from '../money.js';
@@ -41,7 +41,7 @@ export function depreciationTableView(t) {
 }
 
 export async function render({ app, outlet, query }) {
-  const { settings, period, accounts, journals } = await app.load();
+  const { settings, period, accounts, subAccounts, journals } = await app.load();
   if (settings.entityType !== 'individual') {
     put(outlet, h('p', { class: 'empty', text: '青色申告決算書は個人事業主の様式です。法人は損益計算書・貸借対照表をご利用ください。' }), h('a', { href: '#/reports', class: 'btn', text: '帳票へ' }));
     return;
@@ -63,6 +63,22 @@ export async function render({ app, outlet, query }) {
   const row = (no, label, amount, { strong = false, sub = '' } = {}) =>
     h('tr', { class: strong ? 'mt-strong' : '' }, h('td', { class: 'br-no', text: no ? maru(no) : '' }), h('th', { scope: 'row' }, label, sub ? h('span', { class: 'muted small block', text: sub }) : null), amountCell('td', amount));
   const table = (caption, rows, head = null) => h('div', { class: 'table-wrap' }, h('table', { class: 'report blue-return' }, caption ? h('caption', { text: caption }) : null, head, h('tbody', {}, rows)));
+  // 様式の内訳・明細の枠：列名と行（数値は金額のマス、null・'' は空欄）。帳簿から作れない欄は空欄のまま印刷して手で書ける
+  const cellOf = (c) => (typeof c === 'number' ? amountCell('td', c) : h('td', { text: c ?? '' }));
+  const frame = (caption, cols, rows, { total = null } = {}) =>
+    h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        { class: `report blue-return br-frame${cols.length > 3 ? ' br-wide' : ''}` },
+        h('caption', { text: caption }),
+        h('thead', {}, h('tr', {}, cols.map((c, i) => h('th', { scope: 'col', class: i === 0 && c === '欄' ? 'br-no' : '', text: c })))),
+        h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c, i) => (i === 0 && cols[0] === '欄' ? h('td', { class: 'br-no', text: c }) : cellOf(c))))), total ? h('tr', { class: 'mt-strong' }, total.map(cellOf)) : null),
+      ),
+    );
+  const fill = (list, n, toRow, width) => [...list.slice(0, n).map(toRow), ...Array.from({ length: Math.max(0, n - list.length) }, () => Array.from({ length: width }, () => ''))];
+  const sumOf = (list) => list.reduce((t, x) => t + x.amount, 0);
 
   function page1(is) {
     const L = is.lines;
@@ -120,19 +136,48 @@ export async function render({ app, outlet, query }) {
       ),
       m.salesTotal !== is.lines[1] || m.purchasesTotal !== is.lines[3] ? h('p', { class: 'notice', text: '月別の計が損益計算書の①・③と一致しません。' }) : null,
       h('p', { class: 'muted small', text: '家事消費（商品を自分で使った分）は、仕訳で売上に計上している場合は月別の金額に含まれます。' }),
-      table(
-        '青色申告特別控除額の計算',
-        set.realEstate
-          ? [
-              row(0, '不動産所得の金額（不動産所得用の㉑）', set.realEstate.lines[21]),
-              row(0, '控除前の所得金額（1ページの㊸）', is.lines[43]),
-              row(0, '選んだ控除額', deduction),
-              row(0, '不動産所得から差し引く控除額（不動産所得用の㉒）', set.realEstate.lines[22], { sub: '控除は不動産所得から先に差し引きます' }),
-              row(0, '青色申告特別控除額（残りと㊸の少ない方）', is.lines[44], { strong: true }),
-            ]
-          : [row(0, '控除前の所得金額（1ページの㊸）', is.lines[43]), row(0, '選んだ控除額', deduction), row(0, '青色申告特別控除額（少ない方）', is.lines[44], { strong: true })],
+      ...page2Details(is),
+    ];
+  }
+
+  // 2ページ目：給料賃金・専従者給与・地代家賃の内訳、貸倒引当金繰入額の計算、青色申告特別控除額の計算（様式の枠のとおり）
+  function page2Details(is) {
+    const d = blueDetails({ accounts, subAccounts, period, journals });
+    const L = is.lines;
+    const wages = d.wages.length > 4 ? [...d.wages.slice(0, 4)] : d.wages;
+    const wageOthers = d.wages.slice(4);
+    const allowance = is.provision[0]?.amount ?? 0;
+    const c = blueDeductionCalc({ deduction: set.selected, businessIncome: L[43], realEstateIncome: set.realEstate ? set.realEstate.lines[21] : 0 });
+    const big = c.large ? `${formatYen(set.selected)}円` : '';
+    return [
+      frame('給料賃金の内訳', ['氏名', '年齢', '従事月数', '給料賃金', '賞与', '合計', '源泉徴収税額'], [...fill(wages, 4, (x) => [x.name, '', '', '', '', x.amount, ''], 7), [`その他（${wageOthers.length || '　'}人分）`, '', '', '', '', wageOthers.length ? sumOf(wageOthers) : '', '']], { total: ['計（延べ従事月数）', '', '', '', '', L[20], ''] }),
+      frame('専従者給与の内訳', ['氏名', '続柄', '年齢', '従事月数', '給料', '賞与', '合計', '源泉徴収税額'], fill(d.family, 4, (x) => [x.name, '', '', '', '', '', x.amount, ''], 8), { total: ['計（延べ従事月数）', '', '', '', '', '', L[38], ''] }),
+      frame('地代家賃の内訳', ['支払先の住所・氏名', '賃借物件', '本年中の賃借料・権利金等', '左の賃借料のうち必要経費算入額'], fill(d.rent, 2, (x) => [x.name, '', x.amount, x.amount], 4)),
+      frame(
+        '貸倒引当金繰入額の計算',
+        ['欄', '区分', '金額'],
+        [
+          ['①', '個別評価による本年分繰入額', ''],
+          ['②', '年末における一括評価による貸倒引当金の繰入れの対象となる貸金の合計額', ''],
+          ['③', '本年分繰入限度額（②×5.5%（金融業は3.3%））', ''],
+          ['④', '本年分繰入額', ''],
+          ['⑤', '本年分の貸倒引当金繰入額（①＋④）', allowance || ''],
+        ],
       ),
-      h('p', { class: 'muted small', text: '給料賃金・専従者給与・地代家賃・貸倒引当金の内訳は、帳簿から作らないため、確定申告書等作成コーナーで入力してください。' }),
+      frame(
+        '青色申告特別控除額の計算',
+        ['欄', '区分', '金額'],
+        [
+          ['⑥', '本年分の不動産所得の金額（青色申告特別控除額を差し引く前の金額。赤字のときは0）', set.realEstate ? c.six : ''],
+          ['⑦', '青色申告特別控除前の所得金額（1ページの㊸。赤字のときは0）', c.seven],
+          ['⑧', `65万円又は55万円の青色申告特別控除を受ける場合：${big || '65万円又は55万円'}と⑥のいずれか少ない方の金額（不動産所得から差し引かれる額）`, c.large ? c.eight : ''],
+          ['⑨', `同：青色申告特別控除額（${big || '65万円又は55万円'}−⑧と⑦のいずれか少ない方の金額）`, c.large ? c.nine : ''],
+          ['⑧', '上記以外の場合：10万円と⑥のいずれか少ない方の金額（不動産所得から差し引かれる額）', c.large ? '' : c.eight],
+          ['⑨', '同：青色申告特別控除額（10万円−⑧と⑦のいずれか少ない方の金額）', c.large ? '' : c.nine],
+        ],
+      ),
+      c.nine !== L[44] ? h('p', { class: 'notice', text: `⑨（${formatYen(c.nine)}円）と1ページの㊹（${formatYen(L[44])}円）が違います。` }) : null,
+      h('p', { class: 'muted small no-print', text: '内訳の氏名・支払先は、科目の補助科目の名前です。年齢・従事月数・続柄・賃借物件・源泉徴収税額など帳簿から分からない欄は空欄なので、印刷して手で書くか、確定申告書等作成コーナーで入力してください。' }),
     ];
   }
 
@@ -142,7 +187,22 @@ export async function render({ app, outlet, query }) {
     return [
       t.rows.length ? depreciationTableView(t) : h('p', { class: 'muted small' }, '固定資産台帳に資産がありません。', h('a', { class: 'link', href: '#/assets', text: '固定資産台帳' })),
       t.total.business !== is.lines[18] ? h('p', { class: 'notice', text: `必要経費算入額の計（${formatYen(t.total.business)}円）と損益計算書の⑱減価償却費（${formatYen(is.lines[18])}円）が違います。決算・繰越の画面で減価償却の仕訳を確かめてください。` }) : null,
-      h('p', { class: 'muted small', text: '利子割引料・税理士等の報酬の内訳、本年中における特殊事情は、確定申告書等作成コーナーで入力してください。' }),
+      ...page3Details(is),
+    ];
+  }
+
+  // 3ページ目：売上（収入）金額の明細・仕入金額の明細（相手先は補助科目）、利子割引料・税理士等の報酬の内訳、本年中における特殊事情
+  function page3Details(is) {
+    const d = blueDetails({ accounts, subAccounts, period, journals });
+    const partner = (caption, p, amountLabel, totalLabel, total) =>
+      frame(caption, ['相手先名', '所在地', '登録番号（法人番号）', amountLabel], [...fill(p.rows, 4, (x) => [x.name, '', '', x.amount], 4), ['上記以外の計', '', '', p.others || '']], { total: [totalLabel, '', '', total] });
+    return [
+      partner('売上（収入）金額の明細', d.sales, '売上（収入）金額', '計（①）', is.lines[1]),
+      partner('仕入金額の明細', d.purchases, '仕入金額', '計', d.purchases.total),
+      frame('利子割引料の内訳（金融機関を除く）', ['支払先の住所・氏名', '期末現在の借入金等の金額', '本年中の利子割引料', '左のうち必要経費算入額'], fill(d.interest, 2, (x) => [x.name, '', x.amount, x.amount], 4)),
+      frame('税理士・弁護士等の報酬・料金の内訳', ['支払先の住所・氏名', '本年中の報酬等の金額', '左のうち必要経費算入額', '所得税及び復興特別所得税の源泉徴収税額'], fill([], 2, () => [], 4)),
+      frame('本年中における特殊事情', [''], [[''], [''], ['']]),
+      h('p', { class: 'muted small no-print', text: '売上先・仕入先・支払先は科目の補助科目の名前で、金額の多い順に4つまで。残りと補助科目の無い分は「上記以外の計」です。利子割引料の内訳は金融機関以外からの借入れの分だけを書くので、金融機関の分は手で消してください。所在地・登録番号・借入金の金額・税理士等の報酬・特殊事情は空欄です。' }),
     ];
   }
 
@@ -174,6 +234,19 @@ export async function render({ app, outlet, query }) {
       side('負債・資本の部', bs.liabilities, bs.totals.liabilitiesOpening, bs.totals.liabilitiesClosing),
       h('p', { class: `check-line ${bs.balanced ? 'ok' : 'ng'}`, text: bs.balanced ? '期首・期末とも、資産の部の合計＝負債・資本の部の合計' : '資産の部と負債・資本の部の合計が一致しません。期首残高と仕訳を確かめてください' }),
       set.realEstate ? h('p', { class: 'muted small', text: '事業所得と不動産所得の両方があるので、貸借対照表は両方の資産・負債を合算して一般用に書きます（国税庁「青色申告決算書（一般用）の書き方」。所得ごとに分けて書いてもかまいません）。' }) : null,
+      // 製造原価の計算（①〜㉖）：個人の勘定科目テンプレートには製造原価の科目が無いので枠だけ（原価計算を行っていない人は記入不要）
+      h('div', { class: 'br-break' }),
+      frame(
+        '製造原価の計算',
+        ['欄', '科目', '金額'],
+        [
+          ['①', '期首原材料棚卸高'], ['②', '原材料仕入高'], ['③', '小計（①＋②）'], ['④', '期末原材料棚卸高'], ['⑤', '差引原材料費（③−④）'], ['⑥', '労務費'],
+          ['⑦', 'その他の製造経費　外注工賃'], ['⑧', '電力費'], ['⑨', '水道光熱費'], ['⑩', '修繕費'], ['⑪', '減価償却費'],
+          ...['⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲'].map((n) => [n, '']),
+          ['⑳', '雑費'], ['㉑', '計'], ['㉒', '総製造費（⑤＋⑥＋㉑）'], ['㉓', '期首半製品・仕掛品棚卸高'], ['㉔', '小計（㉒＋㉓）'], ['㉕', '期末半製品・仕掛品棚卸高'], ['㉖', '製品製造原価（㉔−㉕）　1ページの③へ'],
+        ].map(([n, label]) => [n, label, '']),
+      ),
+      h('p', { class: 'muted small no-print', text: '製造原価の計算は、原価計算を行っている人だけが書きます（行っていない人は空欄のままで構いません）。' }),
     ];
   }
 
@@ -184,7 +257,7 @@ export async function render({ app, outlet, query }) {
     const is = set.business;
     // 4ページとも作り、画面では選んだページだけ見せる（印刷では全ページを1ページずつ出す）
     const pages = [page1, page2, page3, page4];
-    const titles = ['損益計算書', '月別売上（収入）金額及び仕入金額', '減価償却費の計算', '貸借対照表（資産負債調）'];
+    const titles = ['損益計算書', '月別売上（収入）金額及び仕入金額・給料賃金等の内訳・青色申告特別控除額の計算', '売上・仕入の明細・減価償却費の計算・利子割引料等の内訳・特殊事情', '貸借対照表（資産負債調）・製造原価の計算'];
     put(
       body,
       pages.map((fn, i) =>
