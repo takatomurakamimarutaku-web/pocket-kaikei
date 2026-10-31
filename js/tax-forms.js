@@ -145,20 +145,35 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
   }[firstSheet];
   const sheets = [{ id: firstSheet, title: sheetTitle, rows: rows13 }, ...extraSheets];
 
-  // 第二表（課税標準額等の内訳書）
+  // 第二表（課税標準額等の内訳書）：国税庁の様式（令和4年4月1日以後終了課税期間分、様式ID NTAOSHA010020100）の欄を全部出す
+  //   https://www.nta.go.jp/law/tsutatsu/kobetsu/kansetsu/951225/pdf/youshiki_005.pdf（2026-10-31 に様式の画像で確認）
+  //   旧税率（3%・4%・6.3%）の欄と、特定課税仕入れ（⑧〜⑩・⑲。一般課税で課税売上割合95%未満の事業者のみ）の欄は、このアプリでは扱わないので空欄
+  const blankRow = (no, label, extra = {}) => cell(no, label, null, extra);
   const second = {
     title: '第二表 課税標準額等の内訳書',
     rows: [
       cell('①', '課税標準額', r.base8 + r.base10, { strong: true }),
+      blankRow('②', '課税資産の譲渡等の対価の額（3%適用分）'),
+      blankRow('③', '課税資産の譲渡等の対価の額（4%適用分）'),
+      blankRow('④', '課税資産の譲渡等の対価の額（6.3%適用分）'),
       cell('⑤', '課税資産の譲渡等の対価の額（6.24%適用分）', sales1.a),
       cell('⑥', '課税資産の譲渡等の対価の額（7.8%適用分）', sales1.b),
-      cell('⑦', '課税資産の譲渡等の対価の額の合計額', sales1.a + sales1.b),
+      cell('⑦', '課税資産の譲渡等の対価の額の合計額', sales1.a + sales1.b, { note: '②〜⑥の合計' }),
+      blankRow('⑧', '特定課税仕入れに係る支払対価の額（6.3%適用分）'),
+      blankRow('⑨', '特定課税仕入れに係る支払対価の額（7.8%適用分）'),
+      blankRow('⑩', '特定課税仕入れに係る支払対価の額の合計額', { note: '⑧・⑨の合計' }),
       cell('⑪', '消費税額', r.salesTax, { strong: true }),
+      blankRow('⑫', '消費税額（3%適用分）'),
+      blankRow('⑬', '消費税額（4%適用分）'),
+      blankRow('⑭', '消費税額（6.3%適用分）'),
       cell('⑮', '消費税額（6.24%適用分）', r.salesTax8),
       cell('⑯', '消費税額（7.8%適用分）', r.salesTax10),
       cell('⑰', '返還等対価に係る税額', r.returnTax),
       cell('⑱', '売上げの返還等対価に係る税額', r.returnTax),
-      cell('⑳', '地方消費税の課税標準となる消費税額', r.net),
+      blankRow('⑲', '特定課税仕入れの返還等対価に係る税額'),
+      cell('⑳', '地方消費税の課税標準となる消費税額', r.net, { note: '㉑〜㉓の合計' }),
+      blankRow('㉑', '地方消費税の課税標準となる消費税額（4%適用分）'),
+      blankRow('㉒', '地方消費税の課税標準となる消費税額（6.3%適用分）'),
       cell('㉓', '地方消費税の課税標準となる消費税額（6.24%及び7.8%適用分）', r.net),
     ],
   };
@@ -202,6 +217,9 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
       cell('⑩', '中間納付税額', r.interimNational),
       cell('⑪', '納付税額', payNational, { note: '⑨−⑩', strong: true }),
       cell('⑫', '中間納付還付税額', interimRefund, { note: '⑩−⑨' }),
+      // ⑬⑭・㉔㉕は「この申告書が修正申告である場合」の欄（申告書（一般用）の書き方 令和7年11月 の第一表の記載例で確認）。確定申告では空欄
+      blankRow('⑬', '既確定税額', { note: '修正申告のときだけ' }),
+      blankRow('⑭', '差引納付税額', { note: '修正申告のときだけ' }),
       ...salesRows,
       cell('⑰', '地方消費税の課税標準となる消費税額（控除不足還付税額）', refund),
       cell('⑱', '地方消費税の課税標準となる消費税額（差引税額）', netTax),
@@ -210,11 +228,13 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
       cell('㉑', '中間納付譲渡割額', r.interimLocal),
       cell('㉒', '納付譲渡割額', payLocal, { note: '⑳−㉑', strong: true }),
       cell('㉓', '中間納付還付譲渡割額', localInterimRefund, { note: '㉑−⑳' }),
+      blankRow('㉔', '既確定譲渡割額', { note: '修正申告のときだけ' }),
+      blankRow('㉕', '差引納付譲渡割額', { note: '修正申告のときだけ' }),
       cell('㉖', '消費税及び地方消費税の合計（納付又は還付）税額', payNational + payLocal - (refund + interimRefund + localRefund + localInterimRefund), { note: '（⑪＋㉒）−（⑧＋⑫＋⑲＋㉓）', strong: true }),
     ],
   };
 
-  const notes = ['⑬⑭・㉔㉕（既確定税額・差引納付税額）は修正申告のときだけ使う欄のため出していません。'];
+  const notes = ['第一表の⑬⑭・㉔㉕（既確定税額・差引納付税額など）は修正申告のときだけ使う欄のため空欄です。第二表の旧税率（3%・4%・6.3%）と特定課税仕入れ（⑧〜⑩・⑲）の欄は、このアプリでは扱わないため空欄です。'];
   if (method === 'general') notes.push('付表2-3の③（非課税資産の輸出等）・⑬⑭（特定課税仕入れ）・⑯（納税義務の免除に係る調整）・㉓〜㉕（調整対象固定資産・居住用賃貸建物の調整）は対応していないため空欄です。輸入の消費税は7.8%の欄に入れています。');
   if (method === 'thirty') notes.push('3割特例の付表6は、2割特例の付表6と同じ並び（特別控除税額＝⑥×70%）で表示しています。');
   return { method, first, second, sheets, notes };

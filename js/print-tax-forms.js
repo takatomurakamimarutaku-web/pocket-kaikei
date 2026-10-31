@@ -308,13 +308,15 @@ export function schedule15Blocks(e, { months, sme }) {
   const rows = [
     { cells: ['支出交際費等の額　(8の計)', noCell(1), num(e.amount)] },
     { cells: ['支出接待飲食費損金算入基準額　(9の計)×50／100', noCell(2), num(e.diningBase)] },
-    { cells: [`中小法人等の定額控除限度額　((1)と(800万円×${months}／12)のうち少ない金額)`, noCell(3), num(e.fixedLimit)] },
+    { cells: [`中小法人等の定額控除限度額　((1)と((800万円×${months}／12)又は(別表十五付表「5」))のうち少ない金額)`, noCell(3), num(e.fixedLimit)] },
     { cells: ['損金算入限度額　(2)又は(3)', noCell(4), num(e.limit)] },
     { kind: 'total', cells: ['損金不算入額　(1)－(4)', noCell(5), num(e.disallowed)] },
   ];
   const detail = [
-    { cells: ['交際費等', blank(e.amount), '', blank(e.amount), blank(e.dining)] },
-    ...Array.from({ length: 6 }, () => ({ cells: ['', '', '', '', ''] })),
+    // 様式に印刷されている行：「交際費」と「交際費等の額に係る控除対象外消費税額等」（令和7年4月1日以後終了事業年度分）
+    { cells: ['交際費', blank(e.amount), '', blank(e.amount), blank(e.dining)] },
+    { cells: ['交際費等の額に係る控除対象外消費税額等', '', '', '', ''] },
+    ...Array.from({ length: 5 }, () => ({ cells: ['', '', '', '', ''] })),
     { kind: 'total', cells: ['計', num(e.amount), num(0), num(e.amount), num(e.dining)] },
   ];
   return [
@@ -848,7 +850,7 @@ export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEE
 /** 欄の名前に、短い計算式（⑦−②−③ など）を添える */
 const withNote = (it) => (it.note && it.note.length <= 18 ? `${it.label}　(${it.note})` : it.label);
 
-/** 第一表：左に消費税の税額の計算（①〜⑫）と課税売上割合など（⑮⑯）、右に地方消費税（⑰〜㉓）と合計（㉖） */
+/** 第一表：左に消費税の税額の計算（①〜⑫）・修正申告の欄（⑬⑭）と課税売上割合など（⑮⑯）、右に地方消費税（⑰〜㉓）・修正申告の欄（㉔㉕）と合計（㉖） */
 export function consumptionFirstBlocks(first) {
   const byNo = new Map(first.rows.map((x) => [x.no, x]));
   const item = (no) => {
@@ -856,8 +858,8 @@ export function consumptionFirstBlocks(first) {
     return x ? { no, label: withNote(x), amount: x.value, strong: x.strong } : null;
   };
   const pick = (nos) => nos.map(item).filter(Boolean);
-  const left = [{ head: 'この申告書による消費税の税額の計算' }, ...pick(['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫']), { head: '課税売上割合など' }, ...pick(['⑮', '⑯'])];
-  const right = [{ head: 'この申告書による地方消費税の税額の計算' }, ...pick(['⑰', '⑱', '⑲', '⑳', '㉑', '㉒', '㉓']), { head: '消費税及び地方消費税の合計税額' }, ...pick(['㉖'])];
+  const left = [{ head: 'この申告書による消費税の税額の計算' }, ...pick(['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫']), { head: 'この申告書が修正申告である場合' }, ...pick(['⑬', '⑭']), { head: '課税売上割合など' }, ...pick(['⑮', '⑯'])];
+  const right = [{ head: 'この申告書による地方消費税の税額の計算' }, ...pick(['⑰', '⑱', '⑲', '⑳', '㉑', '㉒', '㉓']), { head: 'この申告書が修正申告である場合' }, ...pick(['㉔', '㉕']), { head: '消費税及び地方消費税の合計税額' }, ...pick(['㉖'])];
   const remarks = first.remarks?.length ? [{ type: 'heading', text: '付記事項・参考事項' }, formHeadBlock(first.remarks)] : [];
   return [...first.flags.map((t) => ({ type: 'text', text: t })), twoSide(left, right), ...remarks];
 }
