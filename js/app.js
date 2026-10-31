@@ -25,6 +25,7 @@ import * as advisorTaxView from './views/advisor-tax.js';
 import * as advisorSavingView from './views/advisor-saving.js';
 import * as advisorSimulationView from './views/advisor-simulation.js';
 import * as advisorAnnualView from './views/advisor-annual.js';
+import * as advisorSuccessionView from './views/advisor-succession.js';
 import * as journalsView from './views/journals.js';
 import * as journalFormView from './views/journal-form.js';
 import * as journalHistoryView from './views/journal-history.js';
@@ -108,6 +109,7 @@ const routes = [
   { path: '/advisor/saving', view: advisorSavingView, title: '節税・税制の提案', tab: 'home', back: '#/advisor', print: true },
   { path: '/advisor/simulation', view: advisorSimulationView, title: '利益シミュレーション', tab: 'home', back: '#/advisor', print: true },
   { path: '/advisor/annual', view: advisorAnnualView, title: '年計（移動年計）', tab: 'home', back: '#/advisor', print: true },
+  { path: '/advisor/succession', view: advisorSuccessionView, title: '事業承継：自社株の評価（概算）', tab: 'home', back: '#/advisor', print: true },
   { path: '/journals', view: journalsView, title: '仕訳帳', tab: 'journals', print: true },
   { path: '/journals/history', view: journalHistoryView, title: '訂正・削除の履歴', tab: 'journals', back: '#/journals', print: true },
   { path: '/entry', view: entryView, title: '入力', tab: 'entry' },

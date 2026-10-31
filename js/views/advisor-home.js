@@ -74,6 +74,12 @@ export async function render({ app, outlet }) {
       menu('#/reports/cash-plan', '資金繰り表', '入金・支払の予定から、資金の残りを見る', 'calendar', 'report'),
       menu('#/reports/analysis', '経営分析', '収益性・安全性・損益分岐点', 'chart', 'report'),
     ),
+    individual
+      ? null
+      : [
+          h('h2', { class: 'menu-group-title', text: '事業承継' }),
+          h('ul', { class: 'menu-group' }, menu('#/advisor/succession', '自社株の評価（概算）', '会社規模・類似業種比準・純資産から株価を試算し、対策の効果を見る', 'bs', 'report')),
+        ],
     estimateNote(),
   );
 }

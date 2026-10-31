@@ -1602,3 +1602,5 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .advisor-grid .grid-subtotal td, .advisor-grid .grid-subtotal th { font-weight: 700; border-top: 1px solid var(--separator); }
 .advisor-grid .grid-cum td, .advisor-grid .grid-cum th { color: var(--muted); }
 .advisor-grid tr.fs-r-group td { background: inherit; }
+.advisor-tips { display: grid; gap: 6px; margin: var(--sp-2) 0; padding-left: 1.2em; list-style: disc; }
+.advisor-share td.muted { white-space: normal; min-width: 10em; }
