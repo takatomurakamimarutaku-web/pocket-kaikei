@@ -35,7 +35,7 @@ test('入力の検証と保存の形', () => {
   assert.match(validateForecast({ manual: { a: 1.5 } })[0], /整数の円/);
   assert.match(validateForecast(null)[0], /不正/);
   // おまかせは保存しない。手入力の金額は「金額を入れる」の科目だけ残す
-  assert.deepEqual(cleanForecast({ actualThrough: '2026-10', methods: { a: 'auto', b: 'manual', c: 'none' }, manual: { b: 5, c: 9 } }), { actualThrough: '2026-10', methods: { b: 'manual', c: 'none' }, manual: { b: 5 } });
+  assert.deepEqual(cleanForecast({ actualThrough: '2026-10', methods: { a: 'auto', b: 'manual', c: 'none' }, manual: { b: 5, c: 9 } }), { actualThrough: '2026-10', methods: { b: 'manual', c: 'none' }, manual: { b: 5 }, monthly: {} });
 });
 
 test('すべての月が実績なら、着地は損益計算書と一致する', () => {

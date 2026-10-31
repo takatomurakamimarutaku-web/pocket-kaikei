@@ -19,14 +19,15 @@ export const FORECAST_METHODS = [
   { id: 'last_year', label: '前期の同じ月×伸び率', hint: '伸び率＝当期の実績の累計÷前期の同じ月までの累計（50%〜200%に収める）' },
   { id: 'average', label: '直近3か月の平均', hint: '実績の最後の3か月の平均（決算整理の仕訳は除く）' },
   { id: 'manual', label: '金額を入れる', hint: '残りの月の合計を入れると月に均等に割る' },
+  { id: 'monthly', label: '月ごとに入れる', hint: '残りの月それぞれの金額を入れる（賞与・年払い・季節の変動に）' },
   { id: 'none', label: '見込まない', hint: '残りの月は0円' },
 ];
 export const METHOD_BY_ID = Object.fromEntries(FORECAST_METHODS.map((m) => [m.id, m]));
 /** おまかせ・固定資産台帳を使ったときの、実際に使った立て方の表示 */
-export const RESOLVED_LABELS = { budget: '予算', last_year: '前期×伸び率', average: '直近平均', manual: '手入力', none: '見込まない', asset: '固定資産台帳' };
+export const RESOLVED_LABELS = { budget: '予算', last_year: '前期×伸び率', average: '直近平均', manual: '手入力', monthly: '月ごと', none: '見込まない', asset: '固定資産台帳' };
 
 /** 入力の初期値（period.forecast）。actualThrough：実績とみなす最後の月（null なら今日の前月まで） */
-export const DEFAULT_FORECAST = { actualThrough: null, methods: {}, manual: {} };
+export const DEFAULT_FORECAST = { actualThrough: null, methods: {}, manual: {}, monthly: {} };
 
 /** 伸び率（‰）の範囲 */
 export const GROWTH_MIN = 500;
@@ -48,6 +49,17 @@ export function validateForecast(v) {
   for (const [id, m] of Object.entries(isObj(v.methods) ? v.methods : {})) if (typeof id !== 'string' || !METHOD_BY_ID[m]) errors.push('予測の立て方が不正です');
   if (v.manual !== undefined && !isObj(v.manual)) errors.push('手入力の金額が不正です');
   for (const amount of Object.values(isObj(v.manual) ? v.manual : {})) if (!isYen(amount) || amount < -MAX_AMOUNT || amount > MAX_AMOUNT) errors.push('手入力の金額は1兆円未満の整数の円で入れてください');
+  if (v.monthly !== undefined && !isObj(v.monthly)) errors.push('月ごとの金額が不正です');
+  for (const row of Object.values(isObj(v.monthly) ? v.monthly : {})) {
+    if (!isObj(row)) {
+      errors.push('月ごとの金額が不正です');
+      continue;
+    }
+    for (const [m, amount] of Object.entries(row)) {
+      if (!isMonth(m)) errors.push('月ごとの金額の月が不正です');
+      if (!isYen(amount) || amount < -MAX_AMOUNT || amount > MAX_AMOUNT) errors.push('月ごとの金額は1兆円未満の整数の円で入れてください');
+    }
+  }
   return [...new Set(errors)];
 }
 
@@ -56,7 +68,13 @@ export function cleanForecast(input = {}) {
   const v = { ...DEFAULT_FORECAST, ...input };
   const methods = Object.fromEntries(Object.entries(v.methods || {}).filter(([, m]) => m && m !== 'auto'));
   const manual = Object.fromEntries(Object.entries(v.manual || {}).filter(([id]) => methods[id] === 'manual'));
-  return { actualThrough: v.actualThrough || null, methods, manual };
+  // 月ごとの金額は「月ごとに入れる」の科目だけ、0円の月は持たない
+  const monthly = Object.fromEntries(
+    Object.entries(v.monthly || {})
+      .filter(([id]) => methods[id] === 'monthly')
+      .map(([id, row]) => [id, Object.fromEntries(Object.entries(row || {}).filter(([, x]) => x))]),
+  );
+  return { actualThrough: v.actualThrough || null, methods, manual, monthly };
 }
 
 /**
@@ -132,7 +150,7 @@ export function growthPermille(actualCum, prevCum) {
  * @param {object} [p.input] period.forecast
  * @param {string} p.today 今日（'YYYY-MM-DD'）
  * @returns {{ months, actualThrough, actualMonths, forecastMonths, rows, journals, synthetic, pl, depreciation }}
- *   rows：{ account, method, resolved, growth, actual, forecast, landing, previous, budget, monthly: number[] }
+ *   rows：{ account, method, resolved, growth, actual, forecast, landing, previous, budget, monthly: number[]（実績＋見込みの月別）, forecastMonthly: { 'YYYY-MM': 見込み }, prevMonthly: number[]|null（前期の同じ月。決算整理を除く） }
  *   actual：実績の月の発生額＋見込みの月にある決算整理の仕訳
  *   journals：実績の仕訳（見込みの月の仕訳は決算整理だけ）＋予測の仕訳（税額の計算などにそのまま渡す）
  *   dropped：見込みに置き換えた（着地に入れなかった）仕訳の件数
@@ -196,6 +214,8 @@ export function forecastLanding({ entityType, accounts, period, journals, budget
     } else if (resolved === 'average') {
       const avg = last3.length ? Math.round(sumMonths(basis.get(account.id), last3) / last3.length) : 0;
       for (const m of forecastMonths) forecast.set(m, avg);
+    } else if (resolved === 'monthly') {
+      for (const m of forecastMonths) forecast.set(m, v.monthly?.[account.id]?.[m] || 0);
     } else if (resolved === 'manual') {
       const total = v.manual?.[account.id] || 0;
       for (const [m, x] of Object.entries(forecastMonths.length ? spreadAnnual(total, forecastMonths) : {})) forecast.set(m, x);
@@ -215,6 +235,7 @@ export function forecastLanding({ entityType, accounts, period, journals, budget
       budget: budget ? Object.values(budget.months || {}).reduce((s, x) => s + x, 0) : null,
       monthly: values,
       forecastByMonth: forecast,
+      prevMonthly: prevBasis ? months.map(prevOf) : null,
     };
   });
 
@@ -250,7 +271,7 @@ export function forecastLanding({ entityType, accounts, period, journals, budget
     actualThrough,
     actualMonths,
     forecastMonths,
-    rows: rows.map(({ forecastByMonth, ...r }) => r),
+    rows: rows.map(({ forecastByMonth, ...r }) => ({ ...r, forecastMonthly: Object.fromEntries(forecastByMonth) })),
     journals: all,
     synthetic,
     pl,
