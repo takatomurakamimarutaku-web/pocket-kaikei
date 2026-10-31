@@ -14,7 +14,7 @@ export function sampleChooser({ onPick, buttonLabel }) {
     'select',
     { id: 'sample-id', onchange: () => paint() },
     [['individual', '個人'], ['corporation', '法人']].map(([type, label]) =>
-      h('optgroup', { label }, SAMPLES.filter((x) => x.entityType === type).map((x) => h('option', { value: x.id, text: `${x.industry}｜${x.name}` }))),
+      h('optgroup', { label }, SAMPLES.filter((x) => x.entityType === type).map((x) => h('option', { value: x.id, text: x.industry }))),
     ),
   );
   const detail = h('div', { class: 'sample-detail', 'aria-live': 'polite' });
@@ -22,7 +22,7 @@ export function sampleChooser({ onPick, buttonLabel }) {
     const x = SAMPLES.find((s) => s.id === select.value) || SAMPLES[0];
     put(
       detail,
-      h('dl', { class: 'sample-facts small' }, [['規模', x.size], ['消費税', x.tax], ['決算', x.fiscal]].map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+      h('dl', { class: 'sample-facts small' }, [['名前', x.name], ['規模', x.size], ['消費税', x.tax], ['決算', x.fiscal]].map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
       h('p', { class: 'small muted', text: x.summary }),
     );
   }
