@@ -29,6 +29,7 @@
 //   （出典は docs/spec-phase2-corporate-tax.md）。税率・年額は自治体ごとに違うので入力で変えられる
 // 率は 1/1000 % の整数で持つ（23.2% → 23200）。浮動小数点を使わない
 import { familyCompany, validateShareholders, cleanShareholders } from './family-company.js';
+import { withholdingCredit, validateWithholdingRows, cleanWithholdingRows } from './withholding-credit.js';
 import { isYen } from './money.js';
 import { isValidDate, periodMonths, addDays, addMonths } from './period.js';
 import { taxDueDate } from './holidays.js';
@@ -119,7 +120,8 @@ export const DEFAULT_CORPORATE_TAX = {
   dividends: 0, // 当期に支払った剰余金の配当（別表四の社外流出「配当」）
   entertainment: null, // 支出交際費等の額。null なら交際費の科目（目印 entertainment）の当期の額
   dining: 0, // うち接待飲食費の額
-  withholding: 0, // 法人税額から控除される所得税額（復興特別所得税を含む）
+  withholding: 0, // 法人税額から控除される所得税額（復興特別所得税を含む）。withholdingRows があればその合計を使う
+  withholdingRows: [], // 別表六(一)の明細 [{ kind, payer, address, date, income, tax, periodMonths, heldMonths }]（withholding-credit.js）
   credits: 0, // 法人税額の特別控除額（賃上げ促進税制など）
   residentAddBack: 0, // 法人税割の課税標準に足し戻す控除額（中小企業者等の賃上げ促進税制など）
   adjustments: [], // 別表四の「その他」の行 [{ label, side, kind, amount }]
@@ -179,6 +181,7 @@ export function validateCorporateTax(v) {
       if (!isYen(a.amount)) errors.push('期首の調整項目の金額は整数の円で入力してください（マイナスは「-」か「△」）');
     }
   errors.push(...validateShareholders(v));
+  errors.push(...validateWithholdingRows(v.withholdingRows));
   return [...new Set(errors)];
 }
 
@@ -195,6 +198,7 @@ export function cleanCorporateTax(input) {
     losses: (v.losses || []).map((l) => ({ endDate: l.endDate, amount: l.amount })).sort((a, b) => (a.endDate < b.endDate ? -1 : a.endDate > b.endDate ? 1 : 0)),
     openingAdjustments: (v.openingAdjustments || []).map((a) => ({ label: String(a.label ?? '').trim(), amount: a.amount })),
     shareholders: cleanShareholders(v.shareholders),
+    withholdingRows: cleanWithholdingRows(v.withholdingRows),
   };
 }
 
@@ -299,6 +303,9 @@ const sumBy = (list, f) => list.reduce((s, x) => s + f(x), 0);
  */
 export function corporateTaxReturn({ accounts, period, journals, input = {}, enterpriseInput = {} }) {
   const v = cleanCorporateTax(input);
+  // 別表六(一)の明細があれば、控除を受ける所得税額はその計（6の③）
+  const schedule61 = withholdingCredit(v.withholdingRows);
+  if (schedule61.entered) v.withholding = schedule61.credit;
   const ent = { ...DEFAULT_ENTERPRISE_TAX, ...enterpriseInput };
   const { startDate, endDate } = period;
   const months = periodMonths(period);
@@ -519,6 +526,7 @@ export function corporateTaxReturn({ accounts, period, journals, input = {}, ent
     enterprise,
     capital,
     employees: v.employees,
+    schedule61,
     family: familyCompany({ shareholders: v.shareholders, sharesTotal: v.sharesTotal, votesTotal: v.votesTotal, sme: v.sme }),
     dues,
     dueTotal,
