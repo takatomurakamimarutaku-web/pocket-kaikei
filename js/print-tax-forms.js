@@ -10,6 +10,7 @@ import { fmt, wrapText } from './print-layout.js';
 import { formatRatio } from './family-company.js';
 import { formatHoldingRatio } from './withholding-credit.js';
 import { applicationRows } from './application-statement.js';
+import { thousand } from './business-overview.js';
 import { DEPENDENT_KIND_LABELS } from './income-tax.js';
 import { formHeadBlock, corporateHead, applicationHead, localHead, consumptionHead, incomeHead } from './print-form-heads.js';
 
@@ -564,6 +565,114 @@ export function schedule61Blocks(w, withholding = 0) {
   ];
 }
 
+// ---- 法人事業概況説明書 ----
+
+/** 記入欄（項目名と空欄・帳簿から書けるものは値）の表 */
+const fillTable = (rows, { labelW = 46 } = {}) => ({
+  type: 'table',
+  font: 7.5,
+  columns: [{ label: '', w: labelW }, { label: '', grow: 1, min: 40 }],
+  rows: rows.map(([label, value = '']) => ({ cells: [{ text: label, shade: true, size: 7 }, value] })),
+});
+
+/**
+ * 法人事業概況説明書（表・裏）：帳簿から書ける欄（10 主要科目・18 月別・4 従事員数・5 会計ソフト・16 税理士）と、手で書く空欄
+ * @param {object} ov business-overview.js の businessOverview の結果
+ * @param {{ filer?: object, employees?: number|null }} opts
+ */
+export function businessOverviewBlocks(ov, { filer = null, employees = null }) {
+  const k = (n) => (n ? fmt(thousand(n)) : '');
+  const it = ov.items;
+  const left = [
+    { head: '損益の状況（単位：千円）' },
+    { label: '売上（収入）高', amount: k(it.sales) },
+    { label: '上記のうち兼業売上（収入）高', amount: '' },
+    { label: '売上（収入）原価', amount: k(it.cogs) },
+    { label: '期首棚卸高', amount: k(it.openingInventory), indent: true },
+    { label: '原材料費（仕入高）', amount: k(it.purchases), indent: true },
+    { label: '労務費', amount: k(it.labor), indent: true },
+    { label: '外注費', amount: k(it.outsourcing), indent: true },
+    { label: '期末棚卸高', amount: k(it.closingInventory), indent: true },
+    { label: '原価のうち減価償却費', amount: k(it.cogsDepreciation), indent: true },
+    { label: '原価のうち地代家賃', amount: k(it.cogsRent), indent: true },
+    { label: '売上（収入）総利益', amount: k(it.gross) },
+    { label: '販・管費のうち役員報酬', amount: k(it.officerCompensation), indent: true },
+    { label: '販・管費のうち従業員給料', amount: k(it.salaries), indent: true },
+    { label: '販・管費のうち交際費', amount: k(it.entertainment), indent: true },
+    { label: '販・管費のうち減価償却費', amount: k(it.depreciation), indent: true },
+    { label: '販・管費のうち地代家賃', amount: k(it.rent), indent: true },
+    { label: '営業損益', amount: k(it.operating) },
+    { label: '特別利益', amount: k(it.extraordinaryIncome) },
+    { label: '特別損失', amount: k(it.extraordinaryLoss) },
+    { label: '税引前当期損益', amount: k(it.pretax), strong: true },
+  ];
+  const right = [
+    { head: '資産・負債の状況（単位：千円）' },
+    { label: '資産の部合計', amount: k(it.totalAssets), strong: true },
+    { label: '現金預金', amount: k(it.cash), indent: true },
+    { label: '受取手形（貸倒引当金控除前）', amount: k(it.notesReceivable), indent: true },
+    { label: '売掛金（貸倒引当金控除前）', amount: k(it.receivable), indent: true },
+    { label: '棚卸資産（未成工事支出金）', amount: k(it.inventory), indent: true },
+    { label: '貸付金', amount: k(it.loans), indent: true },
+    { label: '建物（減価償却累計額控除後）', amount: k(it.building), indent: true },
+    { label: '機械装置（減価償却累計額控除後）', amount: k(it.machinery), indent: true },
+    { label: '車両・船舶（減価償却累計額控除後）', amount: k(it.vehicles), indent: true },
+    { label: '土地', amount: k(it.land), indent: true },
+    { label: '負債の部合計', amount: k(it.totalLiabilities), strong: true },
+    { label: '支払手形', amount: k(it.notesPayable), indent: true },
+    { label: '買掛金', amount: k(it.payable), indent: true },
+    { label: '個人借入金', amount: k(it.personalBorrowings), indent: true },
+    { label: 'その他借入金', amount: k(it.otherBorrowings), indent: true },
+    { label: '純資産の部合計', amount: k(it.netAssets), strong: true },
+  ];
+  const f = filer || {};
+  const monthRows = ov.months.map((m) => ({ cells: [{ text: `${Number(m.month.slice(5, 7))}月`, align: 'center' }, k(m.sales), k(m.purchases), k(m.outsourcing), k(m.payroll), '', ''] }));
+  monthRows.push({ kind: 'total', cells: [{ text: '計', align: 'center', bold: true }, k(ov.monthTotal.sales), k(ov.monthTotal.purchases), k(ov.monthTotal.outsourcing), k(ov.monthTotal.payroll), '', ''] });
+  const amt = (label) => ({ label, align: 'right', w: 22 });
+  return [
+    { type: 'heading', text: '1〜9　事業の概要' },
+    fillTable([
+      ['1 事業内容', f.businessType || ''],
+      ['2 支店・子会社の状況', '国内の支店・店舗数（　　）　海外の支店・店舗数（　　）　国内子会社の数（　　）　海外子会社の数（　　）'],
+      ['3 海外取引状況', '輸入・輸出・輸出入以外の海外取引の有無、相手国・主な商品・取引金額（百万円）'],
+      ['4 期末従事員等の状況', `常勤役員（　　人）　計 ${employees ?? '　　'}人（うち代表者家族数　　人・アルバイト数　　人）`],
+      ['5 PC利用状況', 'PCの利用 有　会計ソフトの利用 有　会計ソフト名 Pocket会計　データの保存先 端末（バックアップファイル）'],
+      ['6 販売形態', '電子商取引（インターネット取引）の有無・販売チャネル'],
+      ['7 株主又は株式所有異動の有無', '有・無（うち株式交付）'],
+      ['8 経理の状況', '現金・通帳の管理者と代表者との関係、試算表の作成状況、源泉徴収対象所得、消費税の当期課税売上高・経理方式、社内監査'],
+      ['9 役員又は役員報酬額の異動の有無', '有・無'],
+    ]),
+    { type: 'heading', text: '10　主要科目' },
+    twoSide(left, right),
+    { type: 'heading', text: '11　代表者に対する報酬等の金額（同族会社の場合。単位：千円）' },
+    { type: 'table', font: 7.5, columns: ['報酬', '貸付金', '仮払金', '賃借料', '支払利息', '借入金', '仮受金'].map((l) => ({ label: l, align: 'right', grow: 1, min: 18 })), rows: [{ cells: ['', '', '', '', '', '', ''] }] },
+    { type: 'heading', caption: true, text: '法人事業概況説明書（裏）', title: '法人事業概況説明書' },
+    fillTable([
+      ['12 事業形態', '（1）兼業の状況（兼業種目・兼業割合　　％）　（2）事業内容の特異性　（3）売上区分（現金売上　　％・掛売上　　％）'],
+      ['13 主な設備等の状況', ['', '', '']],
+      ['14 決済日等の状況', '売上・仕入・外注費・給料の締切日と決済日（支給日）'],
+      ['15 帳簿類の備付状況', '総勘定元帳、仕訳帳、固定資産台帳、試算表'],
+      ['16 税理士の関与状況', f.taxAccountant || ''],
+      ['17 加入組合等の状況', ['', '']],
+    ]),
+    { type: 'heading', text: '18　月別の売上高等の状況（単位：千円。源泉徴収税額は円）' },
+    {
+      type: 'table',
+      font: 7.5,
+      columns: [{ label: '月', w: 12, align: 'center' }, amt('売上（収入）\n金額'), amt('仕入金額'), amt('外注費'), amt('人件費'), amt('源泉徴収\n税額'), { label: '従事員数', align: 'right', w: 16 }],
+      rows: monthRows,
+    },
+    fillTable([
+      ['19 当期の営業成績の概要', ['', '', '', '']],
+      ['20 年末調整関係書類の電子化の状況', ['', '']],
+    ]),
+    {
+      type: 'text',
+      text: `帳簿から書いた欄：10 主要科目（決算額。申告調整の加減算は入れていません。交際費は交際費等の支出額）・18 月別の売上高等（各月の発生額。人件費は役員を含む給与・賞与）・建物・機械装置・車両は固定資産台帳の期末帳簿価額です。金額は千円未満を切り捨て、0は空欄にしています。そのほかの欄は様式に手で書いてください。`,
+    },
+  ];
+}
+
 // ---- 適用額明細書 ----
 
 /**
@@ -695,6 +804,7 @@ export const CORPORATE_SHEETS = [
   { value: 's7', label: '別表七(一)', title: '欠損金の損金算入等に関する明細書' },
   { value: 's15', label: '別表十五', title: '交際費等の損金算入に関する明細書' },
   { value: 'tekiyo', label: '適用額明細書', title: '適用額明細書' },
+  { value: 'gaikyo', label: '法人事業概況説明書', title: '法人事業概況説明書' },
   { value: 'pref', label: '第六号様式', title: '事業税・特別法人事業税・道府県民税の確定申告書' },
   { value: 'city', label: '第二十号様式', title: '市町村民税の確定申告書' },
 ];
@@ -704,7 +814,7 @@ export const CORPORATE_SHEETS = [
  * @param {object} r corporateTaxReturn の結果
  * @param {{ head: object, sheets?: string[] }} p sheets：印刷する別表（CORPORATE_SHEETS の value）
  */
-export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEETS.map((s) => s.value), smeAssets = null }) {
+export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEETS.map((s) => s.value), smeAssets = null, overview = null }) {
   const blocks = [];
   const local = localFormRows(r);
   const p = { startDate: r.period.startDate, endDate: r.period.endDate, capital: r.capital.stock, capitalTotal: r.capital.total, employees: r.employees, months: r.resident.months, sme: r.input.sme };
@@ -719,6 +829,7 @@ export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEE
     s52: () => schedule52Blocks(r.schedule52, { startDate: r.period.startDate }),
     s7: () => schedule7Blocks(r),
     s15: () => schedule15Blocks(r.entertainment, { months: r.period.months, sme: r.input.sme }),
+    gaikyo: () => (overview ? businessOverviewBlocks(overview, { filer, employees: r.employees }) : [{ type: 'text', text: '帳簿の集計がありません' }]),
     tekiyo: () => [...(filer ? [applicationHead(filer, { capital: r.capital.stock, income: r.schedule4.income.total })] : []), ...applicationBlocks(applicationRows({ corp: r.corp, sme: r.input.sme, smeAssets, rows: r.input.applicationRows }))],
   };
   for (const s of CORPORATE_SHEETS) {
