@@ -30,6 +30,7 @@
 // 率は 1/1000 % の整数で持つ（23.2% → 23200）。浮動小数点を使わない
 import { familyCompany, validateShareholders, cleanShareholders } from './family-company.js';
 import { withholdingCredit, validateWithholdingRows, cleanWithholdingRows } from './withholding-credit.js';
+import { validateApplicationRows, cleanApplicationRows } from './application-statement.js';
 import { isYen } from './money.js';
 import { isValidDate, periodMonths, addDays, addMonths } from './period.js';
 import { taxDueDate } from './holidays.js';
@@ -121,6 +122,7 @@ export const DEFAULT_CORPORATE_TAX = {
   entertainment: null, // 支出交際費等の額。null なら交際費の科目（目印 entertainment）の当期の額
   dining: 0, // うち接待飲食費の額
   withholding: 0, // 法人税額から控除される所得税額（復興特別所得税を含む）。withholdingRows があればその合計を使う
+  applicationRows: [], // 適用額明細書に足す措置 [{ article, code, amount }]（application-statement.js。法人税率の特例・少額減価償却資産の特例は自動）
   withholdingRows: [], // 別表六(一)の明細 [{ kind, payer, address, date, income, tax, periodMonths, heldMonths }]（withholding-credit.js）
   credits: 0, // 法人税額の特別控除額（賃上げ促進税制など）
   residentAddBack: 0, // 法人税割の課税標準に足し戻す控除額（中小企業者等の賃上げ促進税制など）
@@ -182,6 +184,7 @@ export function validateCorporateTax(v) {
     }
   errors.push(...validateShareholders(v));
   errors.push(...validateWithholdingRows(v.withholdingRows));
+  errors.push(...validateApplicationRows(v.applicationRows));
   return [...new Set(errors)];
 }
 
@@ -199,6 +202,7 @@ export function cleanCorporateTax(input) {
     openingAdjustments: (v.openingAdjustments || []).map((a) => ({ label: String(a.label ?? '').trim(), amount: a.amount })),
     shareholders: cleanShareholders(v.shareholders),
     withholdingRows: cleanWithholdingRows(v.withholdingRows),
+    applicationRows: cleanApplicationRows(v.applicationRows),
   };
 }
 
