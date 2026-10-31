@@ -95,8 +95,20 @@ mkdirSync(OUT, { recursive: true });
         await page.getByRole('button', { name: '入力を保存する' }).click();
         await page.waitForTimeout(600);
         if ((await page.getByLabel('発行済株式数', { exact: true }).inputValue()) !== '200') errors.push('事業承継の入力が保存されない');
+        await fill('株式以外の財産（相続税の計算用）', '80,000,000');
+        await fill('暦年贈与を分ける年数', '5');
+        if ((await page.locator('.st-option').count()) !== 4) errors.push('子への承継の選択肢が4つ出ない');
       }
       await shot('09-succession');
+      if (!pc) {
+        await page.getByLabel('誰に引き継ぐか').selectOption('employee');
+        await page.waitForTimeout(300);
+        if (!(await page.getByLabel('売る値段', { exact: true }).isVisible())) errors.push('親族外のとき売る値段の欄が出ない');
+        await shot('09b-succession-employee');
+        await page.getByLabel('誰に引き継ぐか').selectOption('third');
+        await page.waitForTimeout(300);
+        if ((await page.locator('.st-option').count()) !== 1) errors.push('第三者のとき売却だけにならない');
+      }
     }
     await go('#/advisor/meeting');
     await shot('10-meeting');
