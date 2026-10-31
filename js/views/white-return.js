@@ -3,7 +3,8 @@ import { h, put, field, segmented, amountCell, showToast, errorBox } from '../ui
 import { depreciationTable } from '../blue-return.js';
 import { hasRealEstate, isRealEstateAsset, realEstateDetails, realEstateForFirstTable } from '../real-estate.js';
 import { isWhite, whiteReturnSet, whiteDetails, WORKER_CAPS } from '../white-return.js';
-import { depreciationTableView } from './blue-return.js';
+import { depreciationTableView, brFrame, fillRows, partnerFrame } from './blue-return.js';
+import { tenantFrame } from './real-estate.js';
 import { formatYen, parseYen } from '../money.js';
 import { formatPeriod } from '../period.js';
 import { ValidationError } from '../db.js';
@@ -41,14 +42,6 @@ export async function render({ app, outlet, query }) {
   const row = (no, label, amount, { strong = false, sub = '' } = {}) =>
     h('tr', { class: strong ? 'mt-strong' : '' }, h('td', { class: 'br-no', text: maru(no) }), h('th', { scope: 'row' }, label, sub ? h('span', { class: 'muted small block', text: sub }) : null), amountCell('td', amount));
   const table = (caption, rows, head = null) => h('div', { class: 'table-wrap' }, h('table', { class: 'report blue-return' }, caption ? h('caption', { text: caption }) : null, head, h('tbody', {}, rows)));
-  const listTable = (caption, list, nameLabel, amountLabel) =>
-    list.length
-      ? table(
-          caption,
-          [...list.map((x) => h('tr', {}, h('th', { scope: 'row', text: x.name }), amountCell('td', x.amount))), h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '計' }), amountCell('td', list.reduce((s, x) => s + x.amount, 0)))],
-          h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: nameLabel }), h('th', { scope: 'col', text: amountLabel }))),
-        )
-      : null;
   // 帳簿の科目名が様式の欄名と違うときだけ出す
   const groupRow = (text) => h('tr', { class: 'st-group level2' }, h('th', { colspan: 3, scope: 'colgroup', text }));
   const named = (e) => (e.name && e.label && !e.name.startsWith(e.label) ? `帳簿の科目：${e.name}` : '');
@@ -90,23 +83,39 @@ export async function render({ app, outlet, query }) {
       table('所得金額', [row(19, '専従者控除前の所得金額（⑩−⑱）', L[19]), row(20, '専従者控除', L[20]), row(21, '所得金額（⑲−⑳）', L[21], { strong: true })]),
       workerTable('business'),
       deductionNote(),
+      ...g1Details(L),
       g.familySalary ? h('p', { class: 'notice', text: `帳簿に専従者給与が ${formatYen(g.familySalary)}円あります。白色申告では家族への給与は必要経費にならず、代わりに専従者控除を差し引くので、上の経費には含めていません。仕訳の科目を事業主貸に直してください。` }) : null,
       g.reserves.reversal || g.reserves.provision ? h('p', { class: 'notice', text: `帳簿の貸倒引当金の繰戻額（${formatYen(g.reserves.reversal)}円）・繰入額（${formatYen(g.reserves.provision)}円）は、収支内訳書に欄が無いので含めていません（一括評価の貸倒引当金は青色申告者だけです）。` }) : null,
     ];
   }
 
+  // 1ページ目の右側の枠：給料賃金の内訳（3行）・税理士・弁護士等の報酬・料金の内訳（2行）・事業専従者の氏名等（3行）
+  function g1Details(L) {
+    const wages = details.wages.slice(0, 3);
+    const wageOthers = details.wages.slice(3);
+    const sum = (list) => list.reduce((s, x) => s + x.amount, 0);
+    const family = set.workers.filter((w) => w.work === 'business');
+    return [
+      brFrame('給料賃金の内訳', ['氏名', '年齢', '従事月数', '支給額（給料賃金）', '支給額（賞与）', '支給額（合計）', '源泉徴収税額'], [...fillRows(wages, 3, (x) => [x.name, '', '', '', '', x.amount, ''], 7), [`その他（${wageOthers.length || '　'}人分）`, '', '', '', '', wageOthers.length ? sum(wageOthers) : '', '']], { total: ['計（延べ従事月数）', '', '', '', '', L[11], ''] }),
+      brFrame('税理士・弁護士等の報酬・料金の内訳', ['支払先の住所・氏名', '本年中の報酬等の金額', '左のうち必要経費算入額', '源泉徴収税額'], fillRows([], 2, () => [], 4)),
+      brFrame('事業専従者の氏名等', ['氏名', '年齢', '続柄', '従事月数'], fillRows(family, 3, (w) => [w.name, '', w.spouse ? '配偶者' : '親族', ''], 4), { total: ['延べ従事月数', '', '', ''] }),
+      h('p', { class: 'muted small no-print', text: '給料賃金の内訳の氏名は給料賃金の科目の補助科目の名前で、金額の多い順に3人まで（残りと補助科目の無い分は「その他」）。帳簿では給料と賞与を区別しないので合計の欄だけ入れています。年齢・従事月数・源泉徴収税額、税理士・弁護士等の報酬・料金の内訳は空欄です。' }),
+    ];
+  }
+
   function pageG2() {
     const t = depreciationTable({ assets, periods, period, filter: (a) => !isRealEstateAsset(a, accountById) });
+    const L = set.general.lines;
     return [
-      listTable('売上（収入）金額の明細', details.sales, '売上先（補助科目）', '売上（収入）金額'),
-      listTable('仕入金額の明細', details.purchases, '仕入先（補助科目）', '仕入金額'),
-      details.sales.length || details.purchases.length ? h('p', { class: 'muted small', text: '様式には主な売上先・仕入先を書き、残りは「上記以外の売上先（仕入先）の計」にまとめます。所在地・登録番号は確定申告書等作成コーナーで入力してください。' }) : null,
+      partnerFrame('売上（収入）金額の明細', details.sales, '売上（収入）金額', '計（①）', L[1], { extraRows: [['右記①のうち軽減税率対象', '', '', '']] }),
+      partnerFrame('仕入金額の明細', details.purchases, '仕入金額', '計（⑥）', L[6], { extraRows: [['右記⑥のうち軽減税率対象', '', '', '']] }),
+      h('p', { class: 'muted small no-print', text: '売上先・仕入先は科目の補助科目の名前で、金額の多い順に4つまで。残りと補助科目の無い分は「上記以外の計」です。所在地・登録番号・軽減税率対象の金額は空欄です。' }),
       t.rows.length ? depreciationTableView(t) : h('p', { class: 'muted small' }, '減価償却する固定資産はありません。', h('a', { class: 'link', href: '#/assets', text: '固定資産台帳' })),
-      t.total.business !== set.general.lines[13] ? h('p', { class: 'notice', text: `必要経費算入額の計（${formatYen(t.total.business)}円）と1ページの⑬減価償却費（${formatYen(set.general.lines[13])}円）が違います。決算・繰越の画面で減価償却の仕訳を確かめてください。` }) : null,
-      listTable('地代家賃の内訳', details.rent, '支払先（補助科目）', '本年中の賃借料・権利金等'),
-      listTable('利子割引料の内訳', details.interest, '支払先（補助科目）', '本年中の利子割引料'),
-      listTable('給料賃金の内訳', details.wages, '氏名（補助科目）', '支給額'),
-      h('p', { class: 'muted small', text: '利子割引料の内訳は金融機関以外からの借入れの分だけ書きます。給料賃金の年齢・従事月数・源泉徴収税額、税理士・弁護士等の報酬・料金の内訳は、確定申告書等作成コーナーで入力してください。' }),
+      t.total.business !== L[13] ? h('p', { class: 'notice', text: `必要経費算入額の計（${formatYen(t.total.business)}円）と1ページの⑬減価償却費（${formatYen(L[13])}円）が違います。決算・繰越の画面で減価償却の仕訳を確かめてください。` }) : null,
+      brFrame('利子割引料の内訳（金融機関を除く）', ['支払先の住所・氏名', '期末現在の借入金等の金額', '本年中の利子割引料', '左のうち必要経費算入額'], fillRows(details.interest, 2, (x) => [x.name, '', x.amount, x.amount], 4)),
+      brFrame('地代家賃の内訳', ['支払先の住所・氏名', '賃借物件', '本年中の賃借料・権利金等', '左の賃借料のうち必要経費算入額'], fillRows(details.rent, 2, (x) => [x.name, '', x.amount, x.amount], 4)),
+      brFrame('本年中における特殊事情', [''], [[''], [''], ['']]),
+      h('p', { class: 'muted small no-print', text: '利子割引料・地代家賃の支払先は補助科目の名前で、多い順に2つまで。利子割引料の内訳は金融機関以外からの借入れの分だけを書くので、金融機関の分は手で消してください。借入金の金額・賃借物件・特殊事情は空欄です。' }),
     ];
   }
 
@@ -140,55 +149,52 @@ export async function render({ app, outlet, query }) {
     const L = r.lines;
     const first = realEstateForFirstTable(L[15], set.landInterest);
     return [
-      table('収入金額', [...r.incomes.map((x) => row('', x.label, x.amount)), row('', '計', r.income, { strong: true })]),
+      table('収入金額', [
+        row(1, r.incomes[0].label, r.incomes[0].amount),
+        groupRow('その他の収入'),
+        row(2, r.incomes[1].label, r.incomes[1].amount),
+        row(3, r.incomes[2].label, r.incomes[2].amount),
+        row(4, '小計（②＋③）', r.incomes[1].amount + r.incomes[2].amount),
+        row(5, '計（①＋④）', r.income, { strong: true }),
+      ]),
       table('必要経費', [
         ...r.main.map((m) => row(m.no, m.label, m.amount, { sub: m.no === 8 ? '不動産の貸倒れは空欄の行（㋥）に入ります' : '' })),
         groupRow('その他の経費'),
         ...r.others.map((o) => row(o.mark, o.label || '（空欄）', o.amount, { sub: o.mark === '㋭' && r.overflow.length ? `${r.overflow.map((x) => x.name).join('・')} を含む` : '' })),
-        row(11, 'その他の経費の計', L[11]),
-        row(12, '必要経費の計（⑥〜⑩＋⑪）', L[12], { strong: true }),
+        row(11, '小計（㋑〜㋭までの計）', L[11]),
+        row(12, '経費計（⑥〜⑩までの計＋⑪）', L[12], { strong: true }),
       ]),
       table('所得金額', [
-        row(13, '差引金額（収入金額の計−⑫）', L[13]),
+        row(13, '専従者控除前の所得金額（⑤−⑫）', L[13]),
         row(14, '専従者控除', L[14], { sub: set.scale === 'business' ? '' : '事業的規模でない貸付けには適用できません' }),
         row(15, '所得金額（⑬−⑭）', L[15], { strong: true }),
+        h('tr', {}, h('td', { class: 'br-no' }), h('th', { scope: 'row', text: '土地等を取得するために要した負債の利子の額' }), set.landInterest ? amountCell('td', set.landInterest) : h('td')),
         L[15] < 0 ? row('', '確定申告書 第一表の「不動産③」', first, { strong: true, sub: '赤字のうち土地等を取得するための負債の利子の分は、ほかの所得と損益通算できません' }) : null,
       ]),
       L[15] < 0 ? landInterestField() : null,
       workerTable('realEstate'),
+      tenantFrame(reDetails.tenants, 10),
+      brFrame('給料賃金の内訳', ['氏名', '年齢', '従事月数', '給料賃金', '賞与', '合計', '源泉徴収税額'], [...fillRows(reDetails.wages.slice(0, 1), 1, (x) => [x.name, '', '', '', '', x.amount, ''], 7), [`その他（${reDetails.wages.length > 1 ? reDetails.wages.length - 1 : '　'}人分）`, '', '', '', '', reDetails.wages.length > 1 ? reDetails.wages.slice(1).reduce((s, x) => s + x.amount, 0) : '', '']], { total: ['計（延べ従事月数）', '', '', '', '', L[6], ''] }),
+      brFrame('事業専従者の氏名等', ['氏名', '年齢', '続柄', '従事月数'], fillRows(set.workers.filter((w) => w.work === 'realEstate'), 2, (w) => [w.name, '', w.spouse ? '配偶者' : '親族', ''], 4), { total: ['延べ従事月数', '', '', ''] }),
+      h('p', { class: 'muted small no-print', text: '賃借人・氏名は科目の補助科目の名前です。帳簿では給料と賞与を区別しないので合計の欄だけ入れています。貸家・貸地等の別、用途、所在地、賃貸契約期間、貸付面積、賃貸料の月額、保証金・敷金、年齢・従事月数・源泉徴収税額は空欄です。' }),
       r.familySalary ? h('p', { class: 'notice', text: `帳簿に専従者給与（不動産）が ${formatYen(r.familySalary)}円あります。白色申告では必要経費にならないので含めていません。仕訳の科目を事業主貸に直してください。` }) : null,
     ];
   }
 
+  // 不動産 2ページ：減価償却費の計算・借入金利子（2行）・修繕費（3行）・貸付不動産の保有状況・地代家賃（2行）・税理士等の報酬（2行）・特殊事情
   function pageR2() {
     const t = depreciationTable({ assets, periods, period, filter: (a) => isRealEstateAsset(a, accountById) });
-    const tenants = reDetails.tenants;
-    const sum = (k) => tenants.reduce((s, x) => s + x[k], 0);
+    const L = set.realEstate.lines;
     return [
-      tenants.length
-        ? h(
-            'div',
-            { class: 'table-wrap' },
-            h(
-              'table',
-              { class: 'report blue-return' },
-              h('caption', { text: '収入の内訳' }),
-              h('thead', {}, h('tr', {}, ['賃借人', '賃貸料', '礼金等', 'その他'].map((c) => h('th', { scope: 'col', text: c })))),
-              h(
-                'tbody',
-                {},
-                tenants.map((x) => h('tr', {}, h('th', { scope: 'row', text: x.name }), amountCell('td', x.rent, { blankZero: true }), amountCell('td', x.key, { blankZero: true }), amountCell('td', x.other, { blankZero: true }))),
-                h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '計' }), amountCell('td', sum('rent')), amountCell('td', sum('key')), amountCell('td', sum('other'))),
-              ),
-            ),
-          )
-        : h('p', { class: 'muted small', text: 'この期間の不動産収入はありません。' }),
-      h('p', { class: 'muted small', text: '賃借人ごとの金額は、賃貸料などの科目の補助科目（賃借人の名前）で分けています。貸家・貸地等の別、用途、賃貸契約期間、賃貸料の月額、保証金・敷金は確定申告書等作成コーナーで入力してください。' }),
       t.rows.length ? depreciationTableView(t) : h('p', { class: 'muted small' }, '償却費の科目を「減価償却費（不動産）」にした固定資産はありません。', h('a', { class: 'link', href: '#/assets', text: '固定資産台帳' })),
-      t.total.business !== set.realEstate.lines[7] ? h('p', { class: 'notice', text: `必要経費算入額の計（${formatYen(t.total.business)}円）と1ページの⑦減価償却費（${formatYen(set.realEstate.lines[7])}円）が違います。` }) : null,
-      listTable('借入金利子の内訳', reDetails.interest, '支払先（補助科目）', '本年中の借入金利子'),
-      listTable('地代家賃の内訳', reDetails.rent, '支払先（補助科目）', '本年中の賃借料・権利金等'),
-      listTable('給料賃金の内訳', reDetails.wages, '氏名（補助科目）', '支給額'),
+      t.total.business !== L[7] ? h('p', { class: 'notice', text: `必要経費算入額の計（${formatYen(t.total.business)}円）と1ページの⑦減価償却費（${formatYen(L[7])}円）が違います。` }) : null,
+      brFrame('借入金利子の内訳（金融機関を除く）', ['支払先の住所・氏名', '期末現在の借入金等の金額', '本年中の借入金利子', '左のうち必要経費算入額'], fillRows(reDetails.interest, 2, (x) => [x.name, '', x.amount, x.amount], 4)),
+      brFrame('修繕費の内訳', ['支払先の住所・氏名', '工事名又は資材の品名', '支払年月日', '支払金額', '左のうち必要経費算入額'], fillRows(reDetails.repairs, 3, (x) => [x.name, '', '', x.amount, x.amount], 5)),
+      brFrame('貸付不動産の保有状況（空家（空室）、空地を含む）', ['用途・種類等', '数量'], [['住宅用 建物（一戸建）', ''], ['住宅用 建物（一戸建以外）', ''], ['住宅用 土地（契約件数・総面積）', ''], ['住宅用以外 建物（一戸建）', ''], ['住宅用以外 建物（一戸建以外）', ''], ['住宅用以外 土地（契約件数・総面積）', ''], ['駐車場（屋根付・青空）', '']]),
+      brFrame('地代家賃の内訳', ['支払先の住所・氏名', '賃借物件', '本年中の賃借料・権利金等', '左の賃借料のうち必要経費算入額'], fillRows(reDetails.rent, 2, (x) => [x.name, '', x.amount, x.amount], 4)),
+      brFrame('税理士・弁護士等の報酬・料金の内訳', ['支払先の住所・氏名', '本年中の報酬等の金額', '左のうち必要経費算入額', '源泉徴収税額'], fillRows([], 2, () => [], 4)),
+      brFrame('本年中における特殊事情・保証金等の運用状況', [''], [[''], [''], ['']]),
+      h('p', { class: 'muted small no-print', text: '支払先は科目の補助科目の名前です（修繕費は1行に科目ごとの合計）。借入金利子の内訳は金融機関以外からの借入れの分だけを書くので、金融機関の分は手で消してください。工事名・支払年月日・保有状況・税理士等の報酬・特殊事情は空欄です。' }),
     ];
   }
 

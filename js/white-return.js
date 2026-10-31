@@ -17,7 +17,7 @@
 //   ・控除額は「配偶者86万円、配偶者でなければ1人50万円」と「この控除をする前の事業所得等の金額を事業専従者の数に1を足した数で割った金額」の低い方
 //   ・白色申告者の事業専従者である人は、同一生計配偶者や扶養親族になれない
 // 科目と欄の対応は、一般用はテンプレートの科目コード、不動産所得用は目印（hint）で決める（科目名は利用者が変えられるため名前では判定しない）
-import { trialBalance, bySubAccount } from './ledger.js';
+import { trialBalance, bySubAccount, partnerSummary } from './ledger.js';
 import { isBsGroup } from './accounts.js';
 import { hasRealEstate, realEstateIncomeStatement, RE_SCALES } from './real-estate.js';
 import { isYen } from './money.js';
@@ -248,14 +248,14 @@ export function whiteReturnSet({ settings, accounts, period, journals, overrides
 
 /**
  * 2ページ目の内訳のうち帳簿から作れるもの（補助科目を相手先として使う）
- *   sales：売上（収入）金額の明細（雑収入を除く）、purchases：仕入金額の明細、rent：地代家賃、interest：利子割引料、wages：給料賃金
+ *   sales：売上（収入）金額の明細（雑収入を除く）、purchases：仕入金額の明細（どちらも上位4件と上記以外：partnerSummary）、rent：地代家賃、interest：利子割引料、wages：給料賃金
  */
 export function whiteDetails({ accounts, subAccounts = [], period, journals }) {
   const rows = trialBalance({ accounts, subAccounts, period, journals }).rows;
   const code = (c) => rows.filter((r) => r.account.group === 'sga' && r.account.template && r.account.code === c);
   return {
-    sales: bySubAccount(rows.filter((r) => r.account.group === 'sales' && !(r.account.template && r.account.code === MISC_INCOME_CODE))),
-    purchases: bySubAccount(rows.filter((r) => r.account.group === 'cost_of_sales' && r.account.role !== 'opening_inventory' && r.account.role !== 'closing_inventory')),
+    sales: partnerSummary(rows.filter((r) => r.account.group === 'sales' && !(r.account.template && r.account.code === MISC_INCOME_CODE))),
+    purchases: partnerSummary(rows.filter((r) => r.account.group === 'cost_of_sales' && r.account.role !== 'opening_inventory' && r.account.role !== 'closing_inventory')),
     rent: bySubAccount(code('615')),
     interest: bySubAccount(code('614')),
     wages: bySubAccount(code('612')),

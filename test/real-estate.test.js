@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { openDB, ValidationError } from '../js/db.js';
 import { templateAccounts, realEstateAccounts, validateAccount, GROUP_BY_ID, RE_GROUPS } from '../js/accounts.js';
-import { realEstateIncomeStatement, blueReturnSet, allocateBlueDeduction, realEstateForFirstTable, realEstateDetails, isRealEstateAsset, hasRealEstate, deductionLimited, validateBlueReturnSettings } from '../js/real-estate.js';
+import { realEstateIncomeStatement, blueReturnSet, allocateBlueDeduction, realEstateForFirstTable, realEstateDetails, realEstateBalanceSheet, RE_BS_ASSET_LINES, isRealEstateAsset, hasRealEstate, deductionLimited, validateBlueReturnSettings } from '../js/real-estate.js';
 import { blueIncomeStatement, depreciationTable, blueBalanceSheet, blueDeductionOptions } from '../js/blue-return.js';
 import { incomeStatement, balanceSheet, closingRows } from '../js/statements.js';
 import { computeIncomeTax, DEFAULT_INCOME_TAX } from '../js/income-tax.js';
@@ -189,6 +189,19 @@ test('決算書（損益計算書・貸借対照表）：事業所得と不動�
   assert.equal(blue.balanced, true);
   // 様式に無い預り敷金・保証金は空欄の行に入る
   assert.ok(blue.liabilities.some((x) => x.label === '預り敷金・保証金' && x.blank && x.closing === 160000));
+  // 不動産所得用の様式の行：預り敷金・保証金は「保証金・敷金」の行に入り、合計は同じ
+  const re = realEstateBalanceSheet({ accounts: b.accounts, period: b.period, journals, incomeBeforeDeduction: set.incomeBeforeDeduction });
+  assert.equal(re.balanced, true);
+  assert.deepEqual(re.totals, blue.totals);
+  assert.deepEqual(re.liabilities.find((x) => x.label === '保証金・敷金'), { label: '保証金・敷金', name: '預り敷金・保証金', opening: 0, closing: 160000 });
+  assert.equal(re.liabilities.some((x) => x.blank && x.label === '預り敷金・保証金'), false);
+  assert.deepEqual(re.assets.filter((x) => !x.blank).map((x) => x.label), RE_BS_ASSET_LINES.filter(([c]) => c !== null).map(([, l]) => l));
+  assert.equal(re.assets.find((x) => x.label === '借地権').closing, 0);
+  // 空欄の行は様式の行数まで埋める（資産5行・負債18行。どちらも24行）
+  assert.equal(re.assets.length, 24);
+  assert.equal(re.liabilities.length, 3 + 18 + 3);
+  assert.equal(re.assets.at(-1).label, '事業主貸');
+  assert.equal(re.liabilities.at(-1).label, '青色申告特別控除前の所得金額');
 });
 
 test('収入の内訳：賃借人（補助科目）ごとに賃貸料・礼金等をまとめる。給料賃金・専従者給与の内訳', () => {
@@ -203,6 +216,7 @@ test('収入の内訳：賃借人（補助科目）ごとに賃貸料・礼金�
   assert.deepEqual(d.family, [{ name: '専従者給与（不動産）', amount: 100000 }]);
   assert.deepEqual(d.interest, [{ name: '借入金利子（不動産）', amount: 200000 }]);
   assert.deepEqual(d.rent, []);
+  assert.deepEqual(d.repairs, [{ name: '修繕費（不動産）', amount: 50000 }]);
 });
 
 test('減価償却費の計算：償却費の科目が不動産経費の資産は不動産所得用、それ以外は一般用', () => {

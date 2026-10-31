@@ -20,7 +20,7 @@
 //   ・事業として行われていない貸付けでは、青色事業専従者給与は必要経費にならない
 // 科目と欄の対応は目印（hint）で決める（科目名は利用者が変えられるため名前では判定しない）
 import { trialBalance, bySubAccount } from './ledger.js';
-import { blueIncomeStatement, blueDeductionFor } from './blue-return.js';
+import { blueIncomeStatement, blueDeductionFor, blueBalanceSheet } from './blue-return.js';
 import { isYen } from './money.js';
 
 /** 設定の不動産所得：なし・事業所得と両方・不動産所得だけ */
@@ -196,7 +196,60 @@ export function realEstateDetails({ accounts, subAccounts = [], period, journals
     family: bySubAccount(rows.filter((r) => r.account.group === 're_family_salary')),
     rent: bySubAccount(byHint('re_rent')),
     interest: bySubAccount(byHint('re_interest')),
+    repairs: bySubAccount(byHint('re_repairs')),
   };
+}
+
+/**
+ * 青色申告決算書（不動産所得用）4ページの貸借対照表の行（国税庁 令和7年分 様式 NTA0KOA220040080）
+ * 目印は個人のテンプレートの科目コード（普通預金112・定期預金111・当座預金110 は「その他の預金」）。'' は該当する科目の無い行、null は空欄の行
+ */
+export const RE_BS_ASSET_LINES = [
+  ['100', '現金'],
+  ['112', '普通預金'],
+  ['111', '定期預金'],
+  ['110', 'その他の預金'],
+  ['120', '受取手形'],
+  ['', '未収賃貸料'],
+  ['152', '未収金'],
+  ['130', '有価証券'],
+  ['150', '前払金'],
+  ['151', '貸付金'],
+  ['200', '建物'],
+  ['201', '建物附属設備'],
+  ['', '構築物'],
+  ['', '船舶'],
+  ['204', '工具器具備品'],
+  ['205', '土地'],
+  ['', '借地権'],
+  ['', '公共施設負担金'],
+  [null, ''],
+  ['290', '事業主貸'],
+];
+export const RE_BS_LIABILITY_LINES = [
+  ['302', '借入金'],
+  ['303', '未払金'],
+  ['hint:re_deposits', '保証金・敷金'],
+  [null, ''],
+  ['400', '事業主借'],
+  ['410', '元入金'],
+];
+/** 様式の空欄の行数（資産5行・負債18行） */
+export const RE_BS_BLANKS = { assets: 5, liabilities: 18 };
+
+/**
+ * 不動産所得用の貸借対照表（資産負債調）。行は様式のとおりで、様式に行の無い科目は空欄の行に科目名で入る。
+ * 空欄の行が様式の行数（RE_BS_BLANKS）に足りないときは、金額0・欄名なしの行（empty）で埋める
+ */
+export function realEstateBalanceSheet({ accounts, period, journals, incomeBeforeDeduction }) {
+  const bs = blueBalanceSheet({ accounts, period, journals, incomeBeforeDeduction, assetLines: RE_BS_ASSET_LINES, liabilityLines: RE_BS_LIABILITY_LINES });
+  const pad = (list, lines, n) => {
+    const at = lines.findIndex(([code]) => code === null);
+    const used = list.filter((x) => x.blank).length;
+    const fill = Array.from({ length: Math.max(0, n - used) }, () => ({ label: '', opening: 0, closing: 0, blank: true, empty: true }));
+    return [...list.slice(0, at + used), ...fill, ...list.slice(at + used)];
+  };
+  return { ...bs, assets: pad(bs.assets, RE_BS_ASSET_LINES, RE_BS_BLANKS.assets), liabilities: pad(bs.liabilities, RE_BS_LIABILITY_LINES, RE_BS_BLANKS.liabilities) };
 }
 
 /** 不動産所得の資産か（償却費の科目が不動産経費） */

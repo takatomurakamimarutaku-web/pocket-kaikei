@@ -9,6 +9,32 @@ import { formatPeriod } from '../period.js';
 const MARU = '⓪①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚㉛㉜㉝㉞㉟㊱㊲㊳㊴㊵㊶㊷㊸㊹㊺';
 const maru = (n) => MARU[n] || String(n);
 
+/** 様式の内訳・明細の枠：列名と行（数値は金額のマス、null・'' は空欄）。帳簿から作れない欄は空欄のまま印刷して手で書ける（一般用・収支内訳書で使う） */
+const cellOf = (c) => (typeof c === 'number' ? amountCell('td', c) : h('td', { text: c ?? '' }));
+export function brFrame(caption, cols, rows, { total = null } = {}) {
+  return h(
+    'div',
+    { class: 'table-wrap' },
+    h(
+      'table',
+      { class: `report blue-return br-frame${cols.length > 3 ? ' br-wide' : ''}` },
+      h('caption', { text: caption }),
+      h('thead', {}, h('tr', {}, cols.map((c, i) => h('th', { scope: 'col', class: i === 0 && c === '欄' ? 'br-no' : '', text: c })))),
+      h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c, i) => (i === 0 && cols[0] === '欄' ? h('td', { class: 'br-no', text: c }) : cellOf(c))))), total ? h('tr', { class: 'mt-strong' }, total.map(cellOf)) : null),
+    ),
+  );
+}
+
+/** 様式の行数に合わせる：list を toRow で行にし、足りない分は width 列の空行で埋める */
+export function fillRows(list, n, toRow, width) {
+  return [...list.slice(0, n).map(toRow), ...Array.from({ length: Math.max(0, n - list.length) }, () => Array.from({ length: width }, () => ''))];
+}
+
+/** 売上（収入）金額の明細・仕入金額の明細（4行＋上記以外の計＋計）。extraRows は計の前に足す行（収支内訳書の軽減税率対象の欄） */
+export function partnerFrame(caption, p, amountLabel, totalLabel, total, { extraRows = [] } = {}) {
+  return brFrame(caption, ['相手先名', '所在地', '登録番号（法人番号）', amountLabel], [...fillRows(p.rows, 4, (x) => [x.name, '', '', x.amount], 4), ['上記以外の計', '', '', p.others || ''], ...extraRows], { total: [totalLabel, '', '', total] });
+}
+
 /** 減価償却費の計算の表（一般用・不動産所得用の3ページ目で使う） */
 export function depreciationTableView(t) {
   const head = h('thead', {}, h('tr', {}, ['名称', '取得年月', '取得価額', '償却の基礎になる金額', '償却方法', '耐用年数', '償却率', '本年中の償却期間', '本年分の普通償却費', '割増（特別）償却費', '本年分の償却費合計', '事業専用割合', '本年分の必要経費算入額', '未償却残高', '摘要'].map((c) => h('th', { scope: 'col', text: c }))));
@@ -63,21 +89,8 @@ export async function render({ app, outlet, query }) {
   const row = (no, label, amount, { strong = false, sub = '' } = {}) =>
     h('tr', { class: strong ? 'mt-strong' : '' }, h('td', { class: 'br-no', text: no ? maru(no) : '' }), h('th', { scope: 'row' }, label, sub ? h('span', { class: 'muted small block', text: sub }) : null), amountCell('td', amount));
   const table = (caption, rows, head = null) => h('div', { class: 'table-wrap' }, h('table', { class: 'report blue-return' }, caption ? h('caption', { text: caption }) : null, head, h('tbody', {}, rows)));
-  // 様式の内訳・明細の枠：列名と行（数値は金額のマス、null・'' は空欄）。帳簿から作れない欄は空欄のまま印刷して手で書ける
-  const cellOf = (c) => (typeof c === 'number' ? amountCell('td', c) : h('td', { text: c ?? '' }));
-  const frame = (caption, cols, rows, { total = null } = {}) =>
-    h(
-      'div',
-      { class: 'table-wrap' },
-      h(
-        'table',
-        { class: `report blue-return br-frame${cols.length > 3 ? ' br-wide' : ''}` },
-        h('caption', { text: caption }),
-        h('thead', {}, h('tr', {}, cols.map((c, i) => h('th', { scope: 'col', class: i === 0 && c === '欄' ? 'br-no' : '', text: c })))),
-        h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c, i) => (i === 0 && cols[0] === '欄' ? h('td', { class: 'br-no', text: c }) : cellOf(c))))), total ? h('tr', { class: 'mt-strong' }, total.map(cellOf)) : null),
-      ),
-    );
-  const fill = (list, n, toRow, width) => [...list.slice(0, n).map(toRow), ...Array.from({ length: Math.max(0, n - list.length) }, () => Array.from({ length: width }, () => ''))];
+  const frame = brFrame;
+  const fill = fillRows;
   const sumOf = (list) => list.reduce((t, x) => t + x.amount, 0);
 
   function page1(is) {
@@ -194,8 +207,7 @@ export async function render({ app, outlet, query }) {
   // 3ページ目：売上（収入）金額の明細・仕入金額の明細（相手先は補助科目）、利子割引料・税理士等の報酬の内訳、本年中における特殊事情
   function page3Details(is) {
     const d = blueDetails({ accounts, subAccounts, period, journals });
-    const partner = (caption, p, amountLabel, totalLabel, total) =>
-      frame(caption, ['相手先名', '所在地', '登録番号（法人番号）', amountLabel], [...fill(p.rows, 4, (x) => [x.name, '', '', x.amount], 4), ['上記以外の計', '', '', p.others || '']], { total: [totalLabel, '', '', total] });
+    const partner = partnerFrame;
     return [
       partner('売上（収入）金額の明細', d.sales, '売上（収入）金額', '計（①）', is.lines[1]),
       partner('仕入金額の明細', d.purchases, '仕入金額', '計', d.purchases.total),
