@@ -3,11 +3,10 @@
 // 「償却予定表」「月次償却額一覧表」を参考に、資産を1行ずつ並べて集計の単位（科目・種類・設置場所・部門）ごとに小計・合計を付ける
 import { fmt } from './print-layout.js';
 import { CATEGORY_BY_ID, usesLife, isDisposable, methodLabel } from './depreciation.js';
-import { registerDetail, groupDetails, sortDetails, sumDetails, disposalList, depreciationForecast, monthlyTable, movesIn, GROUP_KEYS } from './asset-reports.js';
+import { registerDetail, groupDetails, sortDetails, sumDetails, disposalList, depreciationForecast, monthlyTable, movesIn, groupTitle, subtotalLabel } from './asset-reports.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
 const b0 = (n) => (n ? fmt(n) : '');
-const groupName = (key) => GROUP_KEYS.find((g) => g.id === key)?.label ?? '勘定科目';
 
 /** 帳票の種類（印刷条件の選択肢） */
 export const ASSET_DOCS = [
@@ -27,12 +26,14 @@ function methodCell(a) {
 }
 
 /** 摘要：売却・除却・特別償却・部門・メモ */
-function noteText(d, { departmentById, groupBy }) {
+function noteText(d, { accountById, departmentById, groupBy }) {
   const a = d.asset;
   const disposal = a.disposedOn && isDisposable(a.method) ? `${slash(a.disposedOn)} ${{ sell: '売却', retire: '除却' }[a.disposalType] ?? '除却'}` : '';
   const dep = groupBy !== 'department' && a.departmentId ? departmentById?.get(a.departmentId)?.name : '';
+  // 勘定科目ごとに集計しないときは、どの科目の資産か分かるように科目名を出す
+  const acc = groupBy !== 'account' ? accountById?.get(a.accountId)?.name : '';
   const comp = a.compressionAmount ? `圧縮記帳 ${fmt(a.compressionAmount)}${a.compressionName ? `（${a.compressionName}）` : ''}` : '';
-  return [disposal, d.special ? `うち特別償却 ${fmt(d.special)}` : '', comp, dep ? `部門 ${dep}` : '', a.memo || ''].filter(Boolean).join('　');
+  return [acc ? `科目 ${acc}` : '', disposal, d.special ? `うち特別償却 ${fmt(d.special)}` : '', comp, dep ? `部門 ${dep}` : '', a.memo || ''].filter(Boolean).join('　');
 }
 
 /**
@@ -43,10 +44,11 @@ function noteText(d, { departmentById, groupBy }) {
 function groupedRows(details, { groupBy, sortBy, names, columns, cellsOf, sumCells }) {
   const rows = [];
   const groups = groupDetails(details, groupBy, names);
+  const grouped = groupBy !== 'none';
   for (const g of groups) {
-    rows.push({ kind: 'group', cells: [{ text: g.label, span: columns.length }] });
-    for (const d of sortDetails(g.items, sortBy)) rows.push({ cells: cellsOf(d) });
-    if (groups.length > 1 || g.items.length > 1) rows.push({ kind: 'subtotal', cells: sumCells(`${groupName(groupBy)}計（${g.items.length}件）`, g.sum, g.items) });
+    if (grouped) rows.push({ kind: 'group', cells: [{ text: groupTitle(groupBy, g.label), span: columns.length }] });
+    for (const d of sortDetails(g.items, sortBy, names)) rows.push({ cells: cellsOf(d) });
+    if (grouped && (groups.length > 1 || g.items.length > 1)) rows.push({ kind: 'subtotal', cells: sumCells(subtotalLabel(g.label, g.items.length), g.sum, g.items) });
   }
   rows.push({ kind: 'total', cells: sumCells(`合計（${details.length}件）`, sumDetails(details), details) });
   return rows;
@@ -98,7 +100,7 @@ export function assetRegisterDoc(register, { period, accountById, departmentById
       ...(individual ? [fmt(d.business)] : []),
       fmt(d.bookClosing),
       fmt(d.accumulatedClosing),
-      noteText(d, { departmentById, groupBy }),
+      noteText(d, { accountById, departmentById, groupBy }),
     ];
   };
   const sumCells = (label, s) => [
@@ -198,11 +200,11 @@ export function forecastDoc(assets, periods, period, { accountById, departmentBy
   const rows = [];
   const groups = groupDetails(details.map((d) => ({ ...d, ...ZERO })), groupBy, { accountById, departmentById });
   for (const g of groups) {
-    rows.push({ kind: 'group', cells: [{ text: g.label, span: columns.length }] });
-    for (const r of sortDetails(g.items, sortBy)) rows.push({ cells: [r.asset.assetNo ? `${r.asset.assetNo}　${r.asset.name}` : r.asset.name, fmt(r.cost), methodCell(r.asset), ...r.amounts.map(b0), fmt(r.closing.at(-1))] });
-    if (groups.length > 1 || g.items.length > 1) {
+    if (groupBy !== 'none') rows.push({ kind: 'group', cells: [{ text: groupTitle(groupBy, g.label), span: columns.length }] });
+    for (const r of sortDetails(g.items, sortBy, { accountById, departmentById })) rows.push({ cells: [r.asset.assetNo ? `${r.asset.assetNo}　${r.asset.name}` : r.asset.name, fmt(r.cost), methodCell(r.asset), ...r.amounts.map(b0), fmt(r.closing.at(-1))] });
+    if (groupBy !== 'none' && (groups.length > 1 || g.items.length > 1)) {
       const s = sumOf(g.items);
-      rows.push({ kind: 'subtotal', cells: [`${groupName(groupBy)}計（${g.items.length}件）`, fmt(s.cost), '', ...s.amounts.map(fmt), fmt(s.closing)] });
+      rows.push({ kind: 'subtotal', cells: [subtotalLabel(g.label, g.items.length), fmt(s.cost), '', ...s.amounts.map(fmt), fmt(s.closing)] });
     }
   }
   const t = sumOf(details);
@@ -236,11 +238,11 @@ export function monthlyDoc(register, period, { accountById, departmentById, head
   const rows = [];
   const groups = groupDetails(details, groupBy, { accountById, departmentById });
   for (const g of groups) {
-    rows.push({ kind: 'group', cells: [{ text: g.label, span: columns.length }] });
-    for (const r of sortDetails(g.items, sortBy)) rows.push({ cells: [r.asset.name, ...r.amounts.map(b0), fmt(r.total)] });
-    if (groups.length > 1 || g.items.length > 1) {
+    if (groupBy !== 'none') rows.push({ kind: 'group', cells: [{ text: groupTitle(groupBy, g.label), span: columns.length }] });
+    for (const r of sortDetails(g.items, sortBy, { accountById, departmentById })) rows.push({ cells: [r.asset.name, ...r.amounts.map(b0), fmt(r.total)] });
+    if (groupBy !== 'none' && (groups.length > 1 || g.items.length > 1)) {
       const s = sumOf(g.items);
-      rows.push({ kind: 'subtotal', cells: [`${groupName(groupBy)}計`, ...s.map(fmt), fmt(s.reduce((a, b) => a + b, 0))] });
+      rows.push({ kind: 'subtotal', cells: [subtotalLabel(g.label, g.items.length), ...s.map(fmt), fmt(s.reduce((a, b) => a + b, 0))] });
     }
   }
   rows.push({ kind: 'total', cells: ['合計', ...m.totals.map(fmt), fmt(m.total)] });

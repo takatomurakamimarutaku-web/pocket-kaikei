@@ -22,7 +22,19 @@ export const GROUP_KEYS = [
   { id: 'category', label: '種類' },
   { id: 'location', label: '設置場所' },
   { id: 'department', label: '部門' },
+  { id: 'none', label: '集計しない' },
 ];
+
+/** 集計の見出し（例：勘定科目：工具器具備品） */
+export function groupTitle(key, label) {
+  if (key === 'none') return '';
+  return `${GROUP_KEYS.find((g) => g.id === key)?.label ?? ''}：${label}`;
+}
+
+/** 小計の行の見出し（何の小計か分かるように、見出しの名前を付ける。例：工具器具備品 計（3件）） */
+export function subtotalLabel(label, count) {
+  return `${label} 計${count != null ? `（${count}件）` : ''}`;
+}
 
 const inPeriod = (d, p) => Boolean(d) && d >= p.startDate && d <= p.endDate;
 
@@ -105,7 +117,7 @@ export function groupValue(asset, key) {
   if (key === 'category') return asset.category;
   if (key === 'location') return asset.location || '';
   if (key === 'department') return asset.departmentId || '';
-  return '';
+  return ''; // 集計しない
 }
 
 /**
@@ -117,7 +129,7 @@ export function groupLabel(key, value, { accountById, departmentById } = {}) {
   if (key === 'category') return CATEGORY_BY_ID[value]?.label ?? '（種類なし）';
   if (key === 'location') return value || '（設置場所の指定なし）';
   if (key === 'department') return departmentById?.get(value)?.name ?? '（部門の指定なし）';
-  return '';
+  return 'すべての資産';
 }
 
 /**
@@ -145,27 +157,55 @@ export function groupDetails(details, key, names = {}) {
 /** 並び順 */
 export const SORT_KEYS = [
   { id: 'no', label: '資産番号順' },
+  { id: 'account', label: '勘定科目順（科目コード）' },
+  { id: 'category', label: '種類順' },
+  { id: 'department', label: '部門順' },
+  { id: 'location', label: '設置場所順' },
+  { id: 'acquired', label: '取得日順' },
   { id: 'date', label: '使い始めた日順' },
-  { id: 'cost', label: '取得価額の大きい順' },
   { id: 'name', label: '名前順' },
+  { id: 'cost', label: '取得価額の大きい順' },
+  { id: 'amount', label: '当期償却費の大きい順' },
+  { id: 'book', label: '期末帳簿価額の大きい順' },
+  { id: 'life', label: '耐用年数の短い順' },
 ];
 
-/** 資産の並べ替え（同じなら資産番号・名前の順） */
-export function sortDetails(details, by = 'no') {
-  const no = (a) => a.assetNo || '￿';
+/**
+ * 資産の並べ替え（同じなら資産番号・名前の順。指定なし・空欄は最後）
+ * @param {{ accountById?: Map, departmentById?: Map }} names 勘定科目のコード・部門の並び順に使う
+ */
+export function sortDetails(details, by = 'no', names = {}) {
+  const LAST = '￿';
+  const no = (a) => a.assetNo || LAST;
   const tie = (x, y) => no(x.asset).localeCompare(no(y.asset), 'ja', { numeric: true }) || String(x.asset.name).localeCompare(String(y.asset.name), 'ja');
+  const text = (f) => (x, y) => f(x.asset).localeCompare(f(y.asset), 'ja', { numeric: true }) || tie(x, y);
+  const num = (f) => (x, y) => f(y) - f(x) || tie(x, y); // 大きい順
+  const catOrder = Object.keys(CATEGORY_BY_ID);
+  const dep = (a) => {
+    const d = a.departmentId ? names.departmentById?.get(a.departmentId) : null;
+    return d ? `${String(d.sortOrder ?? 0).padStart(6, '0')} ${d.name}` : LAST;
+  };
   const cmp = {
     no: tie,
-    date: (x, y) => (x.asset.startedOn < y.asset.startedOn ? -1 : x.asset.startedOn > y.asset.startedOn ? 1 : tie(x, y)),
-    cost: (x, y) => (y.cost ?? y.asset.cost) - (x.cost ?? x.asset.cost) || tie(x, y),
+    account: text((a) => names.accountById?.get(a.accountId)?.code ?? LAST),
+    category: text((a) => String(catOrder.indexOf(a.category)).padStart(3, '0')),
+    department: text(dep),
+    location: text((a) => a.location || LAST),
+    acquired: text((a) => a.acquiredOn || LAST),
+    date: text((a) => a.startedOn || LAST),
     name: (x, y) => String(x.asset.name).localeCompare(String(y.asset.name), 'ja') || tie(x, y),
+    cost: num((d) => d.cost ?? d.asset.cost),
+    amount: num((d) => d.amount ?? d.row?.amount ?? d.total ?? d.amounts?.[0] ?? 0),
+    book: num((d) => d.bookClosing ?? d.closing?.at?.(-1) ?? 0),
+    life: text((a) => (usesLife(a.method) && a.usefulLife ? String(a.usefulLife).padStart(3, '0') : LAST)),
   }[by] || tie;
   return [...details].sort(cmp);
 }
 
 /**
  * 絞り込み
- * @param {{ statuses?: string[], q?: string, accountId?: string, category?: string, departmentId?: string, location?: string }} f
+ * @param {{ statuses?: string[], q?: string, accountId?: string, category?: string, departmentId?: string, location?: string, method?: string, from?: string, to?: string }} f
+ *   from・to：取得日の範囲（YYYY-MM-DD。片方だけでもよい）
  *   statuses：状態（空ならすべて）、q：名前・資産番号・設置場所・購入先・細目・メモに含む文字
  */
 export function matchAsset(asset, status, f = {}) {
@@ -174,6 +214,9 @@ export function matchAsset(asset, status, f = {}) {
   if (f.category && asset.category !== f.category) return false;
   if (f.departmentId && (asset.departmentId || '') !== f.departmentId) return false;
   if (f.location && (asset.location || '') !== f.location) return false;
+  if (f.method && asset.method !== f.method) return false;
+  if (f.from && !(asset.acquiredOn >= f.from)) return false;
+  if (f.to && !(asset.acquiredOn <= f.to)) return false;
   const q = String(f.q ?? '').trim().toLowerCase();
   if (q) {
     const text = [asset.name, asset.assetNo, asset.location, asset.supplier, asset.structure, asset.detail, asset.memo].filter(Boolean).join(' ').toLowerCase();

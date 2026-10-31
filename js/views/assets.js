@@ -1,11 +1,13 @@
 // 固定資産台帳：台帳・増減明細・償却予定・月次償却・取得と除売却を切り替えて見る。状態・科目・種類・部門・文字で絞り込み、集計の単位と並び順を選ぶ
 import { h, put, emptyState, amountCell, saveFile, stackTable, segmented, showToast, confirmDialog, errorBox } from '../ui.js';
-import { assetRegister, smeUsage, depreciationSchedule, methodLabel, usesLife, CATEGORY_BY_ID, ASSET_CATEGORIES } from '../depreciation.js';
+import { assetRegister, smeUsage, depreciationSchedule, methodLabel, usesLife, CATEGORY_BY_ID, ASSET_CATEGORIES, METHODS } from '../depreciation.js';
 import {
   registerDetail,
   otherStatus,
   matchAsset,
   groupDetails,
+  groupTitle,
+  subtotalLabel,
   sortDetails,
   sumDetails,
   depreciationForecast,
@@ -63,9 +65,13 @@ export async function render({ app, outlet, query = {} }) {
     accountId: query.account || '',
     category: query.category || '',
     departmentId: query.department || '',
+    location: query.location || '',
+    method: query.method || '',
+    from: /^\d{4}-\d{2}-\d{2}$/.test(query.from || '') ? query.from : '',
+    to: /^\d{4}-\d{2}-\d{2}$/.test(query.to || '') ? query.to : '',
     years: query.years === '10' ? 10 : 5,
   };
-  const filterOf = () => ({ statuses: st.status && st.status !== 'all' ? [st.status] : [], q: st.q, accountId: st.accountId, category: st.category, departmentId: st.departmentId });
+  const filterOf = () => ({ statuses: st.status && st.status !== 'all' ? [st.status] : [], q: st.q, accountId: st.accountId, category: st.category, departmentId: st.departmentId, location: st.location, method: st.method, from: st.from, to: st.to });
   const details = () => allDetails.filter((d) => matchAsset(d.asset, d.status, filterOf()));
   const otherList = () => others.filter((o) => (st.status === '' || st.status === 'all' || st.status === o.status) && matchAsset(o.asset, o.status, { ...filterOf(), statuses: [] }));
   function syncUrl() {
@@ -78,6 +84,10 @@ export async function render({ app, outlet, query = {} }) {
     if (st.accountId) p.set('account', st.accountId);
     if (st.category) p.set('category', st.category);
     if (st.departmentId) p.set('department', st.departmentId);
+    if (st.location) p.set('location', st.location);
+    if (st.method) p.set('method', st.method);
+    if (st.from) p.set('from', st.from);
+    if (st.to) p.set('to', st.to);
     if (st.years !== 5) p.set('years', String(st.years));
     const s = p.toString();
     history.replaceState(history.state, '', `#/assets${s ? `?${s}` : ''}`);
@@ -94,6 +104,10 @@ export async function render({ app, outlet, query = {} }) {
   const usedAccounts = accounts.filter((a) => assets.some((x) => x.accountId === a.id)).sort(compareAccounts);
   const usedCats = ASSET_CATEGORIES.filter((c) => assets.some((x) => x.category === c.id));
   const usedDeps = departments.filter((d) => assets.some((x) => x.departmentId === d.id)).sort(compareDepartments);
+  const usedLocations = [...new Set(assets.map((a) => a.location).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'));
+  const usedMethods = METHODS.filter((m) => assets.some((a) => a.method === m.id));
+  const dateInput = (id, label, key) =>
+    h('label', { class: 'asset-filter', for: id }, h('span', { class: 'muted small', text: label }), h('input', { id, type: 'date', value: st[key], onchange: (e) => set(key, e.target.value) }));
   const search = h('input', { type: 'search', class: 'search-input', id: 'asset-q', placeholder: '名前・資産番号・設置場所・購入先・メモ', 'aria-label': '固定資産を検索', value: st.q, enterkeyhint: 'search', oninput: (e) => set('q', e.target.value) });
   const filters = h(
     'div',
@@ -101,7 +115,7 @@ export async function render({ app, outlet, query = {} }) {
     search,
     h(
       'details',
-      { class: 'asset-more', open: Boolean(st.status || st.accountId || st.category || st.departmentId || st.group !== 'account' || st.sort !== 'no') },
+      { class: 'asset-more', open: Boolean(st.status || st.accountId || st.category || st.departmentId || st.location || st.method || st.from || st.to || st.group !== 'account' || st.sort !== 'no') },
       h('summary', { text: '絞り込み・集計の単位・並び順' }),
       h(
       'div',
@@ -110,7 +124,11 @@ export async function render({ app, outlet, query = {} }) {
       usedAccounts.length > 1 ? select('asset-account', '勘定科目', st.accountId, [['', 'すべて'], ...usedAccounts.map((a) => [a.id, a.name])], (v) => set('accountId', v)) : null,
       usedCats.length > 1 ? select('asset-category', '種類', st.category, [['', 'すべて'], ...usedCats.map((c) => [c.id, c.label])], (v) => set('category', v)) : null,
       usedDeps.length ? select('asset-department', '部門', st.departmentId, [['', 'すべて'], ...usedDeps.map((d) => [d.id, d.name])], (v) => set('departmentId', v)) : null,
-      select('asset-group', '集計の単位', st.group, GROUP_KEYS.filter((g) => g.id !== 'department' || departments.length).map((g) => [g.id, `${g.label}ごと`]), (v) => set('group', v)),
+      usedLocations.length ? select('asset-location', '設置場所', st.location, [['', 'すべて'], ...usedLocations.map((l) => [l, l])], (v) => set('location', v)) : null,
+      usedMethods.length > 1 ? select('asset-method', '償却方法', st.method, [['', 'すべて'], ...usedMethods.map((m) => [m.id, m.short || m.label])], (v) => set('method', v)) : null,
+      dateInput('asset-from', '取得日（から）', 'from'),
+      dateInput('asset-to', '取得日（まで）', 'to'),
+      select('asset-group', '集計の単位', st.group, GROUP_KEYS.filter((g) => g.id !== 'department' || departments.length).map((g) => [g.id, g.id === 'none' ? g.label : `${g.label}ごと`]), (v) => set('group', v)),
       select('asset-sort', '並び順', st.sort, SORT_KEYS.map((s) => [s.id, s.label]), (v) => set('sort', v)),
       ),
     ),
@@ -125,7 +143,7 @@ export async function render({ app, outlet, query = {} }) {
       ? {
           options: [
             { key: 'doc', label: '帳票', type: 'select', choices: ASSET_DOCS, value: docKey() },
-            { key: 'group', label: '集計の単位', type: 'select', choices: GROUP_KEYS.map((g) => [g.id, `${g.label}ごと`]), value: st.group },
+            { key: 'group', label: '集計の単位', type: 'select', choices: GROUP_KEYS.map((g) => [g.id, g.id === 'none' ? g.label : `${g.label}ごと`]), value: st.group },
             { key: 'sort', label: '並び順', type: 'select', choices: SORT_KEYS.map((s) => [s.id, s.label]), value: st.sort },
             { key: 'filtered', label: '画面の絞り込みを使う', type: 'check', value: true },
           ],
@@ -165,6 +183,7 @@ export async function render({ app, outlet, query = {} }) {
     const groups = groupDetails(list, st.group, names);
     const total = sumDetails(list);
     const label = GROUP_KEYS.find((g) => g.id === st.group).label;
+    const grouped = st.group !== 'none';
     const sumRow = (head, s, count) => h('tr', {}, h('th', { scope: 'row' }, head, count != null ? h('span', { class: 'muted small block', text: `${count}件` }) : null), cell(s.costClosing + s.costDecrease), cell(s.bookOpening), cell(s.bookIncrease - s.bookDecrease), cell(s.amount), cell(s.bookClosing), cell(s.accumulatedClosing));
     const summary = tableOf(
       `${label}ごとの合計`,
@@ -215,9 +234,9 @@ export async function render({ app, outlet, query = {} }) {
       );
     };
     return [
-      list.length ? summary : null,
+      list.length && grouped ? summary : null,
       list.length ? h('div', { class: 'actions no-print' }, csvButton('CSVで書き出す', () => assetsCsv(list, { accountById, departmentById, individual }), 'assets'), settings.entityType === 'corporation' ? h('a', { class: 'btn', href: '#/reports/schedule16', text: '別表十六を見る' }) : null) : null,
-      ...groups.map((g) => [h('h2', { class: 'menu-group-title', text: `${g.label}（${g.items.length}件・償却費 ${formatYen(g.sum.amount)}円）` }), h('ul', { class: 'menu-group' }, sortDetails(g.items, st.sort).map(card))]),
+      ...groups.map((g) => [h('h2', { class: 'menu-group-title', text: `${grouped ? groupTitle(st.group, g.label) : 'すべての資産'}（${g.items.length}件・償却費 ${formatYen(g.sum.amount)}円）` }), h('ul', { class: 'menu-group' }, sortDetails(g.items, st.sort, names).map(card))]),
       list.length ? null : st.status === '' || ['active', 'new', 'disposed'].includes(st.status) ? empty() : null,
     ];
   }
@@ -258,15 +277,15 @@ export async function render({ app, outlet, query = {} }) {
     const rows = [];
     const groups = groupDetails(list, st.group, names);
     for (const g of groups) {
-      rows.push(h('tr', { class: 'tb-group' }, h('th', { colspan: heads.length, scope: 'colgroup', text: g.label })));
-      for (const d of sortDetails(g.items, st.sort)) rows.push(h('tr', {}, nameCell(d.asset), ...nums(d)));
-      if (groups.length > 1) rows.push(h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: `${g.label} 計` }), ...nums(g.sum)));
+      if (st.group !== 'none') rows.push(h('tr', { class: 'tb-group' }, h('th', { colspan: heads.length, scope: 'colgroup', text: groupTitle(st.group, g.label) })));
+      for (const d of sortDetails(g.items, st.sort, names)) rows.push(h('tr', {}, nameCell(d.asset), ...nums(d)));
+      if (st.group !== 'none' && groups.length > 1) rows.push(h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: subtotalLabel(g.label, g.items.length) }), ...nums(g.sum)));
     }
     const total = sumDetails(list);
     const csv = () =>
       toCsv([
         ['資産番号', '資産名', '勘定科目', '取得価額（期首）', '取得価額（増加）', '取得価額（減少）', '取得価額（期末）', '帳簿価額（期首）', '帳簿価額（増加）', '帳簿価額（減少）', '償却費', '帳簿価額（期末）', '減価償却累計額（期首）', '減価償却累計額（期末）'],
-        ...sortDetails(list, st.sort).map((d) => [d.asset.assetNo || '', d.asset.name, accountById.get(d.asset.accountId)?.name ?? '', d.costOpening, d.costIncrease, d.costDecrease, d.costClosing, d.bookOpening, d.bookIncrease, d.bookDecrease, d.amount, d.bookClosing, d.accumulatedOpening, d.accumulatedClosing]),
+        ...sortDetails(list, st.sort, names).map((d) => [d.asset.assetNo || '', d.asset.name, accountById.get(d.asset.accountId)?.name ?? '', d.costOpening, d.costIncrease, d.costDecrease, d.costClosing, d.bookOpening, d.bookIncrease, d.bookDecrease, d.amount, d.bookClosing, d.accumulatedOpening, d.accumulatedClosing]),
       ]);
     return [
       h('p', { class: 'muted small', text: '期首帳簿価額＋増加−償却費−減少＝期末帳簿価額。減少は売却・除却した日の帳簿価額、累計額は取得価額−帳簿価額です。' }),
@@ -283,7 +302,7 @@ export async function render({ app, outlet, query = {} }) {
     if (!rows0.length) return [yearsSel, empty()];
     const heads = ['資産', ...f.ranges.map(rangeLabel), `${rangeLabel(f.ranges.at(-1))}末の帳簿価額`];
     const items = rows0.map((r) => ({ ...r, cost: r.asset.cost, status: '' }));
-    const sorted = sortDetails(items, st.sort);
+    const sorted = sortDetails(items, st.sort, names);
     const rows = sorted.map((r) => h('tr', {}, nameCell(r.asset), ...r.amounts.map((n) => cell(n, { blankZero: true })), cell(r.closing.at(-1))));
     const tot = f.ranges.map((_, i) => rows0.reduce((s, r) => s + r.amounts[i], 0));
     const csv = () => toCsv([['資産番号', '資産名', '勘定科目', '取得価額', ...f.ranges.map(rangeLabel), '期末帳簿価額（最後の年）'], ...sorted.map((r) => [r.asset.assetNo || '', r.asset.name, accountById.get(r.asset.accountId)?.name ?? '', r.asset.cost, ...r.amounts, r.closing.at(-1)])]);
@@ -304,7 +323,7 @@ export async function render({ app, outlet, query = {} }) {
     const booked = bookedDepreciation(journals);
     const mark = (mm) => (booked.annual ? '年1回で登録済み' : booked.months.has(mm) ? '登録済み' : '');
     const monthRows = m.months.map((mm, i) => h('tr', {}, h('th', { scope: 'row', text: mLabel(mm) }), cell(m.totals[i]), individual ? cell(m.businessTotals[i]) : null, h('td', { class: 'small', text: mark(mm) })));
-    const items = sortDetails(m.rows.map((r) => ({ ...r, cost: r.asset.cost })), st.sort);
+    const items = sortDetails(m.rows.map((r) => ({ ...r, cost: r.asset.cost })), st.sort, names);
     const csv = () => toCsv([['資産番号', '資産名', '勘定科目', ...m.months.map(mLabel), '合計'], ...items.map((r) => [r.asset.assetNo || '', r.asset.name, accountById.get(r.asset.accountId)?.name ?? '', ...r.amounts, r.total]), ['', '合計', '', ...m.totals, m.total]]);
     return [
       h('p', { class: 'muted small', text: '当期の償却費を、償却する月（使い始めた月から、売却・除却した月まで）に均等に割り振った額です。月次決算で月割りの償却費を見積もるときに使います。端数は後の月に寄せ、特別償却は最後の月に入れています。' }),
@@ -403,7 +422,7 @@ export async function render({ app, outlet, query = {} }) {
     const total = list.reduce((s, d) => s + d.amount, 0);
     const business = list.reduce((s, d) => s + d.business, 0);
     const closing = list.reduce((s, d) => s + d.bookClosing, 0);
-    const filtered = Boolean(st.q || st.status || st.accountId || st.category || st.departmentId);
+    const filtered = Boolean(st.q || st.status || st.accountId || st.category || st.departmentId || st.location || st.method || st.from || st.to);
     put(
       body,
       h(
