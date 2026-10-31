@@ -68,6 +68,8 @@ export async function render({ app, outlet }) {
     h(
       'ul',
       { class: 'menu-group' },
+      menu('#/advisor/simulation', '利益シミュレーション', '売上・変動費率・固定費を動かして、利益と損益分岐点を見る', 'chart', 'report'),
+      menu('#/advisor/annual', '年計（移動年計）', '12か月の合計の推移で、伸びているか落ちているかを見る', 'chart', 'report'),
       menu('#/budget', '予算の入力', '着地見込みの「予算」で使う月別の金額', 'flag', 'report'),
       menu('#/reports/cash-plan', '資金繰り表', '入金・支払の予定から、資金の残りを見る', 'calendar', 'report'),
       menu('#/reports/analysis', '経営分析', '収益性・安全性・損益分岐点', 'chart', 'report'),

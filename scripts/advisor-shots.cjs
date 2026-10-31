@@ -65,6 +65,20 @@ mkdirSync(OUT, { recursive: true });
     }
     await go('#/advisor/tax');
     await shot('05-tax');
+    await go('#/advisor/simulation');
+    if (!pc) {
+      const f = page.getByLabel('売上の増減');
+      await f.fill('10');
+      await f.dispatchEvent('change');
+      const t = page.getByLabel(/^目標の/);
+      await t.fill('5,000,000');
+      await t.dispatchEvent('change');
+      await page.waitForTimeout(300);
+      if (!(await page.locator('.sim-required').count())) errors.push(`${entity}: 必要売上高が出ない`);
+    }
+    await shot('07-simulation');
+    await go('#/advisor/annual');
+    await shot('08-annual');
     await go('#/advisor/saving');
     await shot('06-saving');
     // 利益が出ない見込み（法人のサンプル）では金額の入力欄が出ない

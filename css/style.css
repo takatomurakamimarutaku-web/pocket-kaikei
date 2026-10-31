@@ -1565,7 +1565,7 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .saving-more p.strong { margin: 8px 0 2px; }
 /* ---- 着地見込み：月ごと・季節変動の注意 ---- */
 .advisor-months-table tr.is-plan td { color: var(--muted); }
-.advisor-plan { margin-left: 6px; font-size: 0.65rem; padding: 0 6px; }
+.advisor-plan { margin-left: 6px; font-size: 0.65rem; padding: 0 6px; white-space: nowrap; }
 .advisor-months { margin-top: 4px; }
 .advisor-months > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 2px 0; }
 .advisor-month-grid { display: grid; grid-template-columns: 5.5em 1fr 1fr; gap: 4px 8px; align-items: center; margin: 6px 0; max-width: 28em; }
@@ -1579,3 +1579,14 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .advisor-advice p { margin: 4px 0 0; }
 .advisor-advice-warn { color: var(--warn-text); font-weight: 700; }
 .advisor-advice-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* ---- 利益シミュレーション・年計 ---- */
+.sim-inputs { display: grid; gap: 12px; }
+.sim-field { display: grid; gap: 4px; }
+.sim-input { display: flex; align-items: center; gap: 6px; }
+.sim-input input { flex: 0 1 12em; width: 12em; text-align: right; }
+.sim-required { font-size: 0.95rem; }
+.sim-required strong { font-size: 1.1rem; color: var(--primary); }
+.advisor-sim tr.mt-strong td, .advisor-sim tr.mt-strong th { font-weight: 800; }
+.advisor-annual tr.is-plan td { color: var(--muted); }
+@media (min-width: 900px) { .sim-inputs { grid-template-columns: 1fr 1fr; } }
