@@ -1,7 +1,7 @@
 // 固定資産台帳の帳票（純粋関数）：増減の明細・減価償却累計額・状態の絞り込み・集計・償却予定表・月次償却額・取得と除売却の一覧
 // 弥生会計（固定資産台帳 兼 減価償却計算表・償却額推移表）、勘定奉行クラウド（取得資産台帳・除却資産台帳・償却済資産台帳・
 // 償却予定表・月次償却額一覧表）の帳票の種類に合わせた。償却費の計算そのものは js/depreciation.js
-import { depreciationSchedule, openingBook, hasCarryOver, usesLife, CATEGORY_BY_ID } from './depreciation.js';
+import { depreciationSchedule, openingBook, hasCarryOver, usesLife, depreciationLines, findDepreciationJournals, CATEGORY_BY_ID } from './depreciation.js';
 import { monthsInPeriod, addDays, addMonths } from './period.js';
 
 /** 状態（画面の絞り込み・帳票の区分） */
@@ -308,4 +308,52 @@ export function disposalList(details) {
       return { ...d, type: sell ? 'sell' : 'retire', date: d.asset.disposedOn, price, accumulatedAtDisposal: d.cost - d.bookDecrease, gainLoss: sell ? price - d.bookDecrease : -d.bookDecrease };
     })
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/**
+ * 月次償却の仕訳で計上済みの月
+ *   月次償却・期末に残りを登録した仕訳は depMonths（計上した月の配列）を持つ。depMonths の無い減価償却の仕訳は期間の全額（年1回）
+ * @returns {{ annual: boolean, months: Set<string>, booked: number }} annual：年1回の仕訳がある、booked：仕訳の償却費の合計（貸方）
+ */
+export function bookedDepreciation(journals) {
+  const done = findDepreciationJournals(journals);
+  const months = new Set();
+  let annual = false;
+  let booked = 0;
+  for (const j of done) {
+    if (Array.isArray(j.depMonths)) j.depMonths.forEach((m) => months.add(m));
+    else annual = true;
+    booked += j.lines.filter((l) => l.side === 'credit').reduce((t, l) => t + l.amount, 0);
+  }
+  return { annual, months, booked };
+}
+
+/**
+ * 指定した月の分の減価償却の仕訳の明細（月次償却）。月ごとの額は monthlyDepreciation と同じ割り振り
+ * @param {{ assets, periods, period, accounts, entityType, departments?, months: string[] }} p months：'YYYY-MM' の配列
+ * @returns {{ lines, total, errors }}
+ */
+export function monthlyDepreciationLines({ months, ...p }) {
+  const set = new Set(months);
+  const pick = (entry) => {
+    const m = monthlyDepreciation(entry, p.period);
+    let amount = 0;
+    let business = 0;
+    m.months.forEach((mm, i) => {
+      if (set.has(mm)) {
+        amount += m.amounts[i];
+        business += m.business[i];
+      }
+    });
+    return { amount, business };
+  };
+  const sorted = [...set].sort();
+  const label = sorted.length === 1 ? `（${Number(sorted[0].slice(5))}月分）` : `（${Number(sorted[0].slice(5))}月〜${Number(sorted.at(-1).slice(5))}月分）`;
+  return depreciationLines({ ...p, pick, memoSuffix: label });
+}
+
+/** その月の末日（期間の末日を超えない） */
+export function monthEnd(month, period) {
+  const end = addDays(addMonths(`${month}-01`, 1), -1);
+  return end > period.endDate ? period.endDate : end;
 }

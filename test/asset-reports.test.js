@@ -235,3 +235,33 @@ test('印刷の固定資産台帳：サンプルの帳簿で科目ごとに並�
     assert.equal(t.rows.filter((r) => r.kind === 'group').length, new Set(register.map((x) => x.asset.accountId)).size);
   }
 });
+
+test('月次償却の仕訳：月ごとの明細の合計は月次償却額と一致し、計上済みの月と残りの月を足すと年額', async () => {
+  const { monthlyDepreciationLines, bookedDepreciation, monthEnd } = await import('../js/asset-reports.js');
+  const { validateJournal } = await import('../js/journal.js');
+  const { createJournal } = await import('../js/models.js');
+  const { b, assets, register } = book();
+  const ctx = { assets, periods, period, accounts: b.accounts, entityType: 'corporation' };
+  const t = monthlyTable(register, period);
+  const year = depreciationLines(ctx).total;
+  const js = [];
+  for (const m of ['2026-04', '2026-05', '2026-06']) {
+    const r = monthlyDepreciationLines({ ...ctx, months: [m] });
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.total, t.totals[t.months.indexOf(m)], m);
+    const j = createJournal({ periodId: period.id, date: monthEnd(m, period), lines: r.lines, source: 'depreciation', depMonths: [m], adjusting: false });
+    assert.deepEqual(validateJournal(j, { accounts: b.accounts, subAccounts: [], period }), []);
+    assert.ok(r.lines.every((l) => l.memo.endsWith(`（${Number(m.slice(5))}月分）`)));
+    js.push(j);
+  }
+  assert.equal(monthEnd('2026-06', period), '2026-06-30');
+  const bk = bookedDepreciation(js);
+  assert.equal(bk.annual, false);
+  assert.deepEqual([...bk.months], ['2026-04', '2026-05', '2026-06']);
+  const rest = t.months.filter((m) => !bk.months.has(m));
+  const r = monthlyDepreciationLines({ ...ctx, months: rest });
+  assert.equal(bk.booked + r.total, year);
+  assert.ok(r.lines[0].memo.endsWith('（7月〜3月分）'));
+  // 年1回の仕訳（depMonths なし）は期間の全額
+  assert.equal(bookedDepreciation([{ source: 'depreciation', lines: [{ side: 'credit', amount: 5 }] }]).annual, true);
+});
