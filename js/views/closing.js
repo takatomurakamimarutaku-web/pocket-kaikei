@@ -10,7 +10,7 @@ import { createJournal, createPeriod } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { periodContext, closedNotice } from './period-common.js';
-import { assetRegister, findDepreciationJournals, smeUsage } from '../depreciation.js';
+import { assetRegister, findDepreciationJournals, smeUsage, smeOverAssets } from '../depreciation.js';
 import { assetDepreciationLines, bookedDepreciation, monthlyDepreciationLines } from '../asset-reports.js';
 import { householdPlan, householdBases, householdEligible, findHouseholdJournals, isValidRatio, HOUSEHOLD_SOURCE } from '../household.js';
 
@@ -178,7 +178,7 @@ export async function render({ app, outlet }) {
                 ),
               ),
             ),
-            sme.over ? h('p', { class: 'notice', text: `少額減価償却資産の特例の合計が上限（${formatYen(sme.limit)}円）を超えています。台帳で確認してください。` }) : null,
+            sme.over ? h('p', { class: 'notice', text: `少額減価償却資産の特例の合計（${formatYen(sme.total)}円）が上限（${formatYen(sme.limit)}円）を超えています。上限を超える資産（${smeOverAssets(assets, period).map((a) => a.name).join('・')}）は、固定資産台帳で通常の償却か一括償却に変えてから登録してください。` }) : null,
             errorsEl,
             h('button', { type: 'button', class: 'btn btn-primary btn-block', text: '減価償却の仕訳を登録する', onclick: save }),
           ]

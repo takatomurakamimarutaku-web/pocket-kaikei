@@ -9,6 +9,9 @@ import {
   assetRegister,
   smeUsage,
   smeLimit,
+  smallAssetOptions,
+  smeOverAssets,
+  smallAssetSummary,
   depreciationLines,
   findDepreciationJournals,
   openingBook,
@@ -230,4 +233,62 @@ test('前の会計ソフトの帳簿価額を引き継ぐ：入力の検証', ()
   assert.match(validateAsset(asset({ ...ok, method: 'lump3', cost: 150000, usefulLife: null }), ctx).carryBook, /定額法・定率法/);
   assert.match(validateAsset(asset({ ...ok, carryRevisedBase: 300000 }), ctx).carryRevisedBase, /定率法/);
   assert.match(validateAsset(asset({ ...ok, disposedOn: '2025-06-30' }), ctx).carryBook, /除却/);
+});
+
+test('取得価額で選べる方法：10万円未満は少額・一括、20万円未満は一括・特例、特例の上限未満は特例、それ以上は通常の償却', () => {
+  const o = (cost, extra = {}) => smallAssetOptions({ cost, acquiredOn: '2026-05-01', entityType: 'corporation', ...extra }).methods;
+  assert.deepEqual(o(99999), ['small', 'lump3', 'normal']);
+  assert.deepEqual(o(100000), ['lump3', 'sme', 'normal']);
+  assert.deepEqual(o(199999), ['lump3', 'sme', 'normal']);
+  assert.deepEqual(o(200000), ['sme', 'normal']);
+  assert.deepEqual(o(399999), ['sme', 'normal']);
+  assert.deepEqual(o(400000), ['normal']);
+  // 令和8年3月31日までの取得は30万円未満
+  assert.deepEqual(o(300000, { acquiredOn: '2026-03-31' }), ['normal']);
+  assert.deepEqual(o(299999, { acquiredOn: '2026-03-31' }), ['sme', 'normal']);
+  // 白色申告の個人・中小企業者等でない法人・対象期間外は特例を使えない
+  const white = smallAssetOptions({ cost: 150000, acquiredOn: '2026-05-01', entityType: 'individual', filing: 'white' });
+  assert.deepEqual(white.methods, ['lump3', 'normal']);
+  assert.match(white.sme.reason, /白色申告/);
+  assert.deepEqual(o(150000, { smeEntity: false }), ['lump3', 'normal']);
+  assert.deepEqual(o(150000, { acquiredOn: '2029-04-01' }), ['lump3', 'normal']);
+  assert.equal(smallAssetOptions({ cost: 150000, acquiredOn: '2026-05-01', entityType: 'individual', filing: 'blue' }).sme.limit, 400000);
+});
+
+test('検証：白色申告の個人は少額特例を選べない（申告の種類を渡したときだけ）', () => {
+  const ctx = { entityType: 'individual', accounts: [{ id: 'acc', group: 'tangible_fixed_assets', normalSide: 'debit' }] };
+  const a = asset({ method: 'sme', cost: 150000, acquiredOn: '2026-05-01', startedOn: '2026-05-01', usefulLife: null });
+  assert.deepEqual(validateAsset(a, ctx), {});
+  assert.deepEqual(validateAsset(a, { ...ctx, filing: 'blue' }), {});
+  assert.match(validateAsset(a, { ...ctx, filing: 'white' }).method, /青色申告だけ/);
+});
+
+test('少額特例の上限を超える資産：使い始めた順に足して、上限を超えた資産から', () => {
+  const list = [
+    asset({ id: 'a', name: 'A', method: 'sme', cost: 390000, startedOn: '2026-05-01', acquiredOn: '2026-05-01', usefulLife: null }),
+    ...Array.from({ length: 7 }, (_, i) => asset({ id: `b${i}`, name: `B${i}`, method: 'sme', cost: 380000, startedOn: `2026-0${i + 2}-15`, acquiredOn: '2026-01-10', usefulLife: null })),
+    asset({ id: 'z', name: 'Z', method: 'sme', cost: 200000, startedOn: '2027-01-05', acquiredOn: '2027-01-05', usefulLife: null }), // 翌期
+  ];
+  // 2〜8月：B0〜B6 と 5月のA。累計 B0 380,000 → … 8件目で 3,050,000 > 3,000,000
+  const over = smeOverAssets(list, P(2026));
+  assert.deepEqual(over.map((a) => a.id), ['b6']);
+  assert.equal(smeUsage(list, P(2026)).total, 390000 + 380000 * 7);
+});
+
+test('少額・一括償却のまとめ：その期間に使い始めた少額・特例と、その期間に償却した一括償却資産', () => {
+  const list = [
+    asset({ id: 's', method: 'small', cost: 80000, startedOn: '2026-03-01', acquiredOn: '2026-03-01', usefulLife: null }),
+    asset({ id: 'm', method: 'sme', cost: 330000, startedOn: '2026-06-01', acquiredOn: '2026-06-01', usefulLife: null }),
+    asset({ id: 'l1', method: 'lump3', cost: 150000, startedOn: '2025-07-01', acquiredOn: '2025-07-01', usefulLife: null }),
+    asset({ id: 'l2', method: 'lump3', cost: 180000, startedOn: '2026-11-01', acquiredOn: '2026-11-01', usefulLife: null }),
+    asset({ id: 'old', method: 'small', cost: 50000, startedOn: '2025-06-01', acquiredOn: '2025-06-01', usefulLife: null }),
+  ];
+  const s = smallAssetSummary(list, [P(2025), P(2026)], P(2026));
+  assert.deepEqual(s.small, { count: 1, total: 80000 });
+  assert.equal(s.sme.count, 1);
+  assert.equal(s.sme.total, 330000);
+  assert.equal(s.sme.limit, 3000000);
+  assert.deepEqual(s.sme.overAssets, []);
+  // 一括償却：個人の暦年は 1/3 ずつ（月の途中から使っても按分しない）
+  assert.deepEqual(s.lump3, { count: 2, cost: 330000, amount: 50000 + 60000 });
 });

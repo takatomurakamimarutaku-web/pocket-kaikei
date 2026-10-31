@@ -8,6 +8,10 @@
 //   https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5410.htm
 // - 国税庁 No.5408 中小企業者等の少額減価償却資産の取得価額の損金算入の特例
 //   https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5408.htm
+//   （2026-10-31 再確認：令和8年4月1日以後の取得は40万円未満・従業員400人以下。10万円未満のもの・一括償却を選んだものは対象外）
+// - 国税庁 No.5403 少額の減価償却資産になるかどうかの判定（10万円未満は全額を損金、20万円未満は一括償却資産として3年で償却）
+//   https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5403.htm
+//   令和4年4月1日以後に取得し、貸付け（主要な事業として行うものを除く）に使う資産は、少額・一括償却・特例のどれも対象外
 // - 償却率表：国税庁「令和7年分 青色申告決算書（一般用）の書き方」の減価償却資産の償却率等表
 //   https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/037.pdf （耐用年数省令 別表第七〜第十）
 //   旧定額法・旧定率法・250%定率法の率は、国税庁「個人の減価償却制度の改正について」資料編でも照合した
@@ -227,6 +231,59 @@ export function smeLimit(acquiredOn) {
   return acquiredOn >= SME_LIMIT_RAISED_FROM ? 400000 : 300000;
 }
 
+/** 少額減価償却資産（全額を経費）の上限（この額未満）と、一括償却資産の上限（この額未満）。No.5403・No.2100 */
+export const SMALL_LIMIT = 100000;
+export const LUMP3_LIMIT = 200000;
+
+/** 少額減価償却資産の特例を使える期間の取得日か */
+export function smePeriodOk(acquiredOn) {
+  return Boolean(acquiredOn) && acquiredOn >= SME_FROM && acquiredOn <= SME_UNTIL;
+}
+
+/**
+ * 取得価額で選べる償却の方法（少額・一括償却・少額特例・通常の償却）
+ *   10万円未満：少額（全額を経費）・一括償却・通常の償却
+ *   10万円以上20万円未満：一括償却・少額特例・通常の償却
+ *   20万円以上・特例の上限（30万円／令和8年4月以後の取得は40万円）未満：少額特例・通常の償却
+ *   それ以上：通常の償却
+ *   少額特例は、個人は青色申告だけ、法人は中小企業者等（smeEntity）だけ
+ * @param {{ cost: number, acquiredOn?: string, entityType: string, filing?: string, smeEntity?: boolean }} p
+ * @returns {{ methods: string[], best: string, sme: { ok: boolean, reason: string, limit: number } }}
+ *   methods：選べる方法（straight/declining は 'normal' にまとめる）、best：全額をいちばん早く経費にできる方法
+ */
+export function smallAssetOptions({ cost, acquiredOn = '', entityType, filing = 'blue', smeEntity = true }) {
+  const limit = smeLimit(acquiredOn || SME_LIMIT_RAISED_FROM);
+  let reason = '';
+  if (entityType === 'individual' && filing === 'white') reason = '白色申告では使えません';
+  else if (entityType !== 'individual' && !smeEntity) reason = '中小企業者等でない（法人税の設定）ので使えません';
+  else if (acquiredOn && !smePeriodOk(acquiredOn)) reason = '対象期間（平成18年4月1日〜令和11年3月31日の取得）外です';
+  const smeOk = !reason;
+  const methods = [];
+  if (cost < SMALL_LIMIT) methods.push('small');
+  if (cost < LUMP3_LIMIT) methods.push('lump3');
+  if (smeOk && cost >= SMALL_LIMIT && cost < limit) methods.push('sme');
+  methods.push('normal');
+  return { methods, best: methods[0], sme: { ok: smeOk, reason, limit } };
+}
+
+/**
+ * 少額減価償却資産の特例の、上限を超える資産（使い始めた日の順に足して、上限を超えた資産から）
+ *   上限を超えた分は特例の対象外で、通常の償却（または一括償却）にする。No.5408
+ * @returns {Array<object>} 超えた資産
+ */
+export function smeOverAssets(assets, period) {
+  const { limit } = smeUsage(assets, period);
+  let sum = 0;
+  const out = [];
+  for (const a of assets
+    .filter((x) => x.method === 'sme' && x.startedOn >= period.startDate && x.startedOn <= period.endDate)
+    .sort((x, y) => (x.startedOn < y.startedOn ? -1 : x.startedOn > y.startedOn ? 1 : 0))) {
+    sum += a.cost;
+    if (sum > limit) out.push(a);
+  }
+  return out;
+}
+
 /**
  * 月数（暦に従って数え、1か月に満たない端数は1か月とする。所得税法施行令132条・法人税法施行令59条）
  * from〜to（両端を含む）。例：2026-04-10〜2027-03-31 → 12
@@ -249,10 +306,10 @@ export const EXPENSE_GROUPS = ['sga', 'mfg_overhead', 're_expenses'];
 /**
  * 資産の検証
  * @param {object} asset
- * @param {{ entityType: string, accounts: Array }} ctx
+ * @param {{ entityType: string, accounts: Array, filing?: string }} ctx filing：個人の申告の種類（'white' なら少額特例を使えない）
  * @returns {Object<string,string>} 項目ごとのエラー（空ならOK）
  */
-export function validateAsset(asset, { entityType, accounts }) {
+export function validateAsset(asset, { entityType, accounts, filing = 'blue' }) {
   const e = {};
   const name = String(asset.name ?? '').trim();
   if (!name) e.name = '資産の名前を入力してください';
@@ -284,8 +341,10 @@ export function validateAsset(asset, { entityType, accounts }) {
     if (asset.method === 'small' && cost >= 100000) e.method = '少額減価償却資産（全額を経費）は取得価額10万円未満のものだけです';
     if (asset.method === 'sme') {
       const limit = smeLimit(asset.acquiredOn);
-      if (asset.acquiredOn < SME_FROM || asset.acquiredOn > SME_UNTIL) e.method = '特例の対象期間（平成18年4月1日〜令和11年3月31日の取得）外です';
+      if (!smePeriodOk(asset.acquiredOn)) e.method = '特例の対象期間（平成18年4月1日〜令和11年3月31日の取得）外です';
       else if (cost >= limit) e.method = `特例は取得価額${limit / 10000}万円未満のものだけです`;
+      // 白色申告の個人は使えない（No.2100「一定の青色申告者」）。filing を渡したとき（保存・入力画面）だけ確かめる
+      else if (entityType === 'individual' && filing === 'white') e.method = '少額減価償却資産の特例は青色申告だけです（白色申告では、10万円未満は「少額」、20万円未満は「一括償却」を選べます）';
     }
   }
   // 償却費の科目（任意。空なら「減価償却費」。製造業の工場の機械などは製造経費の科目にする）
@@ -620,6 +679,25 @@ export function smeUsage(assets, period) {
   const total = assets.filter((a) => a.method === 'sme' && a.startedOn >= period.startDate && a.startedOn <= period.endDate).reduce((s, a) => s + a.cost, 0);
   const limit = Math.floor((SME_ANNUAL_LIMIT * periodMonths(period)) / 12);
   return { total, limit, over: total > limit };
+}
+
+/**
+ * 期間の少額・一括償却・少額特例のまとめ（固定資産の画面に出す）
+ *   small・sme：その期間に使い始めて全額を経費にした資産の件数と取得価額の合計
+ *   lump3：その期間に償却した一括償却資産の件数・取得価額・償却費（前の期間に使い始めた分を含む）
+ * @returns {{ small: { count, total }, sme: { count, total, limit, over, overAssets }, lump3: { count, cost, amount } }}
+ */
+export function smallAssetSummary(assets, periods, period) {
+  const started = (m) => assets.filter((a) => a.method === m && a.startedOn >= period.startDate && a.startedOn <= period.endDate && !beforeSplit(a, period));
+  const sum = (list) => list.reduce((s, a) => s + costAt(a, period), 0);
+  const small = started('small');
+  const sme = started('sme');
+  const lumpRows = assetRegister(assets.filter((a) => a.method === 'lump3'), periods, period).filter((x) => x.row?.amount);
+  return {
+    small: { count: small.length, total: sum(small) },
+    sme: { count: sme.length, ...smeUsage(assets, period), overAssets: smeOverAssets(assets, period) },
+    lump3: { count: lumpRows.length, cost: lumpRows.reduce((s, x) => s + x.cost, 0), amount: lumpRows.reduce((s, x) => s + x.row.amount, 0) },
+  };
 }
 
 /**

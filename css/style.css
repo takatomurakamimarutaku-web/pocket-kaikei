@@ -666,6 +666,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .field-label { display: block; font-size: var(--fs-footnote); font-weight: 700; color: var(--muted); margin-bottom: 6px; }
 .field-hint { font-size: 0.8rem; color: var(--muted); }
 .field-hint.warn { color: var(--warn-text); }
+.cost-guide-chips { margin-top: 6px; }
+.cost-guide-chips .chip { min-height: 34px; font-size: 0.85rem; }
 .field-error { font-size: 0.82rem; color: var(--danger); min-height: 0; }
 .field-error:empty { display: none; }
 .field.has-error input, .field.has-error select { border-color: var(--danger); }

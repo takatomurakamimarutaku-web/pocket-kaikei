@@ -85,3 +85,24 @@ export function suspenseBalances({ accounts, subAccounts = [], period, journals 
 export function futureJournals(journals, today) {
   return journals.filter((j) => j.date > today).sort((a, b) => (a.date < b.date ? -1 : 1));
 }
+
+/** 消耗品費・事務用品費のテンプレートのコード（科目名は変えられるので、テンプレートの科目をコードで見分ける） */
+export const CONSUMABLE_CODES = { corporation: ['613', '614'], individual: ['609'] };
+
+/**
+ * 1つ10万円以上かもしれない消耗品の経費（固定資産として登録が要るかもしれないもの）
+ *   取得価額10万円以上の減価償却資産は、全額をその年の経費にできない（一括償却資産・少額減価償却資産の特例・通常の償却）。
+ *   国税庁 No.5403・No.2100。消耗品費・事務用品費（初期設定のテンプレートの科目。コードで見分ける）の借方の明細で、10万円以上のものを出す。
+ *   1つ10万円未満のものをまとめて買った明細もあるので、誤りと決めつけずに確かめてもらう
+ * @returns {Array<{ journal, line, account }>} 日付の順
+ */
+export function assetLikeExpenses({ accounts, period, journals, entityType, threshold = 100000 }) {
+  const codes = CONSUMABLE_CODES[entityType] || [];
+  const targets = new Map(accounts.filter((a) => a.template && codes.includes(a.code) && a.group === 'sga').map((a) => [a.id, a]));
+  const out = [];
+  for (const j of journals) {
+    if (j.date < period.startDate || j.date > period.endDate) continue;
+    for (const l of j.lines) if (l.side === 'debit' && l.amount >= threshold && targets.has(l.accountId)) out.push({ journal: j, line: l, account: targets.get(l.accountId) });
+  }
+  return out.sort((a, b) => (a.journal.date < b.journal.date ? -1 : a.journal.date > b.journal.date ? 1 : (a.journal.no ?? 0) - (b.journal.no ?? 0)));
+}
