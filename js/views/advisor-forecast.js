@@ -8,6 +8,7 @@ import { forecastLanding, FORECAST_METHODS, RESOLVED_LABELS, cleanForecast } fro
 import { forecastTaxes } from '../advisor/tax-forecast.js';
 import { seasonalAdvice, adviceSuggestsLastYear } from '../advisor/seasonality.js';
 import { errorText } from '../errors.js';
+import { ValidationError } from '../db.js';
 import { loadAdvisor, estimateNote, monthLabel } from './advisor-common.js';
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -314,7 +315,7 @@ export async function render({ app, outlet, isStale }) {
       showToast('見込みの設定を保存しました');
       app.refresh();
     } catch (e) {
-      put(errorsEl, errorBox(errorText(e)));
+      put(errorsEl, errorBox(e instanceof ValidationError ? [].concat(Object.values(e.errors)) : [errorText(e, '保存')]));
     }
   }
 

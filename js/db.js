@@ -7,6 +7,7 @@ import { historyEntry, journalChanged } from './journal-history.js';
 import { validateTemplate } from './templates.js';
 import { validateBudget } from './budget.js';
 import { cleanForecast, validateForecast } from './advisor/forecast.js';
+import { DEFAULT_SUCCESSION, validateSuccession } from './advisor/share-value.js';
 import { validateAttachment, sha256Hex, toArrayBuffer, EDITABLE_FIELDS } from './attachments.js';
 import { DEFAULT_NOTES, validateNotes } from './financial.js';
 import { validateAccount, isBsGroup, findByRole, fillHints, REQUIRED_ROLES, manufacturingAccounts, realEstateAccounts } from './accounts.js';
@@ -776,6 +777,21 @@ export class Repository {
       const errors = validateForecast(value);
       if (errors.length) throw new ValidationError(errors);
       const next = { ...period, forecast: value, updatedAt: now() };
+      store.put(next);
+      return next;
+    });
+  }
+
+  /** 事業承継（自社株の評価額の概算）の入力を期間に保存する */
+  saveSuccession(periodId, input) {
+    return this.run(['periods'], 'readwrite', async (tx) => {
+      const store = tx.objectStore('periods');
+      const period = await req(store.get(periodId));
+      if (!period) throw new Error('会計期間が見つかりません');
+      const value = { ...DEFAULT_SUCCESSION, ...input, peer: { ...DEFAULT_SUCCESSION.peer, ...(input?.peer || {}) } };
+      const errors = validateSuccession(value);
+      if (errors.length) throw new ValidationError(errors);
+      const next = { ...period, succession: value, updatedAt: now() };
       store.put(next);
       return next;
     });
