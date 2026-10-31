@@ -350,6 +350,8 @@ export function validateAsset(asset, { entityType, accounts }) {
     else if (!isValidDate(asset.compressionOn)) e.compressionOn = '圧縮記帳をした日（補助金等の返還不要が確定した日など）を入力してください';
     else if (isValidDate(asset.acquiredOn) && asset.compressionOn < asset.acquiredOn) e.compressionOn = '圧縮記帳をした日は取得日以後にしてください';
     if (String(asset.compressionName ?? '').length > 40) e.compressionName = '補助金等の名前は40文字以内にしてください';
+    if (asset.compressionSubsidy != null && (!isYen(asset.compressionSubsidy) || asset.compressionSubsidy < 1)) e.compressionSubsidy = '交付を受けた補助金等の額は1円以上の整数で入力してください';
+    if (asset.compressionGrantor != null && (typeof asset.compressionGrantor !== 'string' || asset.compressionGrantor.length > 40)) e.compressionGrantor = '交付した者は40文字以内にしてください';
   } else if (asset.compressionOn || asset.compressionName) e.compressionAmount = '圧縮額を入力してください';
   // v0.72.0 で追加した移動の履歴（任意）：部門・設置場所を変えた記録。最後の移動の「移動後」が今の部門・設置場所
   const moveError = validateMoves(asset);

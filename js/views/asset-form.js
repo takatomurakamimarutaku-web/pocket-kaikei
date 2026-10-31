@@ -99,6 +99,8 @@ export async function render({ app, outlet, params, query = {} }) {
   const compAmount = h('input', { id: 'f-comp-amount', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.compressionAmount ?? '', placeholder: '例：1000000' });
   const compOn = h('input', { id: 'f-comp-on', type: 'date', value: state.compressionOn || '' });
   const compName = h('input', { id: 'f-comp-name', type: 'text', maxlength: 40, value: state.compressionName || '', placeholder: '例：ものづくり補助金' });
+  const compSubsidy = h('input', { id: 'f-comp-subsidy', type: 'text', inputmode: 'numeric', class: 'amount-input', value: state.compressionSubsidy ?? '', placeholder: '空欄なら圧縮額と同じ' });
+  const compGrantor = individual ? null : h('input', { id: 'f-comp-grantor', type: 'text', maxlength: 40, value: state.compressionGrantor || '', placeholder: '例：○○県' });
   // 特別償却（事業供用年度に 取得価額×率。即時償却は100）
   const specialRate = h('input', { id: 'f-special-rate', type: 'text', inputmode: 'numeric', maxlength: 3, value: state.specialRate ?? '', placeholder: '例：30' });
   const specialName = h('input', { id: 'f-special-name', type: 'text', maxlength: 40, value: state.specialName || '', placeholder: '例：中小企業投資促進税制' });
@@ -172,8 +174,14 @@ export async function render({ app, outlet, params, query = {} }) {
 
   /** 圧縮記帳の入力（圧縮額が空欄なら受けない。数字でなければ NaN にして検証で止める） */
   function readCompression() {
-    if (compWrap.hidden || (!compAmount.value.trim() && !compName.value.trim())) return { compressionAmount: null, compressionOn: null, compressionName: null };
-    return { compressionAmount: compAmount.value.trim() === '' ? null : (toInt(compAmount.value) ?? NaN), compressionOn: compOn.value || null, compressionName: compName.value.trim() || null };
+    if (compWrap.hidden || (!compAmount.value.trim() && !compName.value.trim())) return { compressionAmount: null, compressionOn: null, compressionName: null, compressionSubsidy: null, compressionGrantor: null };
+    return {
+      compressionAmount: compAmount.value.trim() === '' ? null : (toInt(compAmount.value) ?? NaN),
+      compressionOn: compOn.value || null,
+      compressionName: compName.value.trim() || null,
+      compressionSubsidy: compSubsidy.value.trim() === '' ? null : (toInt(compSubsidy.value) ?? NaN),
+      compressionGrantor: compGrantor ? compGrantor.value.trim() || null : (state.compressionGrantor ?? null),
+    };
   }
 
   /** 特別償却の入力（率が空欄なら受けない。数字でなければ NaN にして検証で止める） */
@@ -285,6 +293,7 @@ export async function render({ app, outlet, params, query = {} }) {
     h('summary', { text: '圧縮記帳（国庫補助金など。任意）' }),
     h('div', { class: 'field-row' }, field('圧縮額（円）', compAmount, { name: 'compressionAmount' }), field('圧縮記帳をした日', compOn, { name: 'compressionOn' })),
     field('補助金等の名前', compName, { name: 'compressionName' }),
+    h('div', { class: 'field-row' }, field('交付を受けた補助金等の額（円）', compSubsidy, { name: 'compressionSubsidy' }), compGrantor ? field('交付した者', compGrantor, { name: 'compressionGrantor' }) : null),
     compNote,
     h(
       'p',
@@ -432,6 +441,7 @@ export async function render({ app, outlet, params, query = {} }) {
           { class: 'panel' },
           h('h3', { class: 'section-title', text: '圧縮記帳の仕訳' }),
           h('p', { class: 'small', text: `${slash(original.compressionOn)}　圧縮額 ${formatYen(original.compressionAmount)}円${original.compressionName ? `（${original.compressionName}）` : ''}　圧縮前の取得価額 ${formatYen(original.cost + original.compressionAmount)}円` }),
+          individual ? null : h('p', { class: 'small' }, h('a', { class: 'link', href: '#/reports/schedule13', text: '別表十三（一）を見る' })),
           compJournals.length
             ? h(
                 'div',

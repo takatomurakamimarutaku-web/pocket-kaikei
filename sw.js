@@ -1,6 +1,6 @@
 // Service Worker
 // ファイルを変更したら CACHE_VERSION を上げる。ファイルを追加・削除したら PRECACHE_URLS も更新する（npm run check で検出）
-const CACHE_VERSION = 'v84';
+const CACHE_VERSION = 'v85';
 const CACHE_NAME = `pocket-kaikei-${CACHE_VERSION}`;
 
 // 事前にキャッシュするファイル（相対パス）
@@ -90,6 +90,7 @@ const PRECACHE_URLS = [
   'js/financial.js',
   'js/property-tax.js',
   'js/schedule16.js',
+  'js/schedule13.js',
   'js/real-estate.js',
   'js/views/advisor-common.js',
   'js/views/advisor-forecast.js',
@@ -185,6 +186,7 @@ const PRECACHE_URLS = [
   'js/views/fs-view.js',
   'js/views/property-tax.js',
   'js/views/schedule16.js',
+  'js/views/schedule13.js',
   'js/views/enterprise-tax.js',
   'js/views/corporate-tax.js',
   'js/views/corporate-tax-input.js',

@@ -424,6 +424,8 @@ async function putAsset(tx, asset, { split = false } = {}) {
     compressionAmount: asset.compressionAmount ?? null,
     compressionOn: asset.compressionAmount != null ? asset.compressionOn || null : null,
     compressionName: asset.compressionAmount != null && asset.compressionName ? String(asset.compressionName).trim() : null,
+    compressionSubsidy: asset.compressionAmount != null ? (asset.compressionSubsidy ?? null) : null,
+    compressionGrantor: asset.compressionAmount != null && asset.compressionGrantor ? String(asset.compressionGrantor).trim() : null,
     quantity: asset.quantity ?? 1,
     businessRatio: settings?.entityType === 'individual' ? asset.businessRatio : 100,
     disposedOn: asset.disposedOn || null,

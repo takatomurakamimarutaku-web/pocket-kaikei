@@ -94,3 +94,27 @@ test('償却資産申告は圧縮前の取得価額で申告する（固定資�
   assert.equal(r.items[0].cost, 3000000);
   assert.equal(r.kinds.find((k) => k.increase).increase, 3000000);
 });
+
+test('別表十三（一）：当期に圧縮記帳した資産の圧縮限度額・超過額（全額補助は取得価額−1円）', async () => {
+  const { schedule13, schedule13Item } = await import('../js/schedule13.js');
+  const b = makeBook('corporation', { startDate: period.startDate, endDate: period.endDate });
+  const ctx = { entityType: 'corporation', accounts: b.accounts };
+  const a = machine(b, { compressionSubsidy: 1000000, compressionGrantor: '○○県' });
+  assert.deepEqual(validateAsset(a, ctx), {});
+  assert.ok(validateAsset(machine(b, { compressionSubsidy: 0 }), ctx).compressionSubsidy);
+  assert.ok(validateAsset(machine(b, { compressionGrantor: 'あ'.repeat(41) }), ctx).compressionGrantor);
+  const x = schedule13Item(a);
+  assert.deepEqual([x.cost, x.subsidy, x.limit, x.reduced, x.excess, x.book, x.grantor], [3000000, 1000000, 1000000, 1000000, 0, 2000000, '○○県']);
+  // 補助金等の額が空欄なら圧縮額と同じ
+  assert.equal(schedule13Item(machine(b)).subsidy, 1000000);
+  // 補助金より多く圧縮した：超過額
+  assert.equal(schedule13Item(machine(b, { compressionSubsidy: 800000 })).excess, 200000);
+  // 全額補助：限度は取得価額−1円
+  const full = schedule13Item(machine(b, { cost: 1, compressionAmount: 2999999, compressionSubsidy: 3000000 }));
+  assert.deepEqual([full.limit, full.excess], [2999999, 0]);
+  // 当期に圧縮記帳した資産だけ（日付の順）
+  const other = machine(b, { id: 'o', name: '前期', acquiredOn: '2025-05-01', startedOn: '2025-05-01', compressionOn: '2025-06-01' });
+  const r = schedule13({ assets: [other, a, machine(b, { id: 'n', compressionAmount: null, compressionOn: null, compressionName: null })], period });
+  assert.deepEqual(r.items.map((i) => i.asset.id), ['m']);
+  assert.deepEqual(r.totals, { subsidy: 1000000, cost: 3000000, limit: 1000000, reduced: 1000000, excess: 0 });
+});
