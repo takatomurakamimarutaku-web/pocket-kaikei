@@ -20,6 +20,9 @@ import {
   assetDepreciationLines,
   monthlyDepreciationLines,
   movesIn,
+  groupTitle,
+  subtotalLabel,
+  SORT_KEYS,
 } from '../js/asset-reports.js';
 import { assetRegisterDoc, movementDoc, forecastDoc, monthlyDoc, acquiredDoc, disposedDoc, movedDoc } from '../js/print-assets.js';
 import { splitAsset } from '../js/asset-tools.js';
@@ -376,4 +379,61 @@ test('一部の売却・除却：分けた資産には売却・除却した日�
   const { part, errors } = splitAsset(old, periods, { date: '2026-09-30', cost: 100000 });
   assert.deepEqual(errors, []);
   assert.deepEqual([part.moves.map((m) => m.id), part.departmentId, part.location], [['m1'], 'd2', '支店']);
+});
+
+test('並び順：勘定科目・種類・部門・設置場所・取得日・償却費・帳簿価額・耐用年数。指定なしは最後', () => {
+  const { b, register } = book();
+  const ds = register.map((x) => registerDetail(x, period));
+  const accountById = new Map(b.accounts.map((a) => [a.id, a]));
+  const departmentById = new Map([['d1', { id: 'd1', name: '営業部', sortOrder: 2 }], ['d0', { id: 'd0', name: '総務部', sortOrder: 1 }]]);
+  const names = { accountById, departmentById };
+  const ids = (by, list = ds) => sortDetails(list, by, names).map((d) => d.asset.id);
+  // 機械装置（コード小）→ 工具器具備品
+  assert.equal(ids('account')[0], 'special');
+  assert.equal(ids('category')[0], 'special'); // 機械装置は種類の並びで器具備品より前
+  // 部門：並び順（総務部 → 営業部）、指定なしは最後
+  const withDep = ds.map((d) => (d.asset.id === 'new' ? { ...d, asset: { ...d.asset, departmentId: 'd0' } } : d));
+  assert.deepEqual(ids('department', withDep).slice(0, 2), ['new', 'old']);
+  // 設置場所：名前の順、空欄は最後
+  assert.deepEqual(ids('location').slice(0, 2), ['new', 'old']);
+  assert.equal(ids('acquired')[0], 'done');
+  // 償却費・帳簿価額は大きい順
+  const amounts = sortDetails(ds, 'amount', names).map((d) => d.amount);
+  assert.deepEqual(amounts, [...amounts].sort((x, y) => y - x));
+  const books = sortDetails(ds, 'book', names).map((d) => d.bookClosing);
+  assert.deepEqual(books, [...books].sort((x, y) => y - x));
+  // 耐用年数の短い順、耐用年数の無い資産（少額・一括）は最後
+  assert.equal(sortDetails(ds, 'life', names)[0].asset.usefulLife, 2);
+  assert.ok(['small', 'lump'].includes(ids('life').at(-1)));
+  assert.ok(SORT_KEYS.length >= 12);
+});
+
+test('絞り込み：設置場所・償却方法・取得日の範囲。集計しない・見出しと小計の名前', () => {
+  const { b, assets, register } = book();
+  const ds = register.map((x) => registerDetail(x, period));
+  const pick = (f) => ds.filter((d) => matchAsset(d.asset, d.status, f)).map((d) => d.asset.id).sort();
+  assert.deepEqual(pick({ location: '本店' }), ['old']);
+  assert.deepEqual(pick({ method: 'lump3' }), ['lump']);
+  assert.deepEqual(pick({ from: '2026-05-01', to: '2026-06-30' }), ['lump', 'small']);
+  assert.deepEqual(pick({ to: '2024-12-31' }), ['done', 'sold']);
+  const accountById = new Map(b.accounts.map((a) => [a.id, a]));
+  // 集計しない：1つのまとまり
+  const none = groupDetails(ds, 'none', { accountById });
+  assert.equal(none.length, 1);
+  assert.equal(none[0].items.length, ds.length);
+  assert.equal(groupTitle('account', '工具器具備品'), '勘定科目：工具器具備品');
+  assert.equal(groupTitle('none', 'x'), '');
+  assert.equal(subtotalLabel('工具器具備品', 3), '工具器具備品 計（3件）');
+  // 印刷：小計の行に科目の名前、集計しないときは見出し・小計なしで、摘要に科目名
+  const doc = assetRegisterDoc(register, { period, accountById, individual: false, head: {}, groupBy: 'account' });
+  const rows = doc.blocks[0].rows;
+  assert.ok(rows.some((r) => r.kind === 'group' && r.cells[0].text === '勘定科目：工具器具備品'));
+  assert.ok(rows.some((r) => r.kind === 'subtotal' && String(r.cells[0].text ?? r.cells[0]).startsWith('工具器具備品 計（')));
+  const flat = assetRegisterDoc(register, { period, accountById, individual: false, head: {}, groupBy: 'none', sortBy: 'cost' }).blocks[0].rows;
+  assert.ok(!flat.some((r) => r.kind === 'group' || r.kind === 'subtotal'));
+  assert.equal(flat.filter((r) => r.kind === 'total').length, 1);
+  assert.ok(flat.some((r) => r.cells.some((c) => String(c).includes('科目 工具器具備品'))));
+  for (const fn of [() => forecastDoc(assets, periods, period, { accountById, head: {}, groupBy: 'none' }), () => monthlyDoc(register, period, { accountById, head: {}, groupBy: 'category' })]) assert.ok(layoutDocument(fn()).length >= 1);
+  const m = monthlyDoc(register, period, { accountById, head: {}, groupBy: 'category' }).blocks[0].rows;
+  assert.ok(m.some((r) => r.kind === 'subtotal' && String(r.cells[0]).endsWith('件）')));
 });
