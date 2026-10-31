@@ -68,6 +68,7 @@ export async function render({ app, outlet, params, query = {} }) {
   };
 
   const name = h('input', { id: 'f-name', type: 'text', maxlength: 40, value: state.name, placeholder: '例：ノートパソコン、軽自動車' });
+  let prevCategory = state.category;
   const category = h('select', { id: 'f-category' }, ASSET_CATEGORIES.map((c) => h('option', { value: c.id, text: c.label, selected: c.id === state.category })));
   const account = h('select', { id: 'f-account' });
   const acquiredOn = h('input', { id: 'f-acquired', type: 'date', value: state.acquiredOn });
@@ -191,6 +192,7 @@ export async function render({ app, outlet, params, query = {} }) {
       declining250: '平成19年4月1日〜平成24年3月31日に取得した資産は250%定率法です。最初の年ほど多く償却し、償却保証額を下回った年から改定償却率で償却します。',
       lump3: '取得価額20万円未満のものを、使い始めた年から3年間、1/3ずつ経費にします（月数で按分しません）。',
       small: '取得価額10万円未満（または使える期間が1年未満）のものは、使い始めた年に全額を経費にします。',
+      none: '土地・建設仮勘定・美術品（取得価額100万円以上など）・電話加入権のように、使っても価値が減らない資産は減価償却しません。台帳には取得価額のまま載り、売却・除却したときに台帳から外れます。',
       sme: `青色申告の中小企業者等が、取得価額${limit / 10000}万円未満のものを使い始めた年に全額を経費にできます（年300万円まで。令和8年4月以後の取得は40万円未満）。`,
     };
     methodHint.textContent = hints[variant] || hints[a.method] || '';
@@ -204,6 +206,10 @@ export async function render({ app, outlet, params, query = {} }) {
     const errors = validateAsset(a, { entityType: settings.entityType, accounts });
     if (Object.keys(errors).length) {
       put(preview, h('p', { class: 'muted small', text: '入力を終えると、年ごとの償却費を表示します。' }));
+      return;
+    }
+    if (a.method === 'none') {
+      put(preview, h('p', { class: 'muted small', text: '償却しない資産なので、償却費は計算しません。帳簿価額は取得価額のままです。' }));
       return;
     }
     const rows = depreciationSchedule(a, periods);
@@ -367,12 +373,17 @@ export async function render({ app, outlet, params, query = {} }) {
     h('button', { type: 'submit', class: 'btn btn-primary btn-block', text: original ? '保存する' : '登録する' }),
   );
   category.addEventListener('change', () => {
+    // 土地は償却しない。土地から別の種類に変えたら、償却の方法を初期値に戻す
+    if (CATEGORY_BY_ID[category.value]?.nonDepreciable) method.value = 'none';
+    else if (method.value === 'none' && prevCategory === 'land') method.value = individual ? 'straight' : 'declining';
+    prevCategory = category.value;
     paintAccounts(true);
     if (lifeResults.childElementCount && !lifeQuery.value.trim()) paintLifeResults();
   });
   /** 耐用年数表の区分を入力欄に入れる */
   function applyLifeEntry(p) {
     category.value = p.category;
+    prevCategory = p.category;
     paintAccounts(true);
     const cat = CATEGORY_BY_ID[p.category];
     if (!usesLife(method.value)) method.value = individual || cat.decliningUntil ? 'straight' : 'declining';

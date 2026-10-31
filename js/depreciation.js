@@ -125,12 +125,14 @@ export const ASSET_CATEGORIES = [
   { id: 'machinery', label: '機械装置', intangible: false, decliningUntil: null },
   { id: 'vehicle', label: '車両運搬具', intangible: false, decliningUntil: null },
   { id: 'tools', label: '工具器具備品', intangible: false, decliningUntil: null },
+  // 土地は減価償却しない（v0.71.0 で追加。所得税法施行令6条・法人税法施行令13条の減価償却資産に当たらない）
+  { id: 'land', label: '土地', intangible: false, decliningUntil: null, nonDepreciable: true },
   { id: 'intangible', label: 'ソフトウェアなど（無形）', intangible: true, decliningUntil: '0000-01-01' },
 ];
 /** 種類ごとの初期値の科目（テンプレートのコード。科目名では判定しない） */
 export const CATEGORY_ACCOUNT_CODES = {
-  individual: { building: '200', building_equipment: '201', machinery: '202', vehicle: '203', tools: '204', intangible: '220' },
-  corporation: { building: '200', building_equipment: '201', structure: '202', machinery: '203', vehicle: '204', tools: '205', intangible: '220' },
+  individual: { building: '200', building_equipment: '201', machinery: '202', vehicle: '203', tools: '204', land: '205', intangible: '220' },
+  corporation: { building: '200', building_equipment: '201', structure: '202', machinery: '203', vehicle: '204', tools: '205', land: '206', intangible: '220' },
 };
 
 /** 種類に合う初期値の科目 id（テンプレートの科目が無効・変更済みなら候補の先頭） */
@@ -147,12 +149,18 @@ export const METHODS = [
   { id: 'lump3', label: '一括償却資産（3年で均等に償却）', short: '一括償却' },
   { id: 'small', label: '少額減価償却資産（10万円未満・全額を経費）', short: '少額' },
   { id: 'sme', label: '少額減価償却資産の特例（中小企業者等・全額を経費）', short: '少額特例' },
+  { id: 'none', label: '償却しない（土地・建設仮勘定・美術品・電話加入権など）', short: '非償却' },
 ];
 export const METHOD_BY_ID = Object.fromEntries(METHODS.map((m) => [m.id, m]));
 
 /** 定額法・定率法で計算する方法か（耐用年数を使う） */
 export function usesLife(method) {
   return method === 'straight' || method === 'declining';
+}
+
+/** 売却・除却で台帳から外す方法か（定額法・定率法・償却しない資産。一括償却は除却しても3年で償却を続け、少額は取得時に全額を費用にしている） */
+export function isDisposable(method) {
+  return usesLife(method) || method === 'none';
 }
 
 /** 定額法・定率法の対象日（平成19年3月31日以前取得・4月1日以後に事業供用したものは供用日に取得したとみなす。出典 No.5410）。前は旧定額法・旧定率法 */
@@ -262,6 +270,7 @@ export function validateAsset(asset, { entityType, accounts }) {
   if (!isYen(asset.cost) || asset.cost < 1 || asset.cost >= 1e12) e.cost = '取得価額は1円以上の整数で入力してください';
   const m = METHOD_BY_ID[asset.method];
   if (!m) e.method = '償却の方法を選んでください';
+  else if (cat?.nonDepreciable && asset.method !== 'none') e.method = `${cat.label}は減価償却しません（「償却しない」を選んでください）`;
   const cost = isYen(asset.cost) ? asset.cost : 0;
   if (m && !e.startedOn && !e.acquiredOn) {
     if (usesLife(asset.method)) {
@@ -390,6 +399,7 @@ function* ranges(periods, startedOn) {
  */
 export function depreciationSchedule(asset, periods) {
   const out = [];
+  if (asset.method === 'none') return out; // 償却しない資産（土地など）
   const cat = CATEGORY_BY_ID[asset.category];
   const floor = cat?.intangible || !usesLife(asset.method) ? 0 : 1; // 有形の定額法・定率法は1円（備忘価額）を残す
   const ratio = Number.isInteger(asset.businessRatio) ? asset.businessRatio : 100;

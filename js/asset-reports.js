@@ -1,7 +1,7 @@
 // 固定資産台帳の帳票（純粋関数）：増減の明細・減価償却累計額・状態の絞り込み・集計・償却予定表・月次償却額・取得と除売却の一覧
 // 弥生会計（固定資産台帳 兼 減価償却計算表・償却額推移表）、勘定奉行クラウド（取得資産台帳・除却資産台帳・償却済資産台帳・
 // 償却予定表・月次償却額一覧表）の帳票の種類に合わせた。償却費の計算そのものは js/depreciation.js
-import { depreciationSchedule, openingBook, hasCarryOver, usesLife, depreciationLines, findDepreciationJournals, CATEGORY_BY_ID } from './depreciation.js';
+import { depreciationSchedule, openingBook, hasCarryOver, usesLife, isDisposable, depreciationLines, findDepreciationJournals, CATEGORY_BY_ID } from './depreciation.js';
 import { monthsInPeriod, addDays, addMonths } from './period.js';
 
 /** 状態（画面の絞り込み・帳票の区分） */
@@ -10,6 +10,7 @@ export const ASSET_STATUSES = [
   { id: 'new', label: '当期取得' },
   { id: 'disposed', label: '当期に売却・除却' },
   { id: 'done', label: '償却済み' },
+  { id: 'nondep', label: '償却しない資産（土地など）' },
   { id: 'future', label: 'これから使う' },
   { id: 'gone', label: '前期までに売却・除却' },
 ];
@@ -25,9 +26,9 @@ export const GROUP_KEYS = [
 
 const inPeriod = (d, p) => Boolean(d) && d >= p.startDate && d <= p.endDate;
 
-/** 期中に売却・除却した資産か（一括償却資産は除却しても3年で償却を続けるので含めない） */
+/** 期中に売却・除却した資産か（一括償却資産は除却しても3年で償却を続けるので含めない。償却しない資産は含める） */
 export function disposedIn(asset, period) {
-  return usesLife(asset.method) && inPeriod(asset.disposedOn, period);
+  return isDisposable(asset.method) && inPeriod(asset.disposedOn, period);
 }
 
 /** 期中に取得した（使い始めた）資産か。前の帳簿から期首の帳簿価額を引き継いだ資産・一部の売却除却で分けた資産は期首からある */
@@ -58,7 +59,7 @@ export function registerDetail(entry, period) {
   const bookIncrease = increase ? book : 0;
   const bookDecrease = disposed ? (row ? row.closing : book) : 0;
   const bookClosing = disposed ? 0 : (closing ?? book);
-  const status = disposed ? 'disposed' : increase ? 'new' : amount ? 'active' : 'done';
+  const status = disposed ? 'disposed' : increase ? 'new' : asset.method === 'none' ? 'nondep' : amount ? 'active' : 'done';
   return {
     ...entry,
     cost,
@@ -203,7 +204,7 @@ export function forecastRanges(periods, period, years = 5) {
 /** その期間の期末の帳簿価額（売却・除却した期間以後・まだ使っていなければ0） */
 function closingAt(asset, periods, range, row) {
   if (asset.startedOn > range.endDate) return 0;
-  if (usesLife(asset.method) && asset.disposedOn && asset.disposedOn <= range.endDate) return 0;
+  if (isDisposable(asset.method) && asset.disposedOn && asset.disposedOn <= range.endDate) return 0;
   if (row) return row.closing;
   return openingBook(asset, periods, range) ?? 0;
 }
@@ -219,7 +220,7 @@ export function depreciationForecast(assets, periods, period, years = 5) {
   const rows = [];
   for (const asset of assets) {
     if (asset.startedOn > last.endDate) continue;
-    if (usesLife(asset.method) && asset.disposedOn && asset.disposedOn < period.startDate) continue;
+    if (isDisposable(asset.method) && asset.disposedOn && asset.disposedOn < period.startDate) continue;
     if (asset.splitFrom && hasCarryOver(asset) && period.startDate < asset.carryOn) continue;
     const schedule = depreciationSchedule(asset, periods);
     const at = (r) => schedule.find((x) => x.startDate === r.startDate && x.endDate === r.endDate) || null;

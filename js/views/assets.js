@@ -186,7 +186,7 @@ export async function render({ app, outlet, query = {} }) {
             h(
               'span',
               { class: 'acc-tags' },
-              d.status !== 'active' ? h('span', { class: d.status === 'disposed' ? 'badge badge-warn' : 'badge', text: d.status === 'disposed' ? `${DISPOSAL[asset.disposalType] ?? '除却'} ${slash(asset.disposedOn)}` : STATUS_BY_ID[d.status].label }) : null,
+              d.status !== 'active' && d.status !== 'nondep' ? h('span', { class: d.status === 'disposed' ? 'badge badge-warn' : 'badge', text: d.status === 'disposed' ? `${DISPOSAL[asset.disposalType] ?? '除却'} ${slash(asset.disposedOn)}` : STATUS_BY_ID[d.status].label }) : null,
               h('span', { class: 'badge', text: methodLabel(asset) || asset.method }),
               asset.specialRate ? h('span', { class: 'badge', text: asset.specialRate === 100 ? '即時償却' : `特別償却${asset.specialRate}%` }) : null,
               usesLife(asset.method) && asset.usefulLife ? h('span', { class: 'muted small', text: `${asset.usefulLife}年${d.row?.rate ? `・${(d.row.rate / 1000).toFixed(3)}` : ''}${d.months && d.months < 12 ? `・${d.months}か月` : ''}` }) : null,

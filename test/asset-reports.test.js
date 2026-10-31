@@ -265,3 +265,40 @@ test('月次償却の仕訳：月ごとの明細の合計は月次償却額と�
   // 年1回の仕訳（depMonths なし）は期間の全額
   assert.equal(bookedDepreciation([{ source: 'depreciation', lines: [{ side: 'credit', amount: 5 }] }]).annual, true);
 });
+
+test('償却しない資産（土地）：償却費0で取得価額のまま台帳に載り、売却は非課税売上で台帳から外れる。青色申告決算書・償却資産申告には載せない', async () => {
+  const { disposalLines } = await import('../js/asset-tools.js');
+  const { depreciationTable } = await import('../js/blue-return.js');
+  const { ptEligibility } = await import('../js/property-tax.js');
+  const { depreciationSchedule } = await import('../js/depreciation.js');
+  const b = makeBook('corporation', { startDate: period.startDate, endDate: period.endDate });
+  const landAcc = b.byName['土地'].id;
+  const land = { id: 'land', name: '本社用地', category: 'land', accountId: landAcc, acquiredOn: '2020-05-01', startedOn: '2020-05-01', cost: 30000000, method: 'none', usefulLife: null, businessRatio: 100, quantity: 1 };
+  const ctx = { entityType: 'corporation', accounts: b.accounts };
+  assert.deepEqual(validateAsset(land, ctx), {});
+  assert.ok(validateAsset({ ...land, method: 'straight', usefulLife: 10 }, ctx).method, '土地は償却しない');
+  assert.deepEqual(depreciationSchedule(land, periods), []);
+  const [x] = assetRegister([land], periods, period);
+  const d = registerDetail(x, period);
+  assert.deepEqual([d.status, d.bookOpening, d.amount, d.bookClosing, d.accumulatedClosing], ['nondep', 30000000, 0, 30000000, 0]);
+  assert.equal(depreciationLines({ assets: [land], periods, period, accounts: b.accounts, entityType: 'corporation' }).lines.length, 0);
+  // 期中に取得した土地は期中増加
+  const bought = registerDetail(assetRegister([{ ...land, startedOn: '2026-06-01', acquiredOn: '2026-06-01' }], periods, period)[0], period);
+  assert.deepEqual([bought.status, bought.bookIncrease, bought.bookClosing], ['new', 30000000, 30000000]);
+  // 売却：帳簿価額＝取得価額、売却額は非課税売上、差額は売却益
+  const cash = b.byName['普通預金'].id;
+  const gainAcc = b.accounts.find((a) => a.group === 'extraordinary_income').id;
+  const r = disposalLines({ asset: land, periods, accounts: b.accounts, entityType: 'corporation', date: '2026-10-31', type: 'sell', price: 35000000, receiptAccountId: cash, gainAccountId: gainAcc });
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual([r.book, r.accumulated, r.gain], [30000000, 0, 5000000]);
+  assert.equal(r.lines.find((l) => l.side === 'credit' && l.amount === 35000000).taxCategory, 'sales_exempt');
+  const sold = registerDetail(assetRegister([{ ...land, disposedOn: '2026-10-31', disposalType: 'sell', salePrice: 35000000 }], periods, period)[0], period);
+  assert.deepEqual([sold.status, sold.bookDecrease, sold.bookClosing], ['disposed', 30000000, 0]);
+  assert.equal(assetRegister([{ ...land, disposedOn: '2026-03-31', disposalType: 'sell', salePrice: 1 }], periods, period).length, 0);
+  // 予定表：償却0で帳簿価額はそのまま
+  const f = depreciationForecast([land], periods, period, 5);
+  assert.deepEqual([f.rows[0].amounts, f.rows[0].closing], [[0, 0, 0, 0, 0], Array(5).fill(30000000)]);
+  // 青色申告決算書の減価償却費の計算・償却資産申告の対象から外す
+  assert.equal(depreciationTable({ assets: [land], periods, period }).rows.length, 0);
+  assert.deepEqual([ptEligibility(land).include, ptEligibility(land).fixed], [false, true]);
+});

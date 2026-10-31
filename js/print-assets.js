@@ -2,7 +2,7 @@
 // 弥生会計の「固定資産台帳 兼 減価償却計算表」「償却額推移表」、勘定奉行クラウドの「取得資産台帳」「除却資産台帳」
 // 「償却予定表」「月次償却額一覧表」を参考に、資産を1行ずつ並べて集計の単位（科目・種類・設置場所・部門）ごとに小計・合計を付ける
 import { fmt } from './print-layout.js';
-import { CATEGORY_BY_ID, usesLife, methodLabel } from './depreciation.js';
+import { CATEGORY_BY_ID, usesLife, isDisposable, methodLabel } from './depreciation.js';
 import { registerDetail, groupDetails, sortDetails, sumDetails, disposalList, depreciationForecast, monthlyTable, GROUP_KEYS } from './asset-reports.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
@@ -28,7 +28,7 @@ function methodCell(a) {
 /** 摘要：売却・除却・特別償却・部門・メモ */
 function noteText(d, { departmentById, groupBy }) {
   const a = d.asset;
-  const disposal = a.disposedOn && usesLife(a.method) ? `${slash(a.disposedOn)} ${{ sell: '売却', retire: '除却' }[a.disposalType] ?? '除却'}` : '';
+  const disposal = a.disposedOn && isDisposable(a.method) ? `${slash(a.disposedOn)} ${{ sell: '売却', retire: '除却' }[a.disposalType] ?? '除却'}` : '';
   const dep = groupBy !== 'department' && a.departmentId ? departmentById?.get(a.departmentId)?.name : '';
   return [disposal, d.special ? `うち特別償却 ${fmt(d.special)}` : '', dep ? `部門 ${dep}` : '', a.memo || ''].filter(Boolean).join('　');
 }
