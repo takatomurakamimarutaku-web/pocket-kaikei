@@ -67,13 +67,16 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
     deductionC = ded.a + ded.b;
     adjustmentC = adj.a + adj.b;
     rows13 = [
-      abc('①-1', '課税資産の譲渡等の対価の額', sales1.a, sales1.b),
       abc('①', '課税標準額', r.base8, r.base10, { note: '①-1 の千円未満切り捨て' }),
+      abc('①-1', '課税資産の譲渡等の対価の額', sales1.a, sales1.b, { sub: true }),
+      // ①-2・⑤-2 は課税売上割合95%未満かつ特定課税仕入れがある事業者だけの欄（A欄は斜線）。このアプリは扱わないので空欄
+      abc('①-2', '特定課税仕入れに係る支払対価の額', null, null, { sub: true }),
       abc('②', '消費税額', r.salesTax8, r.salesTax10, { note: salesTaxNote }),
       abc('③', '控除過大調整税額', adj.a, adj.b, { note: '付表2-3 ㉗＋㉘' }),
       abc('④', '控除対象仕入税額', ded.a, ded.b, { note: '付表2-3 ㉖' }),
       abc('⑤', '返還等対価に係る税額', r.returnsByRate.r8, r.returnsByRate.r10),
       abc('⑤-1', '売上げの返還等対価に係る税額', r.returnsByRate.r8, r.returnsByRate.r10, { sub: true }),
+      abc('⑤-2', '特定課税仕入れの返還等対価に係る税額', null, null, { sub: true }),
       abc('⑥', '貸倒れに係る税額', r.badDebtByRate.r8, r.badDebtByRate.r10),
       abc('⑦', '控除税額小計', sub.a, sub.b, { note: '④＋⑤＋⑥' }),
       total('⑧', '控除不足還付税額', refund, { note: '⑦−②−③' }),
@@ -91,8 +94,8 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
     deductionC = ded.a + ded.b;
     adjustmentC = r.recoveredTax;
     rows13 = [
-      abc('①-1', '課税資産の譲渡等の対価の額', sales1.a, sales1.b),
       abc('①', '課税標準額', r.base8, r.base10, { note: '①-1 の千円未満切り捨て' }),
+      abc('①-1', '課税資産の譲渡等の対価の額', sales1.a, sales1.b, { sub: true }),
       abc('②', '消費税額', r.salesTax8, r.salesTax10, { note: salesTaxNote }),
       abc('③', '貸倒回収に係る消費税額', r.recoveredByRate.r8, r.recoveredByRate.r10),
       abc('④', '控除対象仕入税額', ded.a, ded.b, { note: '付表5-3 ⑤' }),
@@ -116,6 +119,12 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
           abc('③', '売上対価の返還等に係る消費税額', r.returnsByRate.r8, r.returnsByRate.r10, { note: '付表4-3 ⑤' }),
           abc('④', '控除対象仕入税額の計算の基礎となる消費税額', r.basisByRate.r8, r.basisByRate.r10, { note: '①＋②−③' }),
           abc('⑤', `控除対象仕入税額（${r.businessType.label}・みなし仕入率${rate}%）`, ded.a, ded.b, { note: '④×みなし仕入率（事業区分が1種類の場合）', strong: true }),
+          // Ⅲ 2種類以上の事業を営む事業者の欄（⑥〜⑲）。このアプリは事業区分を1つで計算するので空欄。2枚目（⑳〜㊲の計算式区分）は出さない
+          // 様式：https://www.nta.go.jp/law/tsutatsu/kobetsu/kansetsu/951225/pdf/youshiki_028.pdf（2026-10-31 に様式の画像で確認）
+          abc('⑥', '事業区分別の課税売上高（税抜き）の合計額', null, null),
+          ...['第一種事業（卸売業）', '第二種事業（小売業等）', '第三種事業（製造業等）', '第四種事業（その他）', '第五種事業（サービス業等）', '第六種事業（不動産業）'].map((k, i) => abc(String.fromCodePoint(0x2466 + i), k, null, null, { sub: true })),
+          abc('⑬', '事業区分別の課税売上高に係る消費税額の合計額', null, null),
+          ...['第一種事業（卸売業）', '第二種事業（小売業等）', '第三種事業（製造業等）', '第四種事業（その他）', '第五種事業（サービス業等）', '第六種事業（不動産業）'].map((k, i) => abc(String.fromCodePoint(0x246d + i), k, null, null, { sub: true })),
         ],
       },
     ];
@@ -235,7 +244,8 @@ export function taxReturnForms(r, { baseSales = null } = {}) {
   };
 
   const notes = ['第一表の⑬⑭・㉔㉕（既確定税額・差引納付税額など）は修正申告のときだけ使う欄のため空欄です。第二表の旧税率（3%・4%・6.3%）と特定課税仕入れ（⑧〜⑩・⑲）の欄は、このアプリでは扱わないため空欄です。'];
-  if (method === 'general') notes.push('付表2-3の③（非課税資産の輸出等）・⑬⑭（特定課税仕入れ）・⑯（納税義務の免除に係る調整）・㉓〜㉕（調整対象固定資産・居住用賃貸建物の調整）は対応していないため空欄です。輸入の消費税は7.8%の欄に入れています。');
+  if (method === 'general') notes.push('付表1-3の①-2・⑤-2と付表2-3の⑬⑭（特定課税仕入れ）、付表2-3の③（非課税資産の輸出等）・⑯（納税義務の免除に係る調整）・㉓〜㉕（調整対象固定資産・居住用賃貸建物の調整）は対応していないため空欄です。輸入の消費税は7.8%の欄に入れています。');
+  if (method === 'simplified') notes.push('付表5-3のⅢ（⑥〜⑲、2種類以上の事業を営む場合）は、事業区分を1つで計算しているため空欄です。2枚目（⑳〜㊲）は1種類の事業では使わないため出していません。');
   if (method === 'thirty') notes.push('3割特例の付表6は、2割特例の付表6と同じ並び（特別控除税額＝⑥×70%）で表示しています。');
   return { method, first, second, sheets, notes };
 }
@@ -277,15 +287,21 @@ function sheet23(r) {
     abc('⑩', '課税仕入れに係る消費税額', t8, t10),
     abc('⑪', '適格請求書発行事業者以外の者から行った課税仕入れに係る経過措置の適用を受ける課税仕入れに係る支払対価の額（税込み）', trans(80, 'gross'), trans(100, 'gross')),
     abc('⑫', '適格請求書発行事業者以外の者から行った課税仕入れに係る経過措置により課税仕入れに係る消費税額とみなされる額', trans(80, 'tax'), trans(100, 'tax')),
+    abc('⑬', '特定課税仕入れに係る支払対価の額', null, null),
+    abc('⑭', '特定課税仕入れに係る消費税額', null, null),
     abc('⑮', '課税貨物に係る消費税額', 0, r.importTax),
+    abc('⑯', '納税義務の免除を受けない（受ける）こととなった場合における消費税額の調整（加算又は減算）額', null, null),
     abc('⑰', '課税仕入れ等の税額の合計額', g.r8.total, g.r10.total, { note: '⑩＋⑫＋⑭＋⑮±⑯' }),
     abc('⑱', '課税売上高が5億円以下、かつ、課税売上割合が95%以上の場合', full ? g.r8.total : null, full ? g.r10.total : null, { note: '⑰の金額' }),
     abc('⑲', '⑰のうち、課税売上げにのみ要するもの', full ? null : u8.taxable, full ? null : u10.taxable),
     abc('⑳', '⑰のうち、課税売上げと非課税売上げに共通して要するもの', full ? null : u8.common, full ? null : u10.common),
     abc('㉑', '個別対応方式により控除する課税仕入れ等の税額', ind ? g.r8.allocated.individual : null, ind ? g.r10.allocated.individual : null, { note: '⑲＋（⑳×④／⑦）' }),
     abc('㉒', '一括比例配分方式により控除する課税仕入れ等の税額', prop ? g.r8.allocated.proportional : null, prop ? g.r10.allocated.proportional : null, { note: '⑰×④／⑦' }),
-    abc('㉖', '差引 控除対象仕入税額', g.r8.deduction, g.r10.deduction, { note: '⑱・㉑・㉒のいずれか（プラスのとき）', strong: true }),
-    abc('㉗', '差引 控除過大調整税額', g.r8.over, g.r10.over, { note: '同（マイナスのとき）' }),
+    abc('㉓', '課税売上割合変動時の調整対象固定資産に係る消費税額の調整（加算又は減算）額', null, null),
+    abc('㉔', '調整対象固定資産を課税業務用（非課税業務用）に転用した場合の調整（加算又は減算）額', null, null),
+    abc('㉕', '居住用賃貸建物を課税賃貸用に供した（譲渡した）場合の加算額', null, null),
+    abc('㉖', '差引 控除対象仕入税額', g.r8.deduction, g.r10.deduction, { note: '（⑱、㉑又は㉒）±㉓±㉔＋㉕ がプラスの時', strong: true }),
+    abc('㉗', '差引 控除過大調整税額', g.r8.over, g.r10.over, { note: '同 がマイナスの時' }),
     abc('㉘', '貸倒回収に係る消費税額', r.recoveredByRate.r8, r.recoveredByRate.r10),
   ];
 }
