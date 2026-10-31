@@ -13,6 +13,7 @@ import { formatRatio } from '../family-company.js';
 import { formatHoldingRatio } from '../withholding-credit.js';
 import { applicationRows } from '../application-statement.js';
 import { smeUsage } from '../depreciation.js';
+import { businessOverview, thousand } from '../business-overview.js';
 
 const TABS = [
   { value: 'summary', label: '概要' },
@@ -25,6 +26,7 @@ const TABS = [
   { value: 's7', label: '別表七(一)' },
   { value: 's15', label: '別表十五' },
   { value: 'tekiyo', label: '適用額明細書' },
+  { value: 'gaikyo', label: '事業概況説明書' },
   { value: 'pref', label: '県民税・事業税' },
   { value: 'city', label: '市民税' },
 ];
@@ -52,7 +54,10 @@ export async function render({ app, outlet, query }) {
   if (settings.entityType !== 'corporation') return put(outlet, h('p', { class: 'notice', text: '法人税の申告は法人で使います。個人は「所得税の確定申告書」を使ってください。' }), h('a', { class: 'btn', href: '#/reports', text: '帳票へ' }));
   const r = corporateTaxReturn({ accounts, period, journals, input: period.corporateTax || {}, enterpriseInput: period.enterpriseTax || {} });
   // 適用額明細書の少額減価償却資産の特例（その期間に使い始めた資産の取得価額の合計）
-  const smeAssets = smeUsage(await app.db.listAssets(), period);
+  const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
+  const smeAssets = smeUsage(assets, period);
+  // 法人事業概況説明書の主要科目・月別の売上高等（交際費は別表十五の支出交際費等の額）
+  const overview = businessOverview({ accounts, period, journals, assets, periods, entertainment: r.entertainment.amount });
   const tekiyo = applicationRows({ corp: r.corp, sme: r.input.sme, smeAssets, rows: r.input.applicationRows });
   // 以前の「住民税・事業税」のタブ（tab=local）は県民税・事業税のタブで開く
   const asked = query.tab === 'local' ? 'pref' : query.tab;
@@ -230,6 +235,35 @@ export async function render({ app, outlet, query }) {
       : null,
   ];
 
+  // ---- 法人事業概況説明書 ----
+  const ov = overview.items;
+  const kText = (n) => (thousand(n) ? `${n < 0 ? '△' : ''}${Math.abs(thousand(n)).toLocaleString('ja-JP')}` : '');
+  const kRow = (label, n, sub = '') => h('tr', {}, rowHead(label, sub), h('td', { class: 'num', text: kText(n) }));
+  sections.gaikyo = [
+    h('p', { class: 'small muted', text: '申告書に添付する書類です。帳簿から書ける「10 主要科目」「18 月別の売上高等」などを千円単位（千円未満切捨て）で集計しています。そのほかの欄は印刷して手で書いてください。' }),
+    h('h3', { class: 'tf-title', text: '10 主要科目（単位：千円）' }),
+    wrap('主要科目', 'ct-s1', ['科目', '千円'], [
+      kRow('売上（収入）高', ov.sales),
+      kRow('売上（収入）原価', ov.cogs),
+      kRow('売上（収入）総利益', ov.gross),
+      kRow('役員報酬', ov.officerCompensation, '販・管費のうち'),
+      kRow('従業員給料', ov.salaries, '販・管費のうち'),
+      kRow('交際費', ov.entertainment, '交際費等の支出額'),
+      kRow('減価償却費', ov.depreciation, '販・管費のうち'),
+      kRow('地代家賃', ov.rent, '販・管費のうち'),
+      kRow('営業損益', ov.operating),
+      kRow('税引前当期損益', ov.pretax),
+      kRow('資産の部合計', ov.totalAssets),
+      kRow('負債の部合計', ov.totalLiabilities),
+      kRow('純資産の部合計', ov.netAssets),
+    ]),
+    h('h3', { class: 'tf-title', text: '18 月別の売上高等（単位：千円）' }),
+    wrap('月別', 'ct-s1', ['月', '売上', '仕入', '人件費'], [
+      ...overview.months.map((m) => h('tr', {}, rowHead(`${Number(m.month.slice(5, 7))}月`), ...['sales', 'purchases', 'payroll'].map((key) => h('td', { class: 'num', text: kText(m[key]) })))),
+      h('tr', { class: 'mt-strong' }, rowHead('計'), ...['sales', 'purchases', 'payroll'].map((key) => h('td', { class: 'num', text: kText(overview.monthTotal[key]) }))),
+    ]),
+  ];
+
   // ---- 適用額明細書 ----
   sections.tekiyo = [
     h('p', { class: 'small muted', text: '租税特別措置（法人税率の特例・少額減価償却資産の特例など）の適用を受けるときに、申告書に添付する明細書です。添付しないと特例を受けられません。' }),
@@ -315,7 +349,7 @@ export async function render({ app, outlet, query }) {
     options: [
       { key: 'sheet', label: '印刷する別表', type: 'select', choices: [['all', '別表一〜十五（全部）'], ...CORPORATE_SHEETS.map((x) => [x.value, x.label])], value: CORPORATE_SHEETS.some((x) => x.value === tab) ? tab : 'all' },
     ],
-    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), filer: filerOf(settings), smeAssets, sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
+    build: (v) => corporateTaxDoc(r, { head: docHead({ settings, period, printedAt }), filer: filerOf(settings), smeAssets, overview, sheets: v.sheet === 'all' ? CORPORATE_SHEETS.map((x) => x.value) : [v.sheet] }),
   });
 
   // ---- 画面 ----
