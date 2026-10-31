@@ -348,3 +348,11 @@ test('印刷：法人税の申告書は別表ごとに改ページし、ペー�
   assert.ok(texts.includes('事業年度'));
   assert.ok(!texts.some((t) => t.includes('作成日') || t === 'Pocket会計'));
 });
+
+test('別表十五の印刷：様式に印刷された明細の行（交際費・交際費等の額に係る控除対象外消費税額等）を持つ', async () => {
+  const { schedule15Blocks } = await import('../js/print-tax-forms.js');
+  const blocks = schedule15Blocks({ amount: 1200000, diningBase: 300000, fixedLimit: 1200000, limit: 1200000, disallowed: 0, dining: 600000 }, { months: 12, sme: true });
+  const detail = blocks.filter((b) => b.type === 'table').at(-1);
+  assert.deepEqual(detail.rows.slice(0, 2).map((x) => x.cells[0]), ['交際費', '交際費等の額に係る控除対象外消費税額等']);
+  assert.equal(detail.rows.length, 8);
+});

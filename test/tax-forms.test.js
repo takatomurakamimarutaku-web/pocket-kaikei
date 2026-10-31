@@ -126,3 +126,21 @@ test('印刷：付表は税率6.24%（A）・7.8%（B）・合計（C）の列�
   assert.ok(texts.includes('151,600'));
   assert.equal(layoutDocument(consumptionTaxDoc(f, { head: {}, sheets: ['second'] })).length, 1);
 });
+
+test('様式の欄をすべて出す：第二表は①〜㉓、第一表は修正申告の⑬⑭・㉔㉕を空欄で持つ（国税庁の様式どおり）', () => {
+  const r = computeTaxReturn({ journals: ntaExample(), period: period2026, entityType: 'individual', method: 'twenty' });
+  const f = taxReturnForms(r);
+  const circled = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => String.fromCodePoint((from + i <= 20 ? 0x2460 - 1 : 0x3251 - 21) + from + i));
+  assert.deepEqual(f.second.rows.map((x) => x.no), circled(1, 23));
+  const second = byNo(f.second.rows);
+  // 旧税率・特定課税仕入れの欄は空欄（null）
+  for (const no of ['②', '③', '④', '⑧', '⑨', '⑩', '⑫', '⑬', '⑭', '⑲', '㉑', '㉒']) assert.equal(second[no].value, null, no);
+  const first = byNo(f.first.rows);
+  for (const no of ['⑬', '⑭', '㉔', '㉕']) assert.equal(first[no].value, null, no);
+  assert.equal(first['㉖'].value, 151600);
+  // 印刷：第一表・第二表とも1枚に収まり、修正申告の見出しが入る
+  const one = layoutDocument(consumptionTaxDoc(f, { head: {}, sheets: ['first'] }));
+  assert.equal(one.length, 1);
+  assert.ok(one[0].items.some((it) => it.t === 'text' && it.text === 'この申告書が修正申告である場合'));
+  assert.equal(layoutDocument(consumptionTaxDoc(f, { head: {}, sheets: ['second'] })).length, 1);
+});
