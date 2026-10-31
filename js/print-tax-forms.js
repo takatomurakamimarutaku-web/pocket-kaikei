@@ -922,85 +922,120 @@ export function consumptionTaxDoc(forms, { head, filer = null, period = null, co
 // 欄の番号は income-tax.js（computeIncomeTax の lines）と画面（views/income-tax.js）で使っている第一表の番号
 
 const MARU = '⓪①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚㉛㉜㉝㉞㉟㊱㊲㊳㊴㊵㊶㊷㊸㊹㊺㊻㊼㊽㊾㊿';
-const maru = (n) => (typeof n === 'number' ? MARU[n] || `(${n})` : n);
+// 51 以上は丸数字の文字が無いので、そのまま数字にする
+const maru = (n) => (typeof n === 'number' ? MARU[n] || String(n) : n);
 
 /**
  * 第一表：左に収入金額等・所得金額等・所得から差し引かれる金額、右に税金の計算・その他（様式と同じ左右の並び）
  * @param {object} r computeIncomeTax の結果
  */
 export function incomeFirstBlocks(r, { white = false, realEstate = false } = {}) {
+  // 様式（令和7年分以降用、様式ID NTA1K0A020010230）の欄をすべて並べる。このアプリで扱わない所得・控除・税額控除の欄は空欄（null）
+  //   https://www.nta.go.jp/taxes/shiraberu/shinkoku/yoshiki/01/shinkokusho/pdf/r07/01.pdf（2026-10-31 に様式の画像で確認）
   const L = r.lines;
   const it = (no, label, amount, strong = false) => ({ no: maru(no), label, amount, strong });
+  const re = (n) => (realEstate ? n : null);
   const left = [
     { head: '収入金額等' },
     it('㋐', '事業　営業等', r.rev.a),
-    ...(realEstate ? [it('㋒', '不動産', r.rev.c)] : []),
+    it('㋑', '事業　農業', null),
+    it('㋒', '不動産', re(r.rev.c)),
+    it('㋓', '配当', null),
     it('㋔', '給与', r.rev.e),
+    it('㋕', '雑　公的年金等', null),
     it('㋖', '雑　業務', r.rev.g),
     it('㋗', '雑　その他', r.rev.h),
+    it('㋘', '総合譲渡　短期', null),
+    it('㋙', '総合譲渡　長期', null),
+    it('㋚', '一時', null),
     { head: '所得金額等' },
     it(1, '事業　営業等', L[1]),
-    ...(realEstate ? [it(3, '不動産', L[3])] : []),
+    it(2, '事業　農業', null),
+    it(3, '不動産', re(L[3])),
+    it(4, '利子', null),
+    it(5, '配当', null),
     it(6, '給与', L[6]),
+    it(7, '雑　公的年金等', null),
     it(8, '雑　業務', L[8]),
     it(9, '雑　その他', L[9]),
-    it(10, '雑の計　(⑧＋⑨)', L[10]),
-    it(12, '合計', L[12], true),
+    it(10, '⑦から⑨までの計', L[10]),
+    it(11, '総合譲渡・一時　㋘＋{(㋙＋㋚)×1/2}', null),
+    it(12, '合計　(①から⑥までの計＋⑩＋⑪)', L[12], true),
     { head: '所得から差し引かれる金額' },
     it(13, '社会保険料控除', L[13]),
     it(14, '小規模企業共済等掛金控除', L[14]),
     it(15, '生命保険料控除', L[15]),
     it(16, '地震保険料控除', L[16]),
     it('⑰⑱', '寡婦、ひとり親控除', L[17]),
-    it(19, '勤労学生控除', L[19]),
-    it(20, '障害者控除', L[20]),
-    it('㉑㉒', r.spouse?.kind === 'special' ? '配偶者特別控除' : '配偶者（特別）控除', L[21]),
+    it('⑲⑳', '勤労学生、障害者控除', L[19] + L[20]),
+    it('㉑㉒', '配偶者（特別）控除', L[21]),
     it(23, '扶養控除', L[23]),
     it(24, '特定親族特別控除', L[24]),
     it(25, '基礎控除', L[25]),
     it(26, '⑬から㉕までの計', L[26], true),
+    it(27, '雑損控除', null),
     it(28, '医療費控除', L[28]),
     it(29, '寄附金控除', L[29]),
     it(30, '合計　(㉖＋㉗＋㉘＋㉙)', L[30], true),
   ];
   const right = [
     { head: '税金の計算' },
-    it(31, '課税される所得金額　(⑫－㉚)　1,000円未満切捨て', L[31]),
-    it(32, '上の㉛に対する税額', L[32]),
-    it(35, '住宅借入金等特別控除', L[35]),
-    it(42, '差引所得税額', L[42]),
-    it(44, '再差引所得税額（基準所得税額）', L[44]),
+    it(31, '課税される所得金額　(⑫－㉚)又は第三表', L[31]),
+    it(32, '上の㉛に対する税額又は第三表の94', L[32]),
+    it(33, '配当控除', null),
+    it(34, '（区分）', null),
+    it(35, '（特定増改築等）住宅借入金等特別控除', L[35]),
+    it('㊱〜㊳', '政党等寄附金等特別控除', null),
+    it('㊴〜㊶', '住宅耐震改修特別控除等', null),
+    it(42, '差引所得税額　(㉜－㉝－㉟－㊱－㊲－㊳－㊴－㊵－㊶)', L[42]),
+    it(43, '災害減免額', null),
+    it(44, '再差引所得税額（基準所得税額）　(㊷－㊸)', L[44]),
     it(45, '復興特別所得税額　(㊹×2.1%)', L[45]),
     it(46, '所得税及び復興特別所得税の額　(㊹＋㊺)', L[46], true),
+    it('㊼㊽', '外国税額控除等', null),
     it(49, '源泉徴収税額', L[49]),
     it(50, '申告納税額　(㊻－㊼－㊽－㊾)', L[50], true),
     it(51, '予定納税額（第1期分・第2期分）', L[51]),
-    it(52, '第3期分の税額　納める税金', L[52], true),
+    it(52, '第3期分の税額　納める税金　(㊿－51)', L[52], true),
     it(53, '第3期分の税額　還付される税金', L[53], true),
+    { head: '修正申告' },
+    it(54, '修正前の第3期分の税額', null),
+    it(55, '第3期分の税額の増加額', null),
     { head: 'そ　の　他' },
-    { no: '', label: '配偶者の合計所得金額', amount: r.other.spouseIncome ?? 0 },
-    { no: '', label: white ? '専従者控除額の合計額' : '専従者給与額の合計額', amount: r.other.familySalary },
-    ...(white ? [] : [{ no: '', label: '青色申告特別控除額', amount: r.other.blueDeduction }]),
-    { no: '', label: '雑所得・一時所得等の源泉徴収税額の合計額', amount: r.other.miscWithholding },
+    it(56, '公的年金等以外の合計所得金額', null),
+    it(57, '配偶者の合計所得金額', r.other.spouseIncome ?? 0),
+    it(58, white ? '専従者給与（控除）額の合計額（専従者控除額）' : '専従者給与（控除）額の合計額', r.other.familySalary),
+    it(59, '青色申告特別控除額', white ? null : r.other.blueDeduction),
+    it(60, '雑所得・一時所得等の源泉徴収税額の合計額', r.other.miscWithholding),
+    it(61, '未納付の源泉徴収税額', null),
+    it(62, '本年分で差し引く繰越損失額', r.loss.carried || null),
+    it(63, '平均課税対象金額', null),
+    it(64, '変動・臨時所得金額', null),
+    { head: '延納の届出' },
+    it(65, '申告期限までに納付する金額', null),
+    it(66, '延納届出額', null),
   ];
-  return [twoSide(left, right), { type: 'text', text: '番号の無い欄（配当控除・政党等寄附金等特別控除・外国税額控除など）は対象外のため出していません。' }];
+  return [twoSide(left, right), { type: 'text', text: '空欄は、このアプリで扱わない所得・控除・税額控除の欄です（配当・公的年金等・譲渡・一時所得、雑損控除、配当控除、外国税額控除、修正申告・延納など）。' }];
 }
 
-/** 第二表：所得の内訳・保険料控除等・配偶者や親族に関する事項 */
+/**
+ * 第二表：様式（令和7年分以降用、様式ID NTA0K0A020020230）の欄の並び
+ *   https://www.nta.go.jp/taxes/shiraberu/shinkoku/yoshiki/01/shinkokusho/pdf/r07/01.pdf（2ページ目。2026-10-31 に様式の画像で確認）
+ * 個人番号の欄は、マイナンバーを保存しない方針のため常に空欄
+ */
 export function incomeSecondBlocks(r, input) {
   const blocks = [];
-  if (input.salaryRevenue) {
-    blocks.push({ type: 'heading', text: '所得の内訳（所得税及び復興特別所得税の源泉徴収税額）' });
-    blocks.push({ type: 'table', columns: [{ label: '所得の種類', w: 24 }, { label: '種目・所得の生ずる場所又は給与などの支払者の氏名・名称', grow: 1 }, AMT('収入金額'), AMT('源泉徴収税額')], rows: [{ cells: ['給与', input.salaryPayer || '', num(input.salaryRevenue), num(input.salaryWithholding)] }] });
-  }
   const life = input.life;
-  blocks.push({ type: 'heading', text: '保険料控除等に関する事項' });
+  const yen = (n) => (n ? num(n) : '');
+  const empty = (n) => ({ cells: Array.from({ length: n }, () => '') });
+  // 保険料控除等（⑬〜⑯）：支払保険料等の計・うち年末調整等以外
+  blocks.push({ type: 'heading', text: '保険料控除等に関する事項（⑬〜⑯）' });
   blocks.push({
     type: 'table',
-    columns: [{ label: '区　　分', grow: 1 }, NO, AMT('支払保険料等の計')],
+    columns: [{ label: '', w: 10, align: 'center' }, { label: '保険料等の種類', grow: 1 }, AMT('支払保険料等の計'), AMT('うち年末調整等以外')],
     rows: [
-      ['⑬', '社会保険料', input.socialInsurance],
-      ['⑭', '小規模企業共済等掛金', input.smallBusinessAid],
+      ['⑬⑭', '社会保険料', input.socialInsurance],
+      ['', '小規模企業共済等掛金', input.smallBusinessAid],
       ['⑮', '新生命保険料', life.newGeneral],
       ['', '旧生命保険料', life.oldGeneral],
       ['', '新個人年金保険料', life.newPension],
@@ -1008,17 +1043,85 @@ export function incomeSecondBlocks(r, input) {
       ['', '介護医療保険料', life.newMedical],
       ['⑯', '地震保険料', input.earthquake.quake],
       ['', '旧長期損害保険料', input.earthquake.oldLongTerm],
-    ].map(([no, label, n]) => ({ cells: [label, noCell(no), num(n)] })),
+    ].map(([no, label, n]) => ({ cells: [no, label, yen(n), ''] })),
   });
-  const people = [
-    ...(r.spouse ? [[r.spouse.name, '配偶者', r.spouse.birthDate, r.spouse.familyWorker ? '事業専従者（控除の対象外）' : r.spouse.kind === 'special' ? '配偶者特別控除' : r.spouse.kind ? (r.spouse.elderly ? '老人控除対象配偶者' : '控除対象配偶者') : '対象外']] : []),
-    ...r.dependents.map((d) => [d.name, d.relation || '親族', d.birthDate, DEPENDENT_KIND_LABELS[d.kind] ?? '']),
-  ];
-  if (people.length) {
-    blocks.push({ type: 'heading', text: '配偶者や親族に関する事項' });
-    blocks.push({ type: 'table', columns: [{ label: '氏　　名', grow: 1 }, { label: '続柄', w: 22 }, { label: '生年月日', w: 26, align: 'center' }, { label: '控除の区分', grow: 1 }], rows: people.map(([a, b, c, d]) => ({ cells: [a, b, (c || '').replaceAll('-', '/'), d] })) });
+  // 本人に関する事項（⑰〜⑳）：障害者は本人かどうかを入力で分けていないので空欄
+  const mark = (on) => (on ? '○' : '');
+  // 様式では右上の小さな欄。1枚に収めるため寄附金控除（㉙）と同じ表に並べる
+  blocks.push({
+    type: 'table',
+    columns: [...['寡婦', 'ひとり親', '勤労学生', '障害者', '特別障害者'].map((label) => ({ label, w: 16, align: 'center' })), { label: '寄附先の名称等', grow: 1 }, AMT('寄附金')],
+    headGroups: [{ label: '本人に関する事項（⑰〜⑳）', from: 0, span: 5 }, { label: '寄附金控除に関する事項（㉙）', from: 5, span: 2 }],
+    rows: [{ cells: [mark(input.widow === 'widow'), mark(input.widow === 'single_parent'), mark(input.workingStudent), '', '', '', yen(input.donations)] }],
+  });
+  blocks.push({ type: 'heading', text: '雑損控除に関する事項（㉗）' });
+  blocks.push({ type: 'table', columns: [{ label: '損害の原因', grow: 1 }, { label: '損害年月日', w: 26 }, { label: '損害を受けた資産の種類など', grow: 1 }, AMT('損害金額'), AMT('保険金などで\n補填される金額'), AMT('差引損失額のうち\n災害関連支出の金額')], rows: [empty(6)] });
+  blocks.push({ type: 'heading', text: '総合課税の譲渡所得、一時所得に関する事項（⑪）' });
+  blocks.push({ type: 'table', columns: [{ label: '所得の種類', grow: 1 }, AMT('収入金額'), AMT('必要経費等'), AMT('差引金額')], rows: [empty(4), empty(4)] });
+  // 所得の内訳（源泉徴収税額）：様式は4行と ㊾ 源泉徴収税額の合計額
+  const income = [];
+  if (input.salaryRevenue || input.salaryWithholding) income.push({ cells: ['給与', '', input.salaryPayer || '', '', num(input.salaryRevenue), num(input.salaryWithholding)] });
+  if (input.miscWithholding) income.push({ cells: ['雑・事業', '', '', '', '', num(input.miscWithholding)] });
+  while (income.length < 4) income.push(empty(6));
+  income.push({ kind: 'total', cells: [{ text: '㊾ 源泉徴収税額の合計額', span: 5, align: 'right' }, num(r.lines[49])] });
+  income.push({ cells: ['特例適用条文等', { text: '', span: 5 }] });
+  blocks.push({ type: 'heading', text: '所得の内訳（所得税及び復興特別所得税の源泉徴収税額）' });
+  blocks.push({ type: 'table', columns: [{ label: '所得の種類', w: 20 }, { label: '種目', w: 18 }, { label: '給与などの支払者の名称', grow: 1 }, { label: '給与などの支払者の法人番号又は所在地等', grow: 1 }, AMT('収入金額'), AMT('源泉徴収税額')], rows: income });
+  // 配偶者や親族に関する事項（⑳〜㉔、㉟、㊵）：様式は配偶者＋4行
+  const kinds = (p) => (p.familyWorker ? '事業専従者（控除の対象外）' : DEPENDENT_KIND_LABELS[p.kind] ?? '');
+  const spouseKind = r.spouse ? (r.spouse.familyWorker ? '事業専従者（控除の対象外）' : r.spouse.kind === 'special' ? '配偶者特別控除' : r.spouse.kind ? (r.spouse.elderly ? '老人控除対象配偶者' : '控除対象配偶者') : '対象外') : '';
+  const date = (d) => (d || '').replaceAll('-', '/');
+  const people = [{ cells: [r.spouse?.name || '', '', '配偶者', date(r.spouse?.birthDate), spouseKind] }, ...r.dependents.map((d) => ({ cells: [d.name, '', d.relation || '親族', date(d.birthDate), kinds(d)] }))];
+  while (people.length < 5) people.push(empty(5));
+  blocks.push({ type: 'heading', text: '配偶者や親族に関する事項（⑳〜㉔、㉟、㊵）' });
+  blocks.push({ type: 'table', columns: [{ label: '氏　　名', grow: 1 }, { label: '個人番号', w: 34 }, { label: '続柄', w: 18 }, { label: '生年月日', w: 24, align: 'center' }, { label: '障害者・国外居住・住民税・その他（控除の区分）', grow: 1 }], rows: people });
+  // 事業専従者に関する事項（58）：専従者が1人のときだけ、専従者給与（控除）額の合計をその人の欄に書く
+  const workers = [...(r.spouse?.familyWorker ? [{ name: r.spouse.name, relation: '配偶者', birthDate: r.spouse.birthDate }] : []), ...r.dependents.filter((d) => d.familyWorker).map((d) => ({ name: d.name, relation: d.relation || '親族', birthDate: d.birthDate }))];
+  const workerRows = workers.map((w) => ({ cells: [w.name, '', w.relation, date(w.birthDate), '', workers.length === 1 ? yen(r.other.familySalary) : ''] }));
+  while (workerRows.length < 2) workerRows.push(empty(6));
+  blocks.push({ type: 'heading', text: '事業専従者に関する事項（58）' });
+  blocks.push({ type: 'table', columns: [{ label: '事業専従者の氏名', grow: 1 }, { label: '個人番号', w: 34 }, { label: '続柄', w: 18 }, { label: '生年月日', w: 24, align: 'center' }, { label: '従事月数・程度・仕事の内容', grow: 1 }, AMT('専従者給与（控除）額')], rows: workerRows });
+  // 住民税・事業税に関する事項：このアプリでは扱わないので項目名だけの空欄
+  const pairs = (list) => list.map(([a, b]) => ({ cells: [a, '', b, ''] }));
+  const cols = [{ label: '項　　目', grow: 1 }, { label: '', w: 30 }, { label: '項　　目', grow: 1 }, { label: '', w: 30 }];
+  blocks.push({ type: 'heading', text: '住民税・事業税に関する事項' });
+  blocks.push({
+    type: 'table',
+    columns: cols,
+    rows: [
+      { kind: 'group', cells: [{ text: '住民税', span: 4 }] },
+      ...pairs([
+        ['非上場株式の少額配当等', '非居住者の特例'],
+        ['配当割額控除額', '株式等譲渡所得割額控除額'],
+        ['給与、公的年金等以外の所得に係る住民税の徴収方法（特別徴収・自分で納付）', '都道府県、市区町村への寄附（特例控除対象）'],
+        ['共同募金、日赤その他の寄附', '都道府県・市区町村 条例指定寄附'],
+        ['退職所得のある配偶者・親族の氏名・個人番号・続柄・生年月日', '退職所得を除く所得金額・障害者・寡婦・ひとり親'],
+      ]),
+      { kind: 'group', cells: [{ text: '事業税', span: 4 }] },
+      ...pairs([
+        ['非課税所得など（番号・所得金額）', '損益通算の特例適用前の不動産所得'],
+        ['前年中の開（廃）業（開始・廃止、月日）', '不動産所得から差し引いた青色申告特別控除額'],
+        ['事業用資産の譲渡損失など', '他都道府県の事務所等'],
+      ]),
+      // 様式の最下段：別居の者の氏名・住所（国外）と、所得税で控除対象配偶者などとした専従者の氏名・給与
+      { kind: 'group', cells: ['上記の配偶者・親族・事業専従者のうち別居の者の氏名', '住所（国外）', '所得税で控除対象配偶者などとした専従者の氏名', '給与'] },
+      { cells: ['', '', '', ''] },
+    ],
+  });
+  // 様式と同じく1枚に収めるため、表の文字と行を詰める
+  // 見出しは次の表の見出しの上の段（列をまとめる段）に入れて（様式の「○〇〇に関する事項」）、見出しの行を使わない
+  const out = [];
+  let title = null;
+  for (const b of blocks) {
+    if (b.type === 'heading') {
+      title = b.text;
+      continue;
+    }
+    const headGroups = b.headGroups || (title ? [{ label: title, from: 0, span: b.columns.length }] : undefined);
+    title = null;
+    out.push({ ...b, ...(headGroups ? { headGroups } : {}), font: 6.8, headFont: 6.3, rowH: 3.8, headH: 4.2 });
   }
-  return blocks;
+  return out;
 }
 
 /** 確定申告書 第四表（損失申告用）：経常所得と繰越損失の計算 */
