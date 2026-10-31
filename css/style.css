@@ -614,6 +614,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .blue-return .br-no { width: 1.8em; padding-right: 0; color: var(--muted); text-align: center; }
 .blue-return.br-wide { min-width: 640px; }
 .blue-return.br-wide th, .blue-return.br-wide td { white-space: nowrap; }
+/* 様式の内訳・明細の枠：空欄の行も手で書ける高さにする */
+.blue-return.br-frame td { height: 1.9em; }
+.blue-return.br-frame thead th { text-align: left; }
+.blue-return.br-frame thead th:last-child { text-align: right; }
 .br-page.is-off { display: none; }
 
 /* 科目・期首残高 */
@@ -813,9 +817,14 @@ details.panel > summary { cursor: pointer; list-style: revert; }
   .blue-return.br-wide th, .blue-return.br-wide td { white-space: normal; }
   .blue-return.br-wide td.num { white-space: nowrap; width: auto; }
   .blue-return.br-wide tbody th { min-width: 7em; }
+  .blue-return.br-frame td { height: auto; }
+  .blue-return.br-frame td:empty::after { content: "\00a0"; }
+  .blue-return.br-frame caption { padding: 2px 0; }
   .blue-return.br-wide td:not(.num) { min-width: 3.5em; }
   .br-page.is-off { display: block; }
   .br-page + .br-page { break-before: page; }
+  /* 4ページ目の製造原価の計算は、貸借対照表と同じ用紙に入りきらないので次の用紙に出す */
+  .br-break { break-before: page; }
   .lg-section .section-title { break-after: avoid; margin: 10px 0 2px; font-size: 11pt; }
   .br-page-title { font-size: 11pt; margin: 0 0 4px; }
   .br-page h2:not(.br-page-title), .blue-return caption { font-size: 10pt; margin: 6px 0 2px; padding: 0; }

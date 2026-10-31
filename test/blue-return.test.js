@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blueIncomeStatement, monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionFor, blueDeductionReplaced } from '../js/blue-return.js';
+import { blueIncomeStatement, monthlySalesPurchases, depreciationTable, blueBalanceSheet, blueDeductionOptions, blueDeductionFor, blueDeductionReplaced, blueDetails, blueDeductionCalc } from '../js/blue-return.js';
 import { incomeStatement, closingRows } from '../js/statements.js';
 import { createAccount } from '../js/models.js';
 import { makeBook } from './helpers.js';
@@ -131,4 +131,39 @@ test('減価償却費の計算：特別償却は㋬の列と摘要の制度名�
   const o2010 = t2010.rows.find((r) => r.name === '古い棚');
   assert.deepEqual([o2010.method, o2010.base, o2010.rate, o2010.amount, o2010.closing, o2010.note], ['旧定額法', 50000, '', 9999, 1, '均等償却']);
   assert.deepEqual([t.total.ordinary, t.total.special, t.total.amount], [150000, 900000, 1050000]);
+});
+
+test('2・3ページの内訳と明細：補助科目を相手先にし、多い順に4つ、残りと補助科目なしは「上記以外」', () => {
+  const subs = [['売上高', 'A商事'], ['売上高', 'B商店'], ['売上高', 'C社'], ['売上高', 'D社'], ['売上高', 'E社'], ['仕入高', '問屋X'], ['給料賃金', '山田 一郎'], ['地代家賃', '大家 佐藤'], ['利子割引料', '知人 鈴木']];
+  const b = makeBook('individual', { subs });
+  const journals = [
+    ...[['A商事', 500000], ['B商店', 400000], ['C社', 300000], ['D社', 200000], ['E社', 100000]].map(([n, a]) => b.j('2026-03-01', [['普通預金', a]], [['売上高', a, undefined, n]])),
+    b.j('2026-03-02', [['普通預金', 50000]], [['売上高', 50000]]),
+    b.j('2026-03-03', [['普通預金', 7000]], [['雑収入', 7000]]),
+    b.j('2026-03-04', [['仕入高', 220000, undefined, '問屋X']], [['買掛金', 220000]]),
+    b.j('2026-03-05', [['仕入高', 30000]], [['買掛金', 30000]]),
+    b.j('2026-03-25', [['給料賃金', 180000, undefined, '山田 一郎']], [['普通預金', 180000]]),
+    b.j('2026-03-26', [['地代家賃', 60000, undefined, '大家 佐藤']], [['普通預金', 60000]]),
+    b.j('2026-03-27', [['利子割引料', 12000, undefined, '知人 鈴木']], [['普通預金', 12000]]),
+  ];
+  const d = blueDetails({ accounts: b.accounts, subAccounts: b.subAccounts, period: b.period, journals });
+  assert.deepEqual(d.sales.rows.map((x) => x.name), ['A商事', 'B商店', 'C社', 'D社']);
+  // 上記以外：E社 100,000 ＋補助科目なし 50,000（雑収入は売上の明細に入れない）
+  assert.equal(d.sales.others, 150000);
+  assert.equal(d.sales.total, 1550000);
+  assert.deepEqual(d.purchases.rows, [{ name: '問屋X', amount: 220000 }]);
+  assert.equal(d.purchases.others, 30000);
+  assert.deepEqual(d.wages, [{ name: '山田 一郎', amount: 180000 }]);
+  assert.deepEqual(d.rent, [{ name: '大家 佐藤', amount: 60000 }]);
+  assert.deepEqual(d.interest, [{ name: '知人 鈴木', amount: 12000 }]);
+});
+
+test('青色申告特別控除額の計算（⑥〜⑨）：不動産所得から先に差し引き、⑨は1ページの㊹と一致する', () => {
+  assert.deepEqual(blueDeductionCalc({ deduction: 650000, businessIncome: 3000000 }), { large: true, six: 0, seven: 3000000, eight: 0, nine: 650000 });
+  assert.deepEqual(blueDeductionCalc({ deduction: 650000, businessIncome: 3000000, realEstateIncome: 200000 }), { large: true, six: 200000, seven: 3000000, eight: 200000, nine: 450000 });
+  assert.deepEqual(blueDeductionCalc({ deduction: 100000, businessIncome: 40000, realEstateIncome: -50000 }), { large: false, six: 0, seven: 40000, eight: 0, nine: 40000 });
+  assert.equal(blueDeductionCalc({ deduction: 650000, businessIncome: -10000 }).nine, 0);
+  const { b, journals } = book();
+  const is = blueIncomeStatement({ accounts: b.accounts, period: b.period, journals, deduction: 650000 });
+  assert.equal(blueDeductionCalc({ deduction: 650000, businessIncome: is.lines[43] }).nine, is.lines[44]);
 });
