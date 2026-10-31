@@ -50,6 +50,16 @@ mkdirSync(OUT, { recursive: true });
     }
     await go('#/advisor/tax');
     await shot('05-tax');
+    await go('#/advisor/saving');
+    await shot('06-saving');
+    // 利益が出ない見込み（法人のサンプル）では金額の入力欄が出ない
+    if (!pc && (await page.locator('input.saving-amount').count())) {
+      const inp = page.locator('input.saving-amount').first();
+      await inp.fill('1,200,000');
+      await inp.dispatchEvent('change');
+      await page.waitForTimeout(300);
+      if ((await page.locator('input.saving-amount').first().inputValue()) !== '1,200,000') errors.push(`${entity}: 節税の金額が反映されない`);
+    }
     await ctx.close();
   }
   await browser.close();

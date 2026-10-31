@@ -81,6 +81,7 @@ export async function render({ app, outlet }) {
       h('li', {}, h('a', { class: 'link', href: '#/reports/enterprise-tax', text: '事業税' }), corp ? '（税率・中間納付）' : '（業種・損失の繰越）'),
       settings.taxStatus === 'taxable' ? h('li', {}, h('a', { class: 'link', href: '#/reports/tax-return', text: '消費税の申告計算' }), '（計算方法・中間納付）') : null,
       h('li', {}, h('a', { class: 'link', href: '#/advisor/forecast', text: '着地見込み' }), '（残りの月の見込み）'),
+      h('li', {}, h('a', { class: 'link', href: '#/advisor/saving', text: '節税・税制の提案' }), '（税金を減らす手と、その試算）'),
     ),
     estimateNote(),
   );
