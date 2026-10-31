@@ -10,6 +10,7 @@ import { docHead } from '../print-forms.js';
 import { corporateTaxDoc, CORPORATE_SHEETS, localFormRows } from '../print-tax-forms.js';
 import { filerOf, hasFiler } from '../filer.js';
 import { formatRatio } from '../family-company.js';
+import { formatHoldingRatio } from '../withholding-credit.js';
 
 const TABS = [
   { value: 'summary', label: '概要' },
@@ -18,6 +19,7 @@ const TABS = [
   { value: 's2', label: '別表二' },
   { value: 's51', label: '別表五(一)' },
   { value: 's52', label: '別表五(二)' },
+  { value: 's61', label: '別表六(一)' },
   { value: 's7', label: '別表七(一)' },
   { value: 's15', label: '別表十五' },
   { value: 'pref', label: '県民税・事業税' },
@@ -206,6 +208,20 @@ export async function render({ app, outlet, query }) {
     fc.rows.length
       ? wrap('株主の明細', 'ct-s1', ['順位', '株主', '株式数等', '議決権'], fc.rows.map((x) => h('tr', {}, h('td', { class: 'num', text: x.sharesRank ?? '' }), rowHead(x.name, [x.relation, x.address].filter(Boolean).join('・')), h('td', { class: 'num', text: count(x.shares) }), h('td', { class: 'num', text: count(x.votes ?? x.shares) }))))
       : h('p', { class: 'muted small', text: '株主の入力がありません。' }),
+  ];
+
+  // ---- 別表六(一)：所得税額の控除 ----
+  const w61 = r.schedule61;
+  sections.s61 = [
+    h('dl', { class: 'pay-summary' }, h('div', {}, h('dt', { text: '源泉徴収された所得税額（②の計）' }), h('dd', { class: 'num', text: formatYen(w61.entered ? w61.total.tax : r.input.withholding) })), h('div', {}, h('dt', { text: '控除を受ける所得税額（③の計）' }), h('dd', { class: 'num', text: formatYen(r.input.withholding) })), h('div', {}, h('dt', { text: 'うち法人税額から控除' }), h('dd', { class: 'num', text: formatYen(r.corp.withholdingUsed) })), h('div', {}, h('dt', { text: 'うち還付' }), h('dd', { class: 'num', text: formatYen(r.corp.refundWithholding) }))),
+    !w61.entered ? h('p', { class: 'notice small', text: '明細がまだ入力されていません。「計算の条件を入力する」の「所得税額の控除（別表六(一)）」に、預金の利子・配当などの明細を入れると、区分ごとに集計します。' }) : null,
+    wrap('区分ごとの所得税額', 'ct-s1', ['区分', '収入金額', '所得税額', '控除を受ける額'], [
+      ...w61.kinds.map((k) => h('tr', {}, rowHead(`(${k.no}) ${k.short}`, k.prorate ? '元本の所有期間で按分' : ''), cell(k.income, { blank: true }), cell(k.tax, { blank: true }), cell(k.credit, { blank: true }))),
+      h('tr', { class: 'mt-strong' }, rowHead('(6) 計'), cell(w61.total.income), cell(w61.total.tax), cell(w61.entered ? w61.total.credit : r.input.withholding)),
+    ]),
+    w61.entered
+      ? wrap('明細', 'ct-s1', ['支払者（銘柄）', '収入金額', '所得税額', '控除を受ける額'], w61.lines.map((x) => h('tr', {}, rowHead(x.payer, [`(${x.kind})`, x.periodMonths ? `所有期間 ${x.heldMonths}/${x.periodMonths}月＝${formatHoldingRatio(x.ratio)}` : ''].filter(Boolean).join('・')), cell(x.income), cell(x.tax), cell(x.credit))))
+      : null,
   ];
 
   sections.s7 = [

@@ -7,6 +7,7 @@ import { formatPeriod, periodMonths } from '../period.js';
 import { previousPeriod } from '../closing.js';
 import { formatPercent, parsePercent } from '../enterprise-tax.js';
 import { emptyShareholder, MAX_SHAREHOLDERS } from '../family-company.js';
+import { emptyWithholdingRow, MAX_WITHHOLDING_ROWS, WITHHOLDING_KINDS } from '../withholding-credit.js';
 import { corporateTaxReturn, carryOverInput, cleanCorporateTax, validateCorporateTax, TAX_KINDS, ADJUSTMENT_PRESETS, RESIDENT_DEFAULTS, TOKYO_DEFAULTS, standardPerCapita, MAX_ROWS, MAX_LOSS_ROWS, MAX_LABEL, DEFENSE_FROM } from '../corporate-tax.js';
 
 /** 金額の欄 */
@@ -182,6 +183,40 @@ export async function render({ app, outlet }) {
   }
   paintHolders();
 
+  // 別表六(一)の明細（預金の利子・配当などの源泉徴収税額）。明細があれば控除を受ける所得税額はその計になる
+  const textOf = (n) => (n === null || n === undefined ? '' : String(n));
+  let whRows = v.withholdingRows.map((x) => ({ ...x, income: textOf(x.income), tax: textOf(x.tax), periodMonths: textOf(x.periodMonths), heldMonths: textOf(x.heldMonths) }));
+  const whList = h('div', { class: 'ct-holders' });
+  function paintWithholding() {
+    withholding.disabled = whRows.length > 0;
+    const box = (x, key, label, attrs = {}) => h('input', { type: 'text', value: x[key] ?? '', 'aria-label': label, placeholder: label, oninput: (e) => ((x[key] = e.target.value), markDirty()), ...attrs });
+    put(
+      whList,
+      whRows.length ? null : h('p', { class: 'small muted', text: '明細を入れると、区分ごとに集計して「法人税額から控除される所得税額」に入ります（別表六(一)）。入れなければ上の欄の金額を使います。' }),
+      ...whRows.map((x, i) => {
+        const kind = WITHHOLDING_KINDS.find((k) => k.no === Number(x.kind));
+        return h(
+          'div',
+          { class: 'ct-holder' },
+          h(
+            'div',
+            { class: 'ct-holder-row' },
+            h('select', { 'aria-label': `明細${i + 1}の区分`, onchange: (e) => ((x.kind = Number(e.target.value)), markDirty(), paintWithholding()) }, ...WITHHOLDING_KINDS.map((k) => h('option', { value: String(k.no), text: `${k.no} ${k.short}`, selected: k.no === Number(x.kind) }))),
+            box(x, 'payer', `明細${i + 1}の支払者（銘柄）`, { maxlength: 60 }),
+          ),
+          h('div', { class: 'ct-holder-row' }, box(x, 'income', '収入金額（税引前）', { inputmode: 'numeric', class: 'num' }), box(x, 'tax', '源泉徴収された所得税額', { inputmode: 'numeric', class: 'num' })),
+          kind?.prorate
+            ? h('div', { class: 'ct-holder-row' }, box(x, 'periodMonths', '配当の計算期間（月）', { inputmode: 'numeric', class: 'num' }), box(x, 'heldMonths', 'うち元本の所有期間（月）', { inputmode: 'numeric', class: 'num' }))
+            : null,
+          x.kind === 5 || Number(x.kind) === 5 ? h('div', { class: 'ct-holder-row' }, box(x, 'address', '支払者の住所', { maxlength: 60 }), h('input', { type: 'date', value: x.date || '', 'aria-label': '支払を受けた年月日', oninput: (e) => ((x.date = e.target.value), markDirty()) })) : null,
+          h('div', { class: 'ct-holder-row' }, h('span', { class: 'small muted', text: kind?.prorate ? '期間を空欄にすると全額を控除します' : '' }), h('button', { type: 'button', class: 'btn btn-small btn-danger-text', 'aria-label': `明細${i + 1}を削除`, text: '× 削除', onclick: () => (whRows.splice(i, 1), paintWithholding(), markDirty()) })),
+        );
+      }),
+      whRows.length < MAX_WITHHOLDING_ROWS ? h('button', { type: 'button', class: 'btn btn-small', text: '＋ 明細を足す', onclick: () => (whRows.push({ ...emptyWithholdingRow(), income: '', tax: '', periodMonths: '', heldMonths: '' }), paintWithholding()) }) : null,
+    );
+  }
+  paintWithholding();
+
   // 住民税
   const tokyo = h('input', { id: 'ct-tokyo', type: 'checkbox', checked: v.tokyo });
   const rateBox = (id, r) => h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', class: 'num', value: formatPercent(r) });
@@ -248,6 +283,7 @@ export async function render({ app, outlet }) {
       prefPerCapita: readYen(prefPerCapita, '道府県民税の均等割', errors),
       cityPerCapita: readYen(cityPerCapita, '市町村民税の均等割', errors),
       residentMonths: m === '' ? null : /^\d+$/.test(m) ? Number(m) : NaN,
+      withholdingRows: whRows.map((x, i) => ({ kind: Number(x.kind), payer: x.payer, address: x.address, date: x.date, income: countOf(x.income, `明細${i + 1}の収入金額`, { empty: 0 }), tax: countOf(x.tax, `明細${i + 1}の所得税額`, { empty: 0 }), periodMonths: countOf(x.periodMonths, `明細${i + 1}の計算期間`), heldMonths: countOf(x.heldMonths, `明細${i + 1}の所有期間`) })),
       shareholders: holderRows.filter((x) => x.name.trim() || String(x.shares).trim()).map((x, i) => ({ name: x.name, address: x.address, relation: x.relation, group: x.group, shares: countOf(x.shares, `株主${i + 1}の株式数`, { empty: 0 }), votes: countOf(x.votes, `株主${i + 1}の議決権の数`), corporate: Boolean(x.corporate) })),
       sharesTotal: countOf(sharesTotal.value, '発行済株式の総数'),
       votesTotal: countOf(votesTotal.value, '議決権の総数'),
@@ -333,7 +369,9 @@ export async function render({ app, outlet }) {
       h('p', { class: 'field-hint', text: '中小法人は、年800万円以下の所得の税率が15%、交際費の定額控除（年800万円）、欠損金の100%控除の対象です。' }),
       h('h2', { class: 'section-title', text: '利益の処分と所得税' }),
       field('当期に支払った剰余金の配当', dividends, { hint: '別表四の社外流出「配当」。株主総会で決めて当期に支払った配当の額' }),
-      field('法人税額から控除される所得税額', withholding, { hint: '預金の利子・配当から源泉徴収された所得税と復興特別所得税（別表六(一)で計算した額）' }),
+      field('法人税額から控除される所得税額', withholding, { hint: '預金の利子・配当から源泉徴収された所得税と復興特別所得税。下の明細を入れると、その計（別表六(一)の6の③）になります' }),
+      h('h3', { class: 'tf-title', text: '所得税額の控除（別表六(一)）の明細' }),
+      whList,
       h('h2', { class: 'section-title', text: '交際費（別表十五）' }),
       field('支出交際費等の額', entertainment, { hint: '空欄なら「接待交際費」の科目の当期の額。会議費など他の科目に交際費等があれば合計を入れます' }),
       field('うち接待飲食費の額', dining, { hint: '得意先などとの飲食の費用（社内の人だけの飲食を除く）。中小法人は50%か定額控除の多いほうで計算します' }),
