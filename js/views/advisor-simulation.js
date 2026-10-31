@@ -1,6 +1,7 @@
 // 利益シミュレーション：着地見込みをもとに、売上・変動費率・固定費を動かしたときの利益・損益分岐点・税引後の利益を出す
 import { h, put, amountCell, errorBox } from '../ui.js';
 import { formatYen, parseYen } from '../money.js';
+import { breakEvenChart } from '../chart.js';
 import { simulateProfit, baseFromPl, taxesAtDelta, DEFAULT_SIMULATION } from '../advisor/simulation.js';
 import { loadAdvisor, estimateNote, monthLabel } from './advisor-common.js';
 
@@ -93,6 +94,7 @@ export async function render({ app, outlet, isStale }) {
       r.required !== null
         ? h('p', { class: 'panel sim-required' }, `${profitWord} ${formatYen(input.targetProfit)}円に必要な売上高は `, h('strong', { class: 'num', text: `${formatYen(r.required)}円` }), r.base.sales > 0 ? `（着地の${pctText(Math.round((r.required * 1000) / r.base.sales))}、月平均 ${formatYen(Math.ceil(r.required / landing.months.length))}円）` : '', '。')
         : null,
+      breakEvenChart({ ...r.sim, title: r.sim.sales === r.base.sales && r.sim.fixed === r.base.fixed && r.sim.variable === r.base.variable ? '損益分岐点図（着地）' : '損益分岐点図（シミュレーション後）', salesLabel: corp ? '売上高' : '売上(収入)金額' }),
     );
   }
 

@@ -1627,3 +1627,44 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .st-bar-cash, .st-sw-cash { background: var(--chart-1); }
 .sim-check { display: flex; align-items: center; gap: 8px; }
 .sim-inputs-sub[hidden] { display: none; }
+
+/* 横棒の比較 */
+.hbar-rows { display: grid; gap: 10px; margin: 4px 4px 2px; }
+.hbar-label { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: var(--fs-footnote); font-weight: 700; }
+.hbar-line { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; margin-top: 3px; }
+.hbar-track { display: block; height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
+.hbar-bar { display: block; height: 100%; border-radius: 5px; }
+.hbar-num { font-size: var(--fs-footnote); min-width: 6.5em; text-align: right; }
+.hb-1 { background: var(--chart-1); }
+.hb-2 { background: var(--chart-2); }
+.hb-3 { background: color-mix(in srgb, var(--chart-2) 40%, var(--surface)); }
+.hb-4 { background: color-mix(in srgb, var(--chart-1) 40%, var(--surface)); }
+
+/* 損益分岐点図 */
+.be-fixed { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.be-now { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.be-now-label { fill: var(--text); }
+.be-point { fill: var(--surface); stroke: var(--text); stroke-width: 2.5; }
+.be-profit { fill: color-mix(in srgb, var(--chart-1) 22%, transparent); }
+.be-loss { fill: color-mix(in srgb, var(--negative) 18%, transparent); }
+.be-sw-fixed { height: 0; border-top: 2px dashed var(--muted); border-radius: 0; background: none; }
+.be-sw-point { border: 2.5px solid var(--text); border-radius: 50%; background: var(--surface); width: 10px; height: 10px; }
+.be-sw-profit { background: color-mix(in srgb, var(--chart-1) 35%, var(--surface)); }
+.be-sw-loss { background: color-mix(in srgb, var(--negative) 30%, var(--surface)); }
+
+/* 貸借対照表の比例縮尺図 */
+.bsbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; height: 260px; margin: 4px; }
+.bsbox-col { display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+.bsbox-box { flex-basis: 0; min-height: 24px; border-radius: 6px; padding: 4px 6px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; overflow: hidden; color: #fff; font-size: 0.72rem; line-height: 1.25; }
+.bsbox-box.is-small { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0 6px; padding: 2px 6px; font-size: 0.64rem; }
+.bsbox-name { font-weight: 800; }
+.bsbox-val { opacity: 0.95; }
+.bsbox-l-0 { background: var(--chart-1); }
+.bsbox-l-1 { background: color-mix(in srgb, var(--chart-1) 70%, #000); }
+.bsbox-l-2 { background: color-mix(in srgb, var(--chart-1) 55%, var(--surface)); color: var(--text); }
+.bsbox-r-0 { background: var(--chart-2); }
+.bsbox-r-1 { background: color-mix(in srgb, var(--chart-2) 70%, #000); }
+.bsbox-net { background: color-mix(in srgb, var(--chart-2) 35%, var(--surface)); color: var(--text); }
+.bsbox-deficit { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--negative) 35%, var(--surface)) 0 6px, var(--surface) 6px 12px); color: var(--negative); border: 1px solid var(--negative); }
+.bsbox-pair { display: grid; gap: var(--sp-2); }
+@media (min-width: 700px) { .bsbox-pair { grid-template-columns: 1fr 1fr; } }

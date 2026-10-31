@@ -190,3 +190,135 @@ export function lineChart({ labels, series, title, planFrom = labels.length }) {
   );
   return h('figure', { class: 'chart panel' }, h('figcaption', { class: 'chart-title', text: title }), legend, h('div', { class: 'chart-area' }, svgEl), tip);
 }
+
+/**
+ * 横棒の比較（CSS の棒。1行に1〜2本）
+ * @param {{ title: string, rows: Array<{ label: string, sub?: string, values: Array<number|null> }>, series: Array<{ label: string, cls: string }>, format: (v:number)=>string, scale?: 'all'|'row' }} opts
+ *   scale：'all' はすべての行で同じ物差し、'row' は行ごとに一番大きい値を100%にする（桁の違う指標を並べるとき）
+ *   cls：棒の色のクラス（hb-1：--chart-1、hb-2：--chart-2、hb-3：--chart-2 を薄く）。負の値は長さ0で、数字だけ出す
+ * @returns {HTMLElement}
+ */
+export function hBarChart({ title, rows, series, format, scale = 'all' }) {
+  const maxOf = (xs) => Math.max(1, ...xs.filter((v) => v !== null && v > 0));
+  const allMax = maxOf(rows.flatMap((r) => r.values));
+  const pct = (v, max) => (v === null || v <= 0 ? 0 : Math.max(1, Math.round((v * 1000) / max) / 10));
+  const legend = series.length > 1 ? h('div', { class: 'ch-legend' }, series.map((s) => h('span', { class: 'ch-key' }, h('span', { class: `ch-sw ${s.cls}` }), s.label))) : null;
+  return h(
+    'figure',
+    { class: 'chart panel hbar' },
+    h('figcaption', { class: 'chart-title', text: title }),
+    legend,
+    h(
+      'div',
+      { class: 'hbar-rows', role: 'list' },
+      rows.map((r) => {
+        const max = scale === 'row' ? maxOf(r.values) : allMax;
+        return h(
+          'div',
+          { class: 'hbar-row', role: 'listitem' },
+          h('div', { class: 'hbar-label' }, h('span', { text: r.label }), r.sub ? h('span', { class: 'muted small', text: r.sub }) : null),
+          r.values.map((v, i) =>
+            h(
+              'div',
+              { class: 'hbar-line' },
+              h('span', { class: 'hbar-track', 'aria-hidden': 'true' }, h('span', { class: `hbar-bar ${series[i].cls}`, style: `width:${pct(v, max)}%` })),
+              h('span', { class: `hbar-num num ${v < 0 ? 'neg' : ''}`, 'aria-label': `${series[i].label} ${v === null ? 'なし' : format(v)}`, text: v === null ? '—' : format(v) }),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+}
+
+/**
+ * 損益分岐点図：横軸は売上高、縦軸は金額。売上の線（原点から45度）と総費用の線（固定費＋変動費率×売上）が交わる点が損益分岐点
+ * @param {{ sales: number, variable: number, fixed: number, title: string, salesLabel?: string }} p 着地（またはシミュレーション後）の数字
+ * @returns {HTMLElement|null} 売上が0以下なら null
+ */
+export function breakEvenChart({ sales, variable, fixed, title, salesLabel = '売上高' }) {
+  if (sales <= 0) return null;
+  const rate = variable / sales; // 表示のための比（金額の計算には使わない）
+  const marginal = sales - variable;
+  const point = marginal > 0 && fixed > 0 ? Math.round((fixed * sales) / marginal) : marginal > 0 ? 0 : null;
+  const xMax = Math.max(sales, point ?? 0) * 1.25;
+  const cost = (x) => fixed + rate * x;
+  const ticks = axisTicks([0, xMax, cost(xMax), fixed]);
+  const lo = Math.min(0, ticks[0]);
+  const hi = ticks.at(-1);
+  const W = 360;
+  const H = 230;
+  const pad = { l: 44, r: 12, t: 12, b: 30 };
+  const xs = (x) => pad.l + (x / xMax) * (W - pad.l - pad.r);
+  const ys = (v) => pad.t + ((hi - v) / (hi - lo)) * (H - pad.t - pad.b);
+  const xTicks = axisTicks([0, xMax]).filter((t) => t >= 0 && t <= xMax);
+  const grid = ticks.map((t) => s('g', {}, s('line', { x1: pad.l, x2: W - pad.r, y1: ys(t), y2: ys(t), class: t === 0 ? 'ch-zero' : 'ch-grid' }), s('text', { x: pad.l - 4, y: ys(t) + 3, class: 'ch-tick', 'text-anchor': 'end' }, compactYen(t))));
+  const xLabels = xTicks.map((t) => s('text', { x: xs(t), y: H - 16, class: 'ch-tick', 'text-anchor': 'middle' }, compactYen(t)));
+  const profit = sales - variable - fixed;
+  // 利益（黒字）は売上の線と費用の線の間を塗る
+  const area = s('polygon', { points: `${xs(sales)},${ys(sales)} ${xs(sales)},${ys(cost(sales))} ${point !== null ? `${xs(point)},${ys(point)}` : ''}`, class: profit >= 0 ? 'be-profit' : 'be-loss' });
+  const svgEl = s(
+    'svg',
+    { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img', 'aria-label': `${title}：損益分岐点売上高 ${point === null ? 'なし' : `${formatYen(point)}円`}、${salesLabel} ${formatYen(sales)}円` },
+    grid,
+    point !== null ? area : null,
+    s('line', { x1: xs(0), y1: ys(fixed), x2: xs(xMax), y2: ys(fixed), class: 'be-fixed' }),
+    s('line', { x1: xs(0), y1: ys(0), x2: xs(xMax), y2: ys(xMax), class: 'ch-line ch-line-1' }),
+    s('line', { x1: xs(0), y1: ys(fixed), x2: xs(xMax), y2: ys(cost(xMax)), class: 'ch-line' }),
+    s('line', { x1: xs(sales), y1: pad.t, x2: xs(sales), y2: H - pad.b, class: 'be-now' }),
+    s('text', { x: xs(sales), y: pad.t + 9, class: 'ch-tick be-now-label', 'text-anchor': xs(sales) > W - 60 ? 'end' : 'middle' }, '今の売上'),
+    point !== null ? s('circle', { cx: xs(point), cy: ys(point), r: 5, class: 'be-point' }) : null,
+    s('text', { x: W - pad.r, y: H - 3, class: 'ch-tick', 'text-anchor': 'end' }, `横軸：${salesLabel}`),
+    xLabels,
+  );
+  const legend = h(
+    'div',
+    { class: 'ch-legend' },
+    h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw ch-sw-line1' }), salesLabel),
+    h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw ch-sw-line' }), '費用（固定費＋変動費）'),
+    h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw be-sw-fixed' }), '固定費'),
+    h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw be-sw-point' }), '損益分岐点'),
+  );
+  const readout = h(
+    'div',
+    { class: 'ch-readout' },
+    h('div', { class: 'ch-tip-row' }, h('span', { class: 'ch-sw be-sw-point' }), h('span', { text: '損益分岐点売上高' }), h('span', { class: 'num', text: point === null ? '—（限界利益がマイナス）' : `${formatYen(point)}円` })),
+    h('div', { class: 'ch-tip-row' }, h('span', { class: `ch-sw ${profit >= 0 ? 'be-sw-profit' : 'be-sw-loss'}` }), h('span', { text: profit >= 0 ? '利益（線の間）' : '損失（線の間）' }), h('span', { class: `num ${profit < 0 ? 'neg' : ''}`, text: `${formatYen(profit)}円` })),
+  );
+  return h('figure', { class: 'chart panel' }, h('figcaption', { class: 'chart-title', text: title }), legend, h('div', { class: 'chart-area' }, svgEl), readout);
+}
+
+/**
+ * 貸借対照表の比例縮尺図（左に資産、右に負債・純資産を金額の大きさで積む）
+ * @param {{ title: string, left: Array<{label, value}>, right: Array<{label, value}> }} p right の純資産が負（債務超過）なら左に「債務超過」の箱を足す
+ * @returns {HTMLElement}
+ */
+export function bsBoxChart({ title, left, right }) {
+  const pos = (xs) => xs.filter((x) => x.value > 0);
+  const net = right.find((x) => x.net);
+  const deficit = net && net.value < 0 ? -net.value : 0;
+  const leftBoxes = [...pos(left), ...(deficit ? [{ label: '債務超過', value: deficit, deficit: true }] : [])];
+  const rightBoxes = pos(right);
+  const total = Math.max(1, leftBoxes.reduce((t, x) => t + x.value, 0), rightBoxes.reduce((t, x) => t + x.value, 0));
+  const col = (boxes, side) =>
+    h(
+      'div',
+      { class: `bsbox-col bsbox-${side}` },
+      boxes.map((b, i) =>
+        h(
+          'div',
+          { class: `bsbox-box bsbox-${side}-${i}${b.deficit ? ' bsbox-deficit' : ''}${b.net ? ' bsbox-net' : ''}${b.value * 100 < total * 12 ? ' is-small' : ''}`, style: `flex-grow:${b.value}` },
+          h('span', { class: 'bsbox-name', text: b.label }),
+          h('span', { class: 'bsbox-val num', text: `${compactYen(b.value)}（${Math.round((b.value * 100) / total)}%）` }),
+        ),
+      ),
+    );
+  const sumL = left.reduce((t, x) => t + Math.max(0, x.value), 0);
+  return h(
+    'figure',
+    { class: 'chart panel bsbox' },
+    h('figcaption', { class: 'chart-title', text: title }),
+    h('div', { class: 'bsbox-grid', role: 'img', 'aria-label': `${title}：${[...leftBoxes, ...rightBoxes].map((b) => `${b.label} ${formatYen(b.value)}円`).join('、')}` }, col(leftBoxes, 'l'), col(rightBoxes, 'r')),
+    h('p', { class: 'muted small', text: `総資産 ${formatYen(sumL)}円。箱の高さは金額に比例します。` }),
+  );
+}

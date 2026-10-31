@@ -1,6 +1,7 @@
 // 納税予測：着地見込みの利益から、納める税金（税目・年税額・中間納付・差引納付額・納期限）を出す
 import { h, put, amountCell } from '../ui.js';
 import { formatYen } from '../money.js';
+import { hBarChart } from '../chart.js';
 import { TAX_METHODS } from '../tax-return.js';
 import { loadAdvisor, estimateNote, monthLabel } from './advisor-common.js';
 
@@ -71,6 +72,14 @@ export async function render({ app, outlet }) {
     h('p', { class: 'muted small', text: through }),
     h('h2', { class: 'section-title', text: '納める税金' }),
     items.length ? table : h('p', { class: 'muted', text: '納める税金の見込みはありません。' }),
+    items.some((i) => i.due > 0)
+      ? hBarChart({
+          title: '納付のカレンダー（納期限の順）',
+          rows: [...items].filter((i) => i.due > 0).sort((a, b) => a.deadline.localeCompare(b.deadline)).map((i) => ({ label: slash(i.deadline), sub: i.label, values: [i.due] })),
+          series: [{ label: '差引納付額', cls: 'hb-2' }],
+          format: (v) => `${formatYen(v)}円`,
+        })
+      : null,
     taxes.notes.map((n) => h('p', { class: 'muted small', text: n })),
     compare ? [h('h2', { class: 'section-title', text: '消費税の計算方法ごとの税額' }), compare, h('p', { class: 'muted small', text: '簡易課税は、原則として適用したい課税期間が始まる前に届出が必要です。2割特例は個人は令和8年分まで、3割特例は登録を機に課税事業者になった個人の令和9年分・10年分に使えます（国税庁）。' })] : null,
     h('h2', { class: 'section-title', text: '計算の条件を直す' }),
