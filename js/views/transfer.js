@@ -15,7 +15,7 @@ import { TAX_BY_CODE } from '../tax.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { BOM } from '../csv.js';
-import { CONVERT_TARGETS, convertChecks, buildConvertPack } from '../convert.js';
+import { CONVERT_TARGETS, convertChecks, buildConvertPack, usedIds, validateConvertCodes } from '../convert.js';
 import { createZip } from '../zip.js';
 
 const slash = (d) => (d ? d.replaceAll('-', '/') : '');
@@ -296,11 +296,66 @@ export async function render({ app, outlet }) {
   }
 
   // ---- 移行パック ----
-  const targetSelect = h('select', { id: 'tc-target' }, Object.entries(CONVERT_TARGETS).map(([value, t]) => h('option', { value, text: t.label })));
+  const targetSelect = h('select', { id: 'tc-target', onchange: () => renderCodes() }, Object.entries(CONVERT_TARGETS).map(([value, t]) => h('option', { value, text: t.label })));
+  // 移行先のコードの対応表（勘定奉行など、科目をコードで受け入れる移行先だけ）
+  const codesEl = h('div');
+  let codes = {};
+  function renderCodes() {
+    const target = targetSelect.value;
+    const t = CONVERT_TARGETS[target];
+    if (!t.codes) return put(codesEl);
+    const cur = settings.convertCodes?.[target] || {};
+    codes = { accounts: { ...cur.accounts }, subs: { ...cur.subs }, departments: { ...cur.departments } };
+    const used = usedIds(journals, period);
+    const input = (kind, id, label) =>
+      h(
+        'label',
+        { class: 'tc-code-row' },
+        h('span', { class: 'tc-code-name', text: label }),
+        h('input', {
+          type: 'text',
+          inputmode: 'text',
+          autocomplete: 'off',
+          maxlength: 10,
+          class: 'tc-code-input',
+          value: codes[kind][id] ?? '',
+          'aria-label': `${label}の${t.label}のコード`,
+          onchange: async (e) => {
+            const v = e.target.value.trim();
+            const next = { ...codes, [kind]: { ...codes[kind], [id]: v } };
+            const errs = validateConvertCodes(next);
+            if (errs.length) {
+              showToast(errs[0]);
+              e.target.value = codes[kind][id] ?? '';
+              return;
+            }
+            codes = next;
+            const saved = await app.db.saveConvertCodes(target, codes);
+            settings.convertCodes = saved.convertCodes;
+          },
+        }),
+      );
+    const accs = [...used.accounts].map((id) => accountById.get(id)).filter(Boolean).sort(compareAccounts);
+    const subs = [...used.subs].map((id) => subById.get(id)).filter(Boolean).sort((a, b) => compareAccounts(accountById.get(a.accountId), accountById.get(b.accountId)) || a.sortOrder - b.sortOrder);
+    const deps = [...used.departments].map((id) => departmentById.get(id)).filter(Boolean).sort((a, b) => a.sortOrder - b.sortOrder);
+    put(
+      codesEl,
+      h(
+        'div',
+        { class: 'tc-codes' },
+        h('h3', { class: 'small tc-codes-title', text: `${t.label}のコード` }),
+        h('p', { class: 'muted small', text: `${t.label}は科目をコードで受け入れます。この期間で使った科目に、${t.label}の勘定科目コードを入れてください（入れたコードは設定に保存され、バックアップにも入ります）。補助科目・部門は空欄なら「その他」になります。` }),
+        h('p', { class: 'small tc-codes-head', text: `勘定科目（${accs.length}）` }),
+        accs.map((a) => input('accounts', a.id, a.name)),
+        subs.length ? [h('p', { class: 'small tc-codes-head', text: `補助科目（${subs.length}）` }), subs.map((s) => input('subs', s.id, `${accountById.get(s.accountId)?.name ?? ''} › ${s.name}`))] : null,
+        deps.length ? [h('p', { class: 'small tc-codes-head', text: `部門（${deps.length}）` }), deps.map((d) => input('departments', d.id, d.name))] : null,
+      ),
+    );
+  }
   async function exportPack() {
     const target = targetSelect.value;
     const t = CONVERT_TARGETS[target];
-    const checks = convertChecks(journals, { target, accountById, subById, departmentById, period });
+    const checks = convertChecks(journals, { target, accountById, subById, departmentById, period, codes: settings.convertCodes?.[target] || {} });
     const list = (items) => h('ul', {}, items.map((x) => h('li', { text: x })));
     const warn = (title, items) => h('div', { class: 'notice small ws-warn' }, h('p', { class: 'ws-warn-title', text: title }), items.length ? list(items) : null);
     if (checks.errors.length) {
@@ -376,12 +431,15 @@ export async function render({ app, outlet }) {
       h('h2', { class: 'section-title', text: 'ほかの会計ソフトへ移る（移行パック）' }),
       h('p', { class: 'small', text: `今の会計期間（${formatPeriod(period)}）の期首残高・仕訳と、移行先で科目や固定資産を入力するための一覧、移行の手順書を1つの ZIP にまとめます。` }),
       field('移行先', targetSelect),
+      codesEl,
       h('ul', { class: 'muted small plain-list ti-points' }, [
         h('li', { text: '弥生会計には、期首残高と仕訳を弥生会計のインポート形式（Shift_JIS）で入れます。マネーフォワード・freee には、それぞれの仕訳のインポート形式で入れ、期首残高は手で入力するための一覧を入れます。' }),
         h('li', { text: '弥生会計 オンラインは1回に読める行数が少ないため、仕訳のファイルを分け、摘要などの「,」は全角にします。' }),
+        h('li', { text: '勘定奉行には、仕訳を OBC受入形式で入れます。科目は勘定奉行のコードで渡すため、下の欄にコードを入れてください。税区分は勘定奉行の科目の初期値になるので、違う明細の一覧を付けます。' }),
         h('li', { text: '固定資産台帳・期末の残高試算表は、移行先での入力と照合に使う一覧です（取り込むファイルではありません）。' }),
       ]),
       h('button', { type: 'button', class: 'btn btn-block', text: '移行パックを書き出す', onclick: exportPack }),
     ),
   );
+  renderCodes();
 }

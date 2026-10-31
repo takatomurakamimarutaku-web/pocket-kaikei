@@ -20,6 +20,7 @@ import { validateCapex } from './asset-tools.js';
 import { DEFAULT_ENTERPRISE_TAX, validateEnterpriseTax } from './enterprise-tax.js';
 import { cleanCorporateTax, validateCorporateTax } from './corporate-tax.js';
 import { DEFAULT_INCOME_TAX, validateIncomeTax } from './income-tax.js';
+import { validateConvertCodes } from './convert.js';
 import { REAL_ESTATE_MODES, validateBlueReturnSettings } from './real-estate.js';
 import { FILING_TYPES, validateWhiteReturnSettings } from './white-return.js';
 import { validateLock } from './lock.js';
@@ -545,6 +546,16 @@ export class Repository {
       meta.put({ key: 'settings', value: next });
       return next;
     });
+  }
+
+  /** 移行パックの移行先のコードの対応表（勘定奉行など）。設定に持つためバックアップに入る */
+  async saveConvertCodes(target, codes) {
+    const errors = validateConvertCodes(codes);
+    if (errors.length) throw new ValidationError(errors);
+    const clean = {};
+    for (const kind of ['accounts', 'subs', 'departments']) clean[kind] = Object.fromEntries(Object.entries(codes[kind] || {}).filter(([, v]) => v !== ''));
+    const cur = (await this.getSettings())?.convertCodes || {};
+    return this.updateSettings({ convertCodes: { ...cur, [target]: clean } });
   }
 
   /** 勘定科目内訳明細書の⑫・⑮（権利金等・工業所有権等の使用料）の対象の科目。設定に持つためバックアップに入る */

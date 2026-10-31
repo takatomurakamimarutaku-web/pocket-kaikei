@@ -8,9 +8,9 @@
 // - 弥生会計 Next「インポートの事前準備」：1回5,000行まで、複合仕訳は100行まで
 // - 弥生会計 オンライン サポート情報「インポートする際の制限事項」：Shift_JIS のみ、1ファイル1.0MB・1,000行まで、
 //   複合仕訳は20行まで、項目の中の半角カンマはダブルクォートで囲んでも不可、製造原価の科目は不可
-// - マネーフォワード・freee は各社の仕訳インポート形式（convert-formats.js）で渡す
+// - マネーフォワード・freee・勘定奉行は各社の仕訳インポート形式（convert-formats.js）で渡す
 import { yayoiRows } from './yayoi.js';
-import { mfGroups, MF_HEADER, freeeGroups, FREEE_HEADER } from './convert-formats.js';
+import { mfGroups, MF_HEADER, freeeGroups, FREEE_HEADER, bugyoGroups, BUGYO_HEADER, bugyoTaxCheckRows, isBugyoCode } from './convert-formats.js';
 import { encodeShiftJis } from './sjis.js';
 import { toCsv, BOM, trialBalanceCsv, assetsCsv } from './csv.js';
 import { trialBalance } from './ledger.js';
@@ -24,8 +24,9 @@ import { linesToRows } from './journal.js';
  * maxRows：1ファイルの行数の上限（超えたら仕訳の途中で切らずにファイルを分ける）。maxBytes：1ファイルの大きさの上限
  * maxLines：1つの仕訳（伝票）の行数の上限。nameMax：科目名などの長さの上限（Shift_JIS のバイト数）
  * noComma：項目の中の半角カンマを全角にする。noMfg：製造原価の科目を使えない。opening：期首残高を弥生の形式で渡すか一覧で渡すか
- * format：仕訳の形式（yayoi・mf・freee）
+ * format：仕訳の形式（yayoi・mf・freee・bugyo）。codes：科目を移行先のコードで渡す（コードの対応表が要る）
  * freee：1ファイル50,000行・64MB、1仕訳400行まで（freee ヘルプセンター「CSVインポートで移行する方法」「仕訳データのインポート」）
+ * 勘定奉行：1ファイル2MB、1伝票9,999明細まで（OBC「勘定奉行クラウド データ移行手順書」）
  */
 export const CONVERT_TARGETS = {
   yayoi: { label: '弥生会計（デスクトップ）・やよいの青色申告', maxRows: Infinity, maxBytes: Infinity, maxLines: Infinity, nameMax: 24, noComma: false, noMfg: false, opening: 'yayoi', format: 'yayoi' },
@@ -33,7 +34,39 @@ export const CONVERT_TARGETS = {
   online: { label: '弥生会計 オンライン・やよいの青色申告 オンライン', maxRows: 1000, maxBytes: 1_000_000, maxLines: 20, nameMax: 24, noComma: true, noMfg: true, opening: 'yayoi', format: 'yayoi' },
   mf: { label: 'マネーフォワード クラウド会計・確定申告', maxRows: Infinity, maxBytes: Infinity, maxLines: Infinity, nameMax: 60, noComma: false, noMfg: false, opening: 'list', format: 'mf' },
   freee: { label: 'freee会計', maxRows: 50000, maxBytes: 64_000_000, maxLines: 400, nameMax: 60, noComma: false, noMfg: false, opening: 'list', format: 'freee' },
+  bugyo: { label: '勘定奉行', maxRows: Infinity, maxBytes: 2_000_000, maxLines: 9999, nameMax: Infinity, noComma: false, noMfg: false, opening: 'list', format: 'bugyo', codes: true },
 };
+
+/** 移行先のコードの対応表（設定の convertCodes[移行先]）を確かめる。errors は直さないと保存できないもの */
+export function validateConvertCodes(codes = {}) {
+  const errors = [];
+  for (const kind of ['accounts', 'subs', 'departments']) {
+    for (const v of Object.values(codes[kind] || {})) {
+      if (v !== '' && !isBugyoCode(v)) errors.push(`コード「${v}」は半角の英数字10桁までで入力してください`);
+    }
+  }
+  return errors;
+}
+
+/** 仕訳・期首残高で使っている科目・補助科目・部門の ID（コードの対応表に並べるもの） */
+export function usedIds(journals, period) {
+  const accounts = new Set();
+  const subs = new Set();
+  const departments = new Set();
+  for (const j of journals) {
+    for (const l of j.lines) {
+      accounts.add(l.accountId);
+      if (l.subAccountId) subs.add(l.subAccountId);
+      if (l.departmentId) departments.add(l.departmentId);
+    }
+  }
+  for (const ob of period?.openingBalances || []) {
+    if (!ob.amount) continue;
+    accounts.add(ob.accountId);
+    if (ob.subAccountId) subs.add(ob.subAccountId);
+  }
+  return { accounts, subs, departments };
+}
 
 // 弥生の期首残高データに入れられない科目（移行先が自動で計算する）
 const OPENING_SKIP_ROLES = ['owner_drawings', 'owner_borrowings', 'owner_capital'];
@@ -114,7 +147,7 @@ export function splitYayoiGroups(groups, { maxRows = Infinity, maxBytes = Infini
  * 書き出す前の確認。errors は移行先で取り込めないもの、warnings は取り込めるが確かめてほしいもの
  * @returns {{ errors: string[], warnings: string[] }}
  */
-export function convertChecks(journals, { target, accountById, subById, departmentById = new Map(), period }) {
+export function convertChecks(journals, { target, accountById, subById, departmentById = new Map(), period, codes = {} }) {
   const t = CONVERT_TARGETS[target];
   const errors = [];
   const warnings = [];
@@ -142,6 +175,16 @@ export function convertChecks(journals, { target, accountById, subById, departme
   }
   if (mfg.size) errors.push(`製造原価の科目（${[...mfg].join('・')}）を使った仕訳は${t.label}に取り込めません`);
   if (longNames.size) warnings.push(`名前が長いため、移行先で途中から切れることがあります（全角${Math.floor(t.nameMax / 2)}文字まで）：${[...longNames].slice(0, 8).join('、')}${longNames.size > 8 ? ' ほか' : ''}`);
+  if (t.codes) {
+    const used = usedIds(journals, period);
+    const missing = [...used.accounts].map((id) => accountById.get(id)).filter((a) => a && !codes.accounts?.[a.id]).sort(compareAccounts);
+    if (missing.length) errors.push(`${t.label}の勘定科目コードが入っていない科目があります：${missing.slice(0, 8).map((a) => a.name).join('、')}${missing.length > 8 ? ' ほか' : ''}`);
+    errors.push(...validateConvertCodes(codes));
+    const taxRows = bugyoTaxCheckRows(journals, { accountById, subById });
+    if (taxRows.length) warnings.push(`税区分は移行先の科目の初期値になります。科目の初期値と違う税区分の明細が${taxRows.length}件あるため、「06_税区分の確認.csv」を見て移行先で直してください`);
+    const adj = journals.filter((j) => j.adjusting).length;
+    if (adj) warnings.push(`決算整理仕訳${adj}件は通常の仕訳として入ります。移行先で整理区分を確かめてください`);
+  }
   if (target === 'freee' && journals.some((j) => j.date >= '2028-10-01' && j.lines.some((l) => TAX_BY_CODE[l.taxCategory]?.transitional))) {
     warnings.push('2028年10月1日以後のインボイスのない仕入は「課対仕入(控50)10%」などの形で書き出します。freee の税区分の名前と合っているか確かめてください');
   }
@@ -149,15 +192,16 @@ export function convertChecks(journals, { target, accountById, subById, departme
 }
 
 /** 勘定科目・補助科目の一覧（移行先で科目を作る・対応させるときの参考） */
-export function accountListCsv(accounts, subAccounts, entityType) {
-  const rows = [['コード', '勘定科目', '補助科目', '区分', '残高の側', '既定の税区分', '使用']];
+export function accountListCsv(accounts, subAccounts, entityType, codes = null) {
+  const rows = [['コード', '勘定科目', '補助科目', '区分', '残高の側', '既定の税区分', '使用', ...(codes ? ['移行先の科目コード', '移行先の補助科目コード'] : [])]];
+  const tailCodes = (a, s) => (codes ? [codes.accounts?.[a.id] ?? '', s ? codes.subs?.[s.id] ?? '' : ''] : []);
   const subsOf = (id) => subAccounts.filter((s) => s.accountId === id).sort((a, b) => a.sortOrder - b.sortOrder);
   for (const a of [...accounts].sort(compareAccounts)) {
     const tax = TAX_BY_CODE[a.defaultTaxCategory];
     const base = [a.code, a.name];
     const tail = [groupLabel(a.group, entityType), a.normalSide === 'debit' ? '借方' : '貸方', tax && tax.kind !== 'none' ? tax.label : '対象外'];
-    rows.push([...base, '', ...tail, a.active === false ? '使わない' : '使う']);
-    for (const s of subsOf(a.id)) rows.push([...base, s.name, ...tail, s.active === false || a.active === false ? '使わない' : '使う']);
+    rows.push([...base, '', ...tail, a.active === false ? '使わない' : '使う', ...tailCodes(a)]);
+    for (const s of subsOf(a.id)) rows.push([...base, s.name, ...tail, s.active === false || a.active === false ? '使わない' : '使う', ...tailCodes(a, s)]);
   }
   return toCsv(rows);
 }
@@ -185,6 +229,7 @@ const utf8File = (name, text) => ({ name, bytes: new TextEncoder().encode(text) 
  * @returns {{ files: Array<{name, bytes}>, journalFiles: number, journalCount: number, openingCount: number, skipped: string[], unmappable: string[], assetCount: number }}
  */
 export function buildConvertPack({ target, settings, period, accounts, subAccounts, journals, departments = [], assets = [], periods = [] }) {
+  const codes = settings.convertCodes?.[target] || {};
   const t = CONVERT_TARGETS[target];
   if (!t) throw new Error(`移行先がわかりません：${target}`);
   const accountById = new Map(accounts.map((a) => [a.id, a]));
@@ -204,18 +249,21 @@ export function buildConvertPack({ target, settings, period, accounts, subAccoun
   let groups;
   if (t.format === 'mf') groups = mfGroups(journals, ctx);
   else if (t.format === 'freee') groups = freeeGroups(journals, ctx);
+  else if (t.format === 'bugyo') groups = bugyoGroups(journals, { codes });
   else {
     let rows = yayoiRows(journals, ctx);
     if (t.noComma) rows = rows.map((r) => r.map((v, i) => (TEXT_COLS.includes(i) ? noComma(v) : v)));
     groups = groupYayoiRows(rows);
   }
   const parts = splitYayoiGroups(groups, t);
-  const formatName = { yayoi: '弥生インポート形式', mf: 'マネーフォワード形式', freee: 'freee形式' }[t.format];
+  const formatName = { yayoi: '弥生インポート形式', mf: 'マネーフォワード形式', freee: 'freee形式', bugyo: '勘定奉行OBC受入形式' }[t.format];
   parts.forEach((part, i) => {
     const name = `02_仕訳_${formatName}${parts.length > 1 ? `_${i + 1}of${parts.length}` : ''}.csv`;
     // マネーフォワードは見出しの行が要る（Shift_JIS）。freee は見出しの行（[表題行]）が要り、UTF-8（BOM）で渡す
     if (t.format === 'mf') files.push(sjisFile(name, [MF_HEADER, ...part], unmappable));
     else if (t.format === 'freee') files.push(utf8File(name, toCsv([FREEE_HEADER, ...part])));
+    // 勘定奉行は1行目に受入記号（文字コードは資料に記載がなく Shift_JIS にした：推測）
+    else if (t.format === 'bugyo') files.push(sjisFile(name, [BUGYO_HEADER, ...part], unmappable));
     else files.push(sjisFile(name, part, unmappable));
   });
 
@@ -225,6 +273,11 @@ export function buildConvertPack({ target, settings, period, accounts, subAccoun
   if (register.length) files.push(utf8File('04_固定資産台帳.csv', assetsCsv(register, { accountById, departmentById, individual: settings.entityType === 'individual', period })));
   const tb = trialBalance({ accounts, subAccounts, period, journals });
   files.push(utf8File('05_残高試算表_期末（照合用）.csv', trialBalanceCsv(tb, settings.entityType)));
+  if (t.codes) {
+    const taxRows = bugyoTaxCheckRows(journals, { accountById, subById });
+    if (taxRows.length) files.push(utf8File('06_税区分の確認.csv', toCsv([['日付', '伝票No.', '貸借', '勘定科目', '補助科目', '金額', 'Pocket会計の税区分', '科目の初期値'], ...taxRows])));
+    files.splice(files.findIndex((f) => f.name.startsWith('03_')), 1, utf8File('03_勘定科目と補助科目の一覧.csv', accountListCsv(accounts, subAccounts, settings.entityType, codes)));
+  }
 
   const summary = { target, journalFiles: parts.length, journalCount: journals.length, openingCount: opening.rows.length, skipped: opening.skipped, assetCount: register.length };
   files.unshift(utf8File('00_移行の手順.txt', BOM + convertGuide({ ...summary, settings, period, files: files.map((f) => f.name) })));
@@ -262,6 +315,9 @@ export function convertGuide({ target, settings, period, files, journalFiles, sk
   } else if (target === 'mf') {
     step('［各種設定］→［事業者］で、消費税の経理方式が「税込」になっているか確かめます。');
     step('［開始残高］の画面で「01_期首残高の一覧.csv」を見ながら開始残高を入力します（マネーフォワードが読めるのは弥生会計の残高試算表の形式のため、手で入力します）。');
+  } else if (target === 'bugyo') {
+    step('勘定奉行で、Pocket会計の画面で入力した勘定科目コード・補助科目コード・部門コードの科目などがあるか確かめ、ない科目は作ります（「03_勘定科目と補助科目の一覧.csv」の右の2列が入力したコードです）。');
+    step('［導入処理］の科目残高の入力（または［汎用データ受入］→［導入前実績金額データ受入］）で、「01_期首残高の一覧.csv」を見ながら期首残高を入力します。');
   } else {
     step('「03_勘定科目と補助科目の一覧.csv」を見て、freee に現金・預金・クレジットカードの口座を作ります（freee は口座がないと取り込めません）。');
     step('事業所の設定で、消費税の経理方式が「税込」になっているか、インボイスのない仕入の経過措置の税区分（「課対仕入(控80)10%」など）を使う設定になっているか確かめます。');
@@ -271,6 +327,9 @@ export function convertGuide({ target, settings, period, files, journalFiles, sk
   const split = journalFiles > 1 ? `一度に読める行数に合わせて${journalFiles}個に分けてあります。番号の順に全部取り込んでください。` : '';
   if (target === 'mf') {
     step(`［会計帳簿］→［仕訳帳］の［インポート］→［仕訳帳］で${names}を取り込みます。科目・補助科目・部門の名前が違うときは「追加」か「変換」を選びます。インボイスのない仕入は「インボイス」の列に「80％控除」などを入れてあります。`);
+  } else if (target === 'bugyo') {
+    step(`［随時処理］→［汎用データ受入］→［仕訳伝票データ受入］で、受入データ形式を「OBC受入形式」にして${names}を取り込みます。${split}未受入の件数が出たら［プレビュー］で理由を確かめます。`);
+    step('税区分は空欄で渡しているため、勘定科目・補助科目の初期値になります。「06_税区分の確認.csv」（あるときだけ）に載っている明細は、［仕訳処理］で税区分を直します。');
   } else if (target === 'freee') {
     step(`［取引入力］→［振替伝票］の［インポート］で、freee のテンプレートの形式の仕訳として${names}を取り込みます。${split}勘定科目・補助科目（口座・取引先・品目）・税区分の対応を選んで登録します。`);
   } else {
