@@ -342,5 +342,9 @@ test('印刷：法人税の申告書は別表ごとに改ページし、ペー�
   assert.ok(pages.every((p) => p.orientation === 'portrait'));
   const one = layoutDocument(corporateTaxDoc(r, { head: {}, sheets: ['s4'] }));
   assert.equal(one.length, 1);
-  assert.ok(one[0].items.some((it) => it.t === 'text' && it.text === '所得の金額の計算に関する明細書（簡易様式）'));
+  // 申告書の体裁：表題は「…に関する」で2行に分けることがある。右上の枠に事業年度と法人名、作成日・アプリ名は書かない
+  const texts = one[0].items.filter((it) => it.t === 'text').map((it) => it.text);
+  assert.ok(texts.join('').includes('所得の金額の計算に関する明細書（簡易様式）'));
+  assert.ok(texts.includes('事業年度'));
+  assert.ok(!texts.some((t) => t.includes('作成日') || t === 'Pocket会計'));
 });

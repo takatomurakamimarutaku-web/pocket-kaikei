@@ -1322,6 +1322,10 @@ body.is-locked > :not(.lock-screen):not(.overlay):not(#toast-root) { visibility:
 .ct-rows { display: grid; gap: 8px; margin-bottom: var(--sp-2); }
 .ct-rows > .btn { justify-self: start; }
 .ct-row { display: grid; gap: 6px; align-items: center; }
+.ct-holders { display: grid; gap: 10px; margin-bottom: 8px; }
+.ct-holder { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--separator); border-radius: 10px; background: var(--surface); }
+.ct-holder-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center; }
+.ct-holder-row > * { min-width: 0; }
 .ct-row > * { min-width: 0; }
 .ct-adj { grid-template-columns: 5em 6.8em minmax(0, 1fr) 40px; padding: 8px; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface); }
 .ct-adj > input[list] { grid-column: 1 / -1; }

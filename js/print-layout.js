@@ -74,6 +74,12 @@ export function warekiText(date) {
   return `${era}${year === 1 ? '元' : year}年${m}月${d}日`;
 }
 
+/** 申告書の日付（令和8・4・1） */
+export function warekiShort(date) {
+  if (!date) return '';
+  return warekiText(date).replace(/年|月/g, '・').replace('日', '');
+}
+
 /** 期間の見出し（自 令和8年1月1日　至 令和8年12月31日） */
 export function periodText(from, to) {
   return `自 ${warekiText(from)}　至 ${warekiText(to)}`;
@@ -161,6 +167,8 @@ function chooseOrientation(orientation, blocks) {
  *       width?: number, font?: number, headFont?: number, rowH?: number,  表の幅（mm。用紙の中央に置く）・文字（pt）・1行の高さ（mm）
  *       headGroups?: Array<{ label, from, span }>,  見出しを2段にして上の段で列をまとめる
  *       split?: number|number[] }>  勘定式の左右の境・様式のマス目の区切り（この列の左に太い縦線）
+ *   taxForm?: { from, to, name, kind? }  申告書の体裁（国税庁の別表など）：左上に別表番号（caption）と適用の注記（見出しの edition）、
+ *     中央に様式の表題、右上に「事業年度（課税期間・年分）・法人名（氏名）」の枠。作成日・アプリ名・ページ番号・単位は書かない
  *   formal?: boolean  決算書の体裁：作成日・アプリ名を出さず、表の左上に事業者名、右上に単位。ページ番号は2ページ以上のときだけ
  *   period2?: string  決算書の体裁で、期間の下に書く2行目（前期と比べる表の前期の期間）
  *   blocks の { type: 'cover', number?, title, from, to, company?, address? }：表紙（1ページ。表題〔字間を空けたもの〕・期間・事業者名だけを書き、ページ番号を数えない）
@@ -201,6 +209,8 @@ export function layoutDocument(doc) {
   let pagePeriod = null; // caption の見出しに period があれば、そのページの期間の行にする
   let pageUnit; // caption の見出しに unit があれば、そのページの単位（'' なら書かない。個別注記表など）
   const formal = Boolean(doc.formal);
+  const taxForm = doc.taxForm || null;
+  let pageEdition = null; // 申告書の体裁：caption の見出しの edition（「令七・四・一以後終了事業年度分」など）
   // 表の始まり（決算書は表題・期間・事業者名の下を広く空ける。期間の2行目〔前期の期間〕があればその分も下げる）
   const TOP = formal ? (doc.period2 ? 46 : 41) : TABLE_TOP;
 
@@ -216,7 +226,7 @@ export function layoutDocument(doc) {
     setPaper();
     // 表の続きのページは、前のページと同じ表の幅に事業者名・単位をそろえる
     const frame = cont ? page?.frame : undefined;
-    page = { w: paper.w, h: paper.h, orientation, items: [], caption: cont && caption ? `${caption}（続き）` : caption, title: pageTitle, period: pagePeriod, unit: pageUnit, frame };
+    page = { w: paper.w, h: paper.h, orientation, items: [], caption: cont && caption ? `${caption}（続き）` : caption, title: pageTitle, period: pagePeriod, unit: pageUnit, edition: pageEdition, frame };
     pages.push(page);
     y = TOP;
   }
@@ -446,6 +456,8 @@ export function layoutDocument(doc) {
         page.period = pagePeriod;
         pageUnit = b.unit;
         page.unit = pageUnit;
+        pageEdition = b.edition ?? null;
+        page.edition = pageEdition;
         return;
       }
       if (y + 7 + HEAD_H + LINE_H * 2 > bottom) newPage(true);
@@ -480,6 +492,49 @@ export function layoutDocument(doc) {
     const top = MARGIN.top;
     const title = p.title || doc.title;
     const period = p.period ?? doc.period;
+    if (taxForm) {
+      // 申告書：左上に別表番号の枠と適用の注記、中央に表題、右上に事業年度と法人名の枠（国税庁の別表の上の欄にならう）
+      if (p.caption) {
+        const cw = Math.min(textWidth(p.caption, 10) + 5, 70);
+        rect(left, top + 1, cw, 7, 0.9);
+        line(left, top + 1, left + cw, top + 1, 0.3);
+        line(left, top + 8, left + cw, top + 8, 0.3);
+        line(left, top + 1, left, top + 8, 0.3);
+        line(left + cw, top + 1, left + cw, top + 8, 0.3);
+        fitted(left + cw / 2, top + 6, p.caption, 10, cw - 2, { align: 'center', bold: true });
+        if (p.edition) fitted(left, top + 12, p.edition, 6.5, 70);
+      }
+      const bw = 78;
+      const bx = right - bw;
+      const lw = 18;
+      const kindLabel = taxForm.kind === 'individual' ? ['年　分', '氏　名'] : taxForm.kind === 'consumption' ? ['課税期間', '名　称'] : ['事業年度', '法 人 名'];
+      for (const [k, yy] of [[0, top + 1], [1, top + 9]]) {
+        rect(bx, yy, lw, 8, 0.9);
+        line(bx, yy, right, yy, 0.25);
+        text(bx + lw / 2, yy + 5.3, kindLabel[k], 7.5, { align: 'center' });
+      }
+      line(bx, top + 17, right, top + 17, 0.25);
+      line(bx, top + 1, bx, top + 17, 0.25);
+      line(bx + lw, top + 1, bx + lw, top + 17, 0.25);
+      line(right, top + 1, right, top + 17, 0.25);
+      const termText = taxForm.yearText ?? `${warekiShort(taxForm.from)}　〜　${warekiShort(taxForm.to)}`;
+      fitted(bx + lw + 2, top + 6.3, termText, 8.5, bw - lw - 4);
+      fitted(bx + lw + 2, top + 14.3, taxForm.name || '', 9, bw - lw - 4);
+      // 表題は別表番号の枠と事業年度の枠のあいだの中央。長い表題は2行に折り返す
+      const tl = left + (p.caption ? Math.min(textWidth(p.caption, 10) + 5, 70) : 0) + 4;
+      const tw = bx - 4 - tl;
+      const titleSize = 11.5;
+      const cut = title.indexOf('に関する');
+      const tlines = textWidth(title, titleSize) <= tw ? [title] : cut > 0 ? [title.slice(0, cut), title.slice(cut)] : wrapText(title, titleSize, tw).slice(0, 2);
+      const tx = tl + tw / 2;
+      tlines.forEach((l, k) => fitted(tx, top + (tlines.length === 1 ? 10 : 6.5 + k * 6), l, titleSize, tw, { align: 'center', bold: true }));
+      const ul = Math.min(tw, Math.max(...tlines.map((l) => textWidth(l, titleSize))));
+      const uy = top + (tlines.length === 1 ? 11.8 : 14.3);
+      line(tx - ul / 2, uy, tx + ul / 2, uy, 0.25);
+      p.items.push(...items);
+      if (numbered.length > 1 && taxForm.pageNumbers) text(cx, p.h - MARGIN.bottom - 1, `${i + 1} / ${numbered.length}`, 7, { align: 'center' });
+      return;
+    }
     if (formal) {
       // 決算書：中央に表題（二重下線）と期間。表の左上に事業者名、右上に単位（表の幅にそろえる）
       const frame = p.frame ?? { left, right };

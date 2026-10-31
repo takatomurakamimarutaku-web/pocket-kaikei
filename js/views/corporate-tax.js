@@ -9,11 +9,13 @@ import { toCsv, csvFileName } from '../csv.js';
 import { docHead } from '../print-forms.js';
 import { corporateTaxDoc, CORPORATE_SHEETS, localFormRows } from '../print-tax-forms.js';
 import { filerOf, hasFiler } from '../filer.js';
+import { formatRatio } from '../family-company.js';
 
 const TABS = [
   { value: 'summary', label: '概要' },
   { value: 's4', label: '別表四' },
   { value: 's1', label: '別表一' },
+  { value: 's2', label: '別表二' },
   { value: 's51', label: '別表五(一)' },
   { value: 's52', label: '別表五(二)' },
   { value: 's7', label: '別表七(一)' },
@@ -176,6 +178,36 @@ export async function render({ app, outlet, query }) {
 
   // ---- 別表七(一) ----
   const loss = r.loss;
+  // ---- 別表二：同族会社等の判定 ----
+  const fc = r.family;
+  const ff = fc.fields;
+  const textRow = (label, value, { strong = false, sub = '' } = {}) => h('tr', { class: strong ? 'mt-strong' : '' }, rowHead(label, sub), h('td', { class: 'num', text: value }));
+  const count = (n) => (n == null ? '' : n.toLocaleString('ja-JP'));
+  sections.s2 = [
+    h('div', { class: 'kpi-grid' }, h('div', { class: 'kpi' }, h('span', { class: 'kpi-label', text: '判定結果' }), h('span', { class: 'kpi-value', text: ff[18] }), h('span', { class: 'kpi-sub', text: `上位3グループ ${formatRatio(ff[10]) || '－'}・上位1グループ ${formatRatio(ff[17]) || '－'}` }))),
+    !fc.entered ? h('p', { class: 'notice small', text: '株主がまだ入力されていません。「計算の条件を入力する」の株主（別表二）に、期末の株主と株式数を入れてください。' }) : null,
+    h('h3', { class: 'tf-title', text: '同族会社の判定' }),
+    wrap('同族会社の判定', 'ct-s1', ['項目', '値'], [
+      textRow('(1) 期末現在の発行済株式の総数又は出資の総額', count(ff[1])),
+      textRow('(2) 上位3順位の株式数又は出資の金額', count(ff[2])),
+      textRow('(3) 株式数等による判定', formatRatio(ff[3]), { sub: '(2)／(1)' }),
+      textRow('(4) 期末現在の議決権の総数', count(ff[4])),
+      textRow('(5) 上位3順位の議決権の数', count(ff[5])),
+      textRow('(6) 議決権の数による判定', formatRatio(ff[6]), { sub: '(5)／(4)' }),
+      textRow('(10) 同族会社の判定割合', formatRatio(ff[10]), { strong: true, sub: '50%を超えると同族会社' }),
+      textRow('(11) 上位1順位の株式数又は出資の金額', count(ff[11])),
+      textRow('(12) 株式数等による判定', formatRatio(ff[12]), { sub: '(11)／(1)' }),
+      textRow('(13) 上位1順位の議決権の数', count(ff[13])),
+      textRow('(14) 議決権の数による判定', formatRatio(ff[14]), { sub: '(13)／(4)' }),
+      textRow('(17) 特定同族会社の判定割合', formatRatio(ff[17]), { strong: true, sub: '資本金1億円以下の法人は特定同族会社に当たりません' }),
+      textRow('(18) 判定結果', ff[18], { strong: true }),
+    ]),
+    h('h3', { class: 'tf-title', text: '判定基準となる株主等の株式数等の明細' }),
+    fc.rows.length
+      ? wrap('株主の明細', 'ct-s1', ['順位', '株主', '株式数等', '議決権'], fc.rows.map((x) => h('tr', {}, h('td', { class: 'num', text: x.sharesRank ?? '' }), rowHead(x.name, [x.relation, x.address].filter(Boolean).join('・')), h('td', { class: 'num', text: count(x.shares) }), h('td', { class: 'num', text: count(x.votes ?? x.shares) }))))
+      : h('p', { class: 'muted small', text: '株主の入力がありません。' }),
+  ];
+
   sections.s7 = [
     h('h3', { class: 'tf-title', text: '別表七(一) 欠損金の損金算入等に関する明細書' }),
     h('dl', { class: 'pay-summary' }, h('div', {}, h('dt', { text: '控除前所得金額' }), h('dd', { class: 'num', text: formatYen(Math.max(0, s4.total.total)) })), h('div', {}, h('dt', { text: '損金算入限度額' }), h('dd', { class: 'num', text: formatYen(loss.limit) })), h('div', {}, h('dt', { text: '当期控除額' }), h('dd', { class: 'num', text: formatYen(loss.deducted) }))),

@@ -6,6 +6,7 @@ import { parseYen, formatYen } from '../money.js';
 import { formatPeriod, periodMonths } from '../period.js';
 import { previousPeriod } from '../closing.js';
 import { formatPercent, parsePercent } from '../enterprise-tax.js';
+import { emptyShareholder, MAX_SHAREHOLDERS } from '../family-company.js';
 import { corporateTaxReturn, carryOverInput, cleanCorporateTax, validateCorporateTax, TAX_KINDS, ADJUSTMENT_PRESETS, RESIDENT_DEFAULTS, TOKYO_DEFAULTS, standardPerCapita, MAX_ROWS, MAX_LOSS_ROWS, MAX_LABEL, DEFENSE_FROM } from '../corporate-tax.js';
 
 /** 金額の欄 */
@@ -145,6 +146,42 @@ export async function render({ app, outlet }) {
     ]),
   );
 
+  // 別表二の株主（株主グループ＝判定基準となる株主と同族関係者。グループの欄が空なら本人だけのグループ）
+  const countText = (n) => (n === null || n === undefined ? '' : String(n));
+  let holderRows = v.shareholders.map((x) => ({ ...x, shares: countText(x.shares), votes: countText(x.votes) }));
+  const sharesTotal = h('input', { id: 'ct-shares-total', type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: countText(v.sharesTotal), placeholder: '空欄なら株主の合計' });
+  const votesTotal = h('input', { id: 'ct-votes-total', type: 'text', inputmode: 'numeric', autocomplete: 'off', class: 'num', value: countText(v.votesTotal), placeholder: '空欄なら発行済株式の総数' });
+  const holderList = h('div', { class: 'ct-holders' });
+  function paintHolders() {
+    const box = (x, key, label, attrs = {}) => h('input', { type: 'text', value: x[key] ?? '', 'aria-label': label, placeholder: label, oninput: (e) => ((x[key] = e.target.value), markDirty()), ...attrs });
+    put(
+      holderList,
+      holderRows.length ? null : h('p', { class: 'small muted', text: '期末の株主（社員）と持っている株式数（出資の金額）を入れます。親族など同族関係者は「グループ」に判定基準となる株主の名前を入れると、まとめて判定します。' }),
+      ...holderRows.map((x, i) =>
+        h(
+          'div',
+          { class: 'ct-holder' },
+          h('div', { class: 'ct-holder-row' }, box(x, 'name', `株主${i + 1}の氏名又は法人名`, { maxlength: 60 }), box(x, 'relation', '続柄（本人・妻など）', { maxlength: 20 })),
+          h('div', { class: 'ct-holder-row' }, box(x, 'group', 'グループ（判定基準となる株主の名前）', { maxlength: 60 }), box(x, 'address', '住所又は所在地', { maxlength: 60 })),
+          h(
+            'div',
+            { class: 'ct-holder-row' },
+            box(x, 'shares', '株式数（出資の金額）', { inputmode: 'numeric', class: 'num' }),
+            box(x, 'votes', '議決権の数（空欄なら株式数）', { inputmode: 'numeric', class: 'num' }),
+          ),
+          h(
+            'div',
+            { class: 'ct-holder-row' },
+            h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: x.corporate, onchange: (e) => ((x.corporate = e.target.checked), markDirty()) }), h('span', { text: '被支配会社でない法人株主' })),
+            h('button', { type: 'button', class: 'btn btn-small btn-danger-text', 'aria-label': `株主${i + 1}を削除`, text: '× 削除', onclick: () => (holderRows.splice(i, 1), paintHolders(), markDirty()) }),
+          ),
+        ),
+      ),
+      holderRows.length < MAX_SHAREHOLDERS ? h('button', { type: 'button', class: 'btn btn-small', text: '＋ 株主を足す', onclick: () => (holderRows.push({ ...emptyShareholder(), shares: '', votes: '' }), paintHolders()) }) : null,
+    );
+  }
+  paintHolders();
+
   // 住民税
   const tokyo = h('input', { id: 'ct-tokyo', type: 'checkbox', checked: v.tokyo });
   const rateBox = (id, r) => h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', class: 'num', value: formatPercent(r) });
@@ -182,6 +219,15 @@ export async function render({ app, outlet }) {
     };
     const m = String(months.value).normalize('NFKC').trim();
     const e = String(employees.value).normalize('NFKC').trim();
+    const countOf = (s, label, { empty = null } = {}) => {
+      const t = String(s ?? '').normalize('NFKC').replace(/,/g, '').trim();
+      if (!t) return empty;
+      if (!/^\d+$/.test(t)) {
+        errors.push(`${label}は0以上の整数で入力してください`);
+        return 0;
+      }
+      return Number(t);
+    };
     const record = {
       sme: sme.checked,
       excluded: excluded.checked,
@@ -202,6 +248,9 @@ export async function render({ app, outlet }) {
       prefPerCapita: readYen(prefPerCapita, '道府県民税の均等割', errors),
       cityPerCapita: readYen(cityPerCapita, '市町村民税の均等割', errors),
       residentMonths: m === '' ? null : /^\d+$/.test(m) ? Number(m) : NaN,
+      shareholders: holderRows.filter((x) => x.name.trim() || String(x.shares).trim()).map((x, i) => ({ name: x.name, address: x.address, relation: x.relation, group: x.group, shares: countOf(x.shares, `株主${i + 1}の株式数`, { empty: 0 }), votes: countOf(x.votes, `株主${i + 1}の議決権の数`), corporate: Boolean(x.corporate) })),
+      sharesTotal: countOf(sharesTotal.value, '発行済株式の総数'),
+      votesTotal: countOf(votesTotal.value, '議決権の総数'),
       employees: e === '' ? null : /^\d+$/.test(e) ? Number(e) : NaN,
       interimPerCapita: { pref: readYen(prefInterimPC, '道府県民税の中間納付額のうち均等割', errors), city: readYen(cityInterimPC, '市町村民税の中間納付額のうち均等割', errors) },
     };
@@ -242,6 +291,12 @@ export async function render({ app, outlet }) {
     });
     if (ok !== true) return;
     lossRows = next.losses.map((l) => ({ endDate: l.endDate, amount: String(l.amount) }));
+    if (next.shareholders?.length && !holderRows.length) {
+      holderRows = next.shareholders.map((x) => ({ ...x, shares: countText(x.shares), votes: countText(x.votes) }));
+      sharesTotal.value = countText(next.sharesTotal);
+      votesTotal.value = countText(next.votesTotal);
+      paintHolders();
+    }
     openRows = next.openingAdjustments.map((a) => ({ label: a.label, amount: String(a.amount) }));
     for (const k of kinds) taxInputs[k.key].prior.value = next.prior[k.key] ? String(next.prior[k.key]) : '';
     paintLoss();
@@ -304,6 +359,10 @@ export async function render({ app, outlet }) {
       h('p', { class: 'field-hint', text: `帳簿の資本金＋資本準備金の期末（${formatYen(current.capital.total)}円）で区分します。税務上の資本金等の額（別表五(一)の差引翌期首現在資本金等の額）の方が大きいときは、その額で判定し直してください。自治体が超過税率を決めていれば、その年額に直してください。` }),
       h('div', { class: 'field-row' }, field('中間納付額のうち均等割（道府県民税）', prefInterimPC), field('中間納付額のうち均等割（市町村民税）', cityInterimPC)),
       h('p', { class: 'field-hint', text: '中間申告で納めた住民税のうち均等割の額。残りを法人税割として、申告書の「既に納付の確定した当期分」の欄に分けて書きます。' }),
+      h('h2', { class: 'section-title', text: '株主（別表二 同族会社等の判定）' }),
+      h('div', { class: 'field-row' }, field('期末現在の発行済株式の総数（出資の総額）', sharesTotal), field('期末現在の議決権の総数', votesTotal)),
+      h('p', { class: 'field-hint', text: '自己株式は発行済株式の総数から除きます。議決権の無い株式があるときは議決権の総数を入れてください。' }),
+      holderList,
       h('h2', { class: 'section-title', text: '別表五(一)の期首の調整項目' }),
       h('p', { class: 'field-hint', text: '前期の別表五(一)の「差引翌期首現在」に載っている、減価償却の償却超過額などの調整項目。マイナスは「-」か「△」を付けます。当期の留保の加算・減算と同じ名前にすると同じ行にまとまります。' }),
       openList,
