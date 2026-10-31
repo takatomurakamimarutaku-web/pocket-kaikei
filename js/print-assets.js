@@ -41,13 +41,13 @@ function noteText(d, { accountById, departmentById, groupBy }) {
  * @param {Function} cellsOf 明細 → 資産の行のセル
  * @param {Function} sumCells (見出し, 合計) → 小計・合計の行のセル
  */
-function groupedRows(details, { groupBy, sortBy, names, columns, cellsOf, sumCells }) {
+function groupedRows(details, { groupBy, sortBy, reverse = false, names, columns, cellsOf, sumCells }) {
   const rows = [];
   const groups = groupDetails(details, groupBy, names);
   const grouped = groupBy !== 'none';
   for (const g of groups) {
     if (grouped) rows.push({ kind: 'group', cells: [{ text: groupTitle(groupBy, g.label), span: columns.length }] });
-    for (const d of sortDetails(g.items, sortBy, names)) rows.push({ cells: cellsOf(d) });
+    for (const d of sortDetails(g.items, sortBy, names, reverse)) rows.push({ cells: cellsOf(d) });
     if (grouped && (groups.length > 1 || g.items.length > 1)) rows.push({ kind: 'subtotal', cells: sumCells(subtotalLabel(g.label, g.items.length), g.sum, g.items) });
   }
   rows.push({ kind: 'total', cells: sumCells(`合計（${details.length}件）`, sumDetails(details), details) });
@@ -61,7 +61,7 @@ function groupedRows(details, { groupBy, sortBy, names, columns, cellsOf, sumCel
  * @param {{ period, accountById: Map, departmentById?: Map, individual: boolean, head: object, groupBy?: string, sortBy?: string, details?: Array }} opts
  *   details：絞り込んだ registerDetail の結果（省略すると register のすべて）
  */
-export function assetRegisterDoc(register, { period, accountById, departmentById, individual, head, groupBy = 'account', sortBy = 'no', details }) {
+export function assetRegisterDoc(register, { period, accountById, departmentById, individual, head, groupBy = 'account', reverse = false, sortBy = 'no', details }) {
   const list = details ?? register.map((x) => registerDetail(x, period));
   const columns = [
     { label: '資産番号', w: 15 },
@@ -115,7 +115,7 @@ export function assetRegisterDoc(register, { period, accountById, departmentById
     fmt(s.accumulatedClosing),
     '',
   ];
-  const rows = groupedRows(list, { groupBy, sortBy, names, columns, cellsOf, sumCells });
+  const rows = groupedRows(list, { groupBy, sortBy, reverse, names, columns, cellsOf, sumCells });
   return {
     title: '固定資産台帳',
     ...head,
@@ -131,7 +131,7 @@ export function assetRegisterDoc(register, { period, accountById, departmentById
 /**
  * 固定資産増減明細表：取得価額と帳簿価額の 期首・増加・減少・期末、当期償却額、減価償却累計額
  */
-export function movementDoc(details, { accountById, departmentById, head, groupBy = 'account', sortBy = 'no' }) {
+export function movementDoc(details, { accountById, departmentById, head, groupBy = 'account', reverse = false, sortBy = 'no' }) {
   const columns = [
     { label: '資産の名称', grow: 1, max: 60 },
     { label: '期首', align: 'right', w: 22 },
@@ -150,6 +150,7 @@ export function movementDoc(details, { accountById, departmentById, head, groupB
   const rows = groupedRows(details, {
     groupBy,
     sortBy,
+    reverse,
     names: { accountById, departmentById },
     columns,
     cellsOf: (d) => [d.asset.assetNo ? `${d.asset.assetNo}　${d.asset.name}` : d.asset.name, ...nums(d)],
@@ -184,7 +185,7 @@ export function rangeLabel(r) {
 /**
  * 償却予定表（償却額推移表）：当期から years 年分の償却費と、最後の期間の期末帳簿価額
  */
-export function forecastDoc(assets, periods, period, { accountById, departmentById, head, groupBy = 'account', sortBy = 'no', years = 5, filter = () => true }) {
+export function forecastDoc(assets, periods, period, { accountById, departmentById, head, groupBy = 'account', reverse = false, sortBy = 'no', years = 5, filter = () => true }) {
   const f = depreciationForecast(assets, periods, period, years);
   const rows0 = f.rows.filter((r) => filter(r.asset));
   // groupDetails・sortDetails に渡すため、明細の形（asset・cost）にする
@@ -201,7 +202,7 @@ export function forecastDoc(assets, periods, period, { accountById, departmentBy
   const groups = groupDetails(details.map((d) => ({ ...d, ...ZERO })), groupBy, { accountById, departmentById });
   for (const g of groups) {
     if (groupBy !== 'none') rows.push({ kind: 'group', cells: [{ text: groupTitle(groupBy, g.label), span: columns.length }] });
-    for (const r of sortDetails(g.items, sortBy, { accountById, departmentById })) rows.push({ cells: [r.asset.assetNo ? `${r.asset.assetNo}　${r.asset.name}` : r.asset.name, fmt(r.cost), methodCell(r.asset), ...r.amounts.map(b0), fmt(r.closing.at(-1))] });
+    for (const r of sortDetails(g.items, sortBy, { accountById, departmentById }, reverse)) rows.push({ cells: [r.asset.assetNo ? `${r.asset.assetNo}　${r.asset.name}` : r.asset.name, fmt(r.cost), methodCell(r.asset), ...r.amounts.map(b0), fmt(r.closing.at(-1))] });
     if (groupBy !== 'none' && (groups.length > 1 || g.items.length > 1)) {
       const s = sumOf(g.items);
       rows.push({ kind: 'subtotal', cells: [subtotalLabel(g.label, g.items.length), fmt(s.cost), '', ...s.amounts.map(fmt), fmt(s.closing)] });
@@ -226,7 +227,7 @@ const ZERO = Object.fromEntries(['costOpening', 'costIncrease', 'costDecrease', 
  * 月次償却額一覧表：資産ごとに月別の償却費、月ごとの合計
  * @param {Array} register depreciation.assetRegister の結果（絞り込み後）
  */
-export function monthlyDoc(register, period, { accountById, departmentById, head, groupBy = 'account', sortBy = 'no', individual = false }) {
+export function monthlyDoc(register, period, { accountById, departmentById, head, groupBy = 'account', reverse = false, sortBy = 'no', individual = false }) {
   const m = monthlyTable(register, period);
   const details = m.rows.map((r) => ({ ...ZERO, ...r, cost: r.asset.cost }));
   const columns = [
@@ -239,7 +240,7 @@ export function monthlyDoc(register, period, { accountById, departmentById, head
   const groups = groupDetails(details, groupBy, { accountById, departmentById });
   for (const g of groups) {
     if (groupBy !== 'none') rows.push({ kind: 'group', cells: [{ text: groupTitle(groupBy, g.label), span: columns.length }] });
-    for (const r of sortDetails(g.items, sortBy, { accountById, departmentById })) rows.push({ cells: [r.asset.name, ...r.amounts.map(b0), fmt(r.total)] });
+    for (const r of sortDetails(g.items, sortBy, { accountById, departmentById }, reverse)) rows.push({ cells: [r.asset.name, ...r.amounts.map(b0), fmt(r.total)] });
     if (groupBy !== 'none' && (groups.length > 1 || g.items.length > 1)) {
       const s = sumOf(g.items);
       rows.push({ kind: 'subtotal', cells: [subtotalLabel(g.label, g.items.length), ...s.map(fmt), fmt(s.reduce((a, b) => a + b, 0))] });
@@ -261,7 +262,7 @@ export function monthlyDoc(register, period, { accountById, departmentById, head
 /**
  * 取得資産台帳（当期に取得した資産）
  */
-export function acquiredDoc(details, { accountById, departmentById, head, groupBy = 'account', sortBy = 'date' }) {
+export function acquiredDoc(details, { accountById, departmentById, head, groupBy = 'account', reverse = false, sortBy = 'date' }) {
   const list = details.filter((d) => d.costIncrease);
   const columns = [
     { label: '資産番号', w: 15 },
@@ -277,6 +278,7 @@ export function acquiredDoc(details, { accountById, departmentById, head, groupB
   const rows = groupedRows(list, {
     groupBy,
     sortBy,
+    reverse,
     names: { accountById, departmentById },
     columns,
     cellsOf: (d) => [d.asset.assetNo || '', [d.asset.name, CATEGORY_BY_ID[d.asset.category]?.label ?? ''], [slash(d.asset.acquiredOn), d.asset.startedOn !== d.asset.acquiredOn ? slash(d.asset.startedOn) : ''], String(d.asset.quantity ?? 1), fmt(d.cost), methodCell(d.asset), fmt(d.amount), fmt(d.bookClosing), [d.asset.supplier || '', d.asset.location || '']],

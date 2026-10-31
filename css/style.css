@@ -1510,6 +1510,9 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
 .asset-filter-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
 .asset-filter { display: grid; gap: 2px; min-width: 0; }
 .asset-filter select { width: 100%; }
+.asset-filter input { width: 100%; min-width: 0; }
+.asset-filter.asset-check { display: flex; align-items: center; gap: 8px; align-self: end; min-height: 44px; }
+.asset-filter.asset-check input { width: auto; }
 @media (min-width: 900px) { .asset-table.asset-wide { min-width: 100%; } }
 .asset-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
 .asset-more[open] > summary { margin-bottom: 6px; }
