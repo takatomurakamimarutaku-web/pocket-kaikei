@@ -17,6 +17,9 @@ import * as setupView from './views/setup.js';
 import * as lockSettingsView from './views/lock-settings.js';
 import * as booksView from './views/books.js';
 import * as homeView from './views/home.js';
+import * as advisorHomeView from './views/advisor-home.js';
+import * as advisorForecastView from './views/advisor-forecast.js';
+import * as advisorTaxView from './views/advisor-tax.js';
 import * as journalsView from './views/journals.js';
 import * as journalFormView from './views/journal-form.js';
 import * as journalHistoryView from './views/journal-history.js';
@@ -91,6 +94,10 @@ import * as employeeFormView from './views/employee-form.js';
 const routes = [
   { path: '/setup', view: setupView, title: '初期設定', tab: null, setup: true },
   { path: '/home', view: homeView, title: 'ホーム', tab: 'home' },
+  // 経営サポート（会計のホームと「会計｜経営」で切り替える）
+  { path: '/advisor', view: advisorHomeView, title: '経営サポート', tab: 'home' },
+  { path: '/advisor/forecast', view: advisorForecastView, title: '着地見込み', tab: 'home', back: '#/advisor', print: true },
+  { path: '/advisor/tax', view: advisorTaxView, title: '納税予測', tab: 'home', back: '#/advisor', print: true },
   { path: '/journals', view: journalsView, title: '仕訳帳', tab: 'journals', print: true },
   { path: '/journals/history', view: journalHistoryView, title: '訂正・削除の履歴', tab: 'journals', back: '#/journals', print: true },
   { path: '/entry', view: entryView, title: '入力', tab: 'entry' },

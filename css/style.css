@@ -1518,3 +1518,21 @@ input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; 
   border-top: 1px solid var(--separator);
   padding-top: 10px;
 }
+
+/* ---- 経営サポート（会計｜経営の切替・着地見込み・納税予測） ---- */
+.mode-switch { margin-bottom: var(--sp-3); }
+.mode-switch .seg { display: grid; place-items: center; flex: 1 1 0; text-decoration: none; font-weight: 700; }
+.mode-switch .seg[aria-checked="true"] { background: var(--surface); color: var(--text); }
+.advisor-hero .hero-lead { margin: var(--sp-2) 0 0; font-size: 0.88rem; color: inherit; opacity: 0.9; }
+.advisor-chart .chart-title { display: none; }
+.advisor-through select { width: 100%; }
+.advisor-accounts th[scope="row"] { min-width: 7em; }
+.advisor-accounts .advisor-row > * { border-bottom: 0; padding-bottom: 2px; }
+.advisor-method-row td { padding-top: 0; }
+.advisor-account { display: block; font-weight: 700; }
+.advisor-method { display: inline-block; width: auto; max-width: 100%; font-size: 0.75rem; min-height: 30px; }
+.advisor-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.advisor-pick .advisor-manual { flex: 0 1 10em; width: 10em; min-height: 30px; padding: 4px 8px; text-align: right; font-size: 0.8rem; }
+.advisor-accounts td.strong, .advisor-taxes td.strong { font-weight: 800; }
+.advisor-taxes td:last-child { color: var(--muted); }
+.advisor-note { margin-top: var(--sp-4); }
