@@ -62,6 +62,7 @@ export async function render({ app, outlet }) {
       { class: 'menu-group' },
       menu('#/advisor/forecast', '着地見込み', '残りの月の売上・経費を見込んで、期末の利益を予想する', 'chart'),
       menu('#/advisor/tax', '納税予測', '着地の利益から、納める税金と納期限を出す', 'tax', 'tax'),
+      menu('#/advisor/meeting', '決算検討会の資料', '着地・納税・月別の見込み・節税の提案を1冊にして印刷する', 'form', 'tax'),
       menu('#/advisor/saving', '節税・税制の提案', '決算までに打てる手と来期の制度を、減る税金の試算つきで', 'flag', 'tax'),
     ),
     h('h2', { class: 'menu-group-title', text: '計画と分析' }),
