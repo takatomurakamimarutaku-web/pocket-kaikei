@@ -5,12 +5,13 @@ import { trialBalance, computeOwnerCapital } from '../ledger.js';
 import { findByRole, compareAccounts } from '../accounts.js';
 import { validateJournal, journalLabel } from '../journal.js';
 import { parseYen, formatYen } from '../money.js';
-import { formatPeriod, todayString } from '../period.js';
+import { formatPeriod, todayString, monthsInPeriod } from '../period.js';
 import { createJournal, createPeriod } from '../models.js';
 import { ValidationError } from '../db.js';
 import { errorText } from '../errors.js';
 import { periodContext, closedNotice } from './period-common.js';
 import { assetRegister, depreciationLines, findDepreciationJournals, smeUsage } from '../depreciation.js';
+import { bookedDepreciation, monthlyDepreciationLines } from '../asset-reports.js';
 import { householdPlan, householdBases, householdEligible, findHouseholdJournals, isValidRatio, HOUSEHOLD_SOURCE } from '../household.js';
 
 export async function render({ app, outlet }) {
@@ -87,7 +88,43 @@ export async function render({ app, outlet }) {
     const title = h('h2', { class: 'section-title', text: '2. 減価償却' });
     const link = h('a', { href: '#/assets', class: 'btn btn-block', text: '固定資産台帳を開く' });
     const { lines, total, errors } = depreciationLines({ assets, periods, period, accounts, entityType, departments });
-    const done = findDepreciationJournals(journals);
+    const done = findDepreciationJournals(journals).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no - b.no));
+    const booked = bookedDepreciation(journals);
+    // 月次償却で一部の月だけ登録しているとき：残りの月の分を期末日でまとめて登録する
+    const rest = booked.annual ? [] : monthsInPeriod(period).filter((m) => !booked.months.has(m));
+    if (done.length && rest.length) {
+      const remain = monthlyDepreciationLines({ assets, periods, period, accounts, entityType, departments, months: rest });
+      const errorsEl = h('div');
+      const saveRest = async () => {
+        if (remain.errors.length) return put(errorsEl, errorBox(remain.errors));
+        const journal = createJournal({ periodId: period.id, date: period.endDate, lines: remain.lines, source: 'depreciation', depMonths: rest });
+        const v = validateJournal(journal, { accounts, subAccounts, period });
+        if (v.length) return put(errorsEl, errorBox(v));
+        try {
+          const saved = await app.db.saveJournal(journal);
+          showToast(`減価償却の仕訳（${journalLabel(saved)}）を登録しました`);
+          app.refresh();
+        } catch (e) {
+          put(errorsEl, errorBox(e instanceof ValidationError ? errorList(e) : [errorText(e, '保存')]));
+        }
+      };
+      const m = (x) => `${Number(x.slice(5))}月`;
+      return h(
+        'section',
+        { class: 'panel' },
+        title,
+        h('p', { text: `月次償却で ${[...booked.months].sort().map(m).join('・')} の分（${formatYen(booked.booked)}円）を登録済みです。` }),
+        h('ul', { class: 'plain-list' }, done.map((j) => h('li', {}, h('a', { href: `#/journal/${encodeURIComponent(j.id)}/edit`, text: `${journalLabel(j)}（${j.date.replaceAll('-', '/')}）` })))),
+        remain.total
+          ? [
+              h('p', { class: 'small', text: `残りの月（${rest.length === 1 ? m(rest[0]) : `${m(rest[0])}〜${m(rest.at(-1))}`}）の償却費 ${formatYen(remain.total)}円 を、期末日（${period.endDate.replaceAll('-', '/')}）の決算整理の仕訳で登録します。特別償却は最後の月の分に入っています。` }),
+              errorsEl,
+              h('button', { type: 'button', class: 'btn btn-primary btn-block', text: '残りの月の減価償却を登録する', onclick: saveRest }),
+            ]
+          : h('p', { class: 'small', text: '残りの月に償却費はありません。' }),
+        link,
+      );
+    }
     if (done.length) {
       const booked = done.reduce((s, j) => s + j.lines.filter((l) => l.side === 'credit').reduce((t, l) => t + l.amount, 0), 0);
       return h(

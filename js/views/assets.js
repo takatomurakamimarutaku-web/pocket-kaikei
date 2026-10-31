@@ -1,5 +1,5 @@
 // 固定資産台帳：台帳・増減明細・償却予定・月次償却・取得と除売却を切り替えて見る。状態・科目・種類・部門・文字で絞り込み、集計の単位と並び順を選ぶ
-import { h, put, emptyState, amountCell, saveFile, stackTable, segmented } from '../ui.js';
+import { h, put, emptyState, amountCell, saveFile, stackTable, segmented, showToast, confirmDialog, errorBox } from '../ui.js';
 import { assetRegister, smeUsage, depreciationSchedule, methodLabel, usesLife, CATEGORY_BY_ID, ASSET_CATEGORIES } from '../depreciation.js';
 import {
   registerDetail,
@@ -11,6 +11,9 @@ import {
   depreciationForecast,
   monthlyTable,
   disposalList,
+  bookedDepreciation,
+  monthlyDepreciationLines,
+  monthEnd,
   ASSET_STATUSES,
   STATUS_BY_ID,
   GROUP_KEYS,
@@ -18,6 +21,9 @@ import {
 } from '../asset-reports.js';
 import { formatYen } from '../money.js';
 import { formatPeriod } from '../period.js';
+import { createJournal } from '../models.js';
+import { validateJournal, journalLabel } from '../journal.js';
+import { errorText } from '../errors.js';
 import { compareAccounts } from '../accounts.js';
 import { compareDepartments } from '../departments.js';
 import { toCsv, csvFileName, assetsCsv } from '../csv.js';
@@ -34,7 +40,7 @@ const VIEWS = [
 ];
 
 export async function render({ app, outlet, query = {} }) {
-  const { settings, period, accounts, accountById, departments, departmentById } = await app.load();
+  const { settings, period, accounts, subAccounts, journals, accountById, departments, departmentById } = await app.load();
   const [assets, periods] = await Promise.all([app.db.listAssets(), app.db.listPeriods()]);
   const individual = settings.entityType === 'individual';
   const register = assetRegister(assets, periods, period);
@@ -293,15 +299,68 @@ export async function render({ app, outlet, query = {} }) {
     const m = monthlyTable(register.filter((x) => ids.has(x.asset.id)), period);
     if (!m.rows.length) return empty();
     const mLabel = (mm) => `${mm.slice(0, 4)}年${Number(mm.slice(5))}月`;
-    const monthRows = m.months.map((mm, i) => h('tr', {}, h('th', { scope: 'row', text: mLabel(mm) }), cell(m.totals[i]), individual ? cell(m.businessTotals[i]) : null));
+    const booked = bookedDepreciation(journals);
+    const mark = (mm) => (booked.annual ? '年1回で登録済み' : booked.months.has(mm) ? '登録済み' : '');
+    const monthRows = m.months.map((mm, i) => h('tr', {}, h('th', { scope: 'row', text: mLabel(mm) }), cell(m.totals[i]), individual ? cell(m.businessTotals[i]) : null, h('td', { class: 'small', text: mark(mm) })));
     const items = sortDetails(m.rows.map((r) => ({ ...r, cost: r.asset.cost })), st.sort);
     const csv = () => toCsv([['資産番号', '資産名', '勘定科目', ...m.months.map(mLabel), '合計'], ...items.map((r) => [r.asset.assetNo || '', r.asset.name, accountById.get(r.asset.accountId)?.name ?? '', ...r.amounts, r.total]), ['', '合計', '', ...m.totals, m.total]]);
     return [
       h('p', { class: 'muted small', text: '当期の償却費を、償却する月（使い始めた月から、売却・除却した月まで）に均等に割り振った額です。月次決算で月割りの償却費を見積もるときに使います。端数は後の月に寄せ、特別償却は最後の月に入れています。' }),
-      tableOf('月ごとの合計', ['月', '償却費', ...(individual ? ['うち経費'] : [])], monthRows, h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '合計' }), cell(m.total), individual ? cell(m.businessTotals.reduce((a, b) => a + b, 0)) : null)),
+      tableOf('月ごとの合計', ['月', '償却費', ...(individual ? ['うち経費'] : []), '仕訳'], monthRows, h('tr', { class: 'mt-strong' }, h('th', { scope: 'row', text: '合計' }), cell(m.total), individual ? cell(m.businessTotals.reduce((a, b) => a + b, 0)) : null, h('td'))),
+      postPanel(booked),
       tableOf('資産ごとの月別', ['資産', ...m.months.map((mm) => `${Number(mm.slice(5))}月`), '合計'], items.map((r) => h('tr', {}, nameCell(r.asset), ...r.amounts.map((n) => cell(n, { blankZero: true })), cell(r.total))), null, { cls: 'asset-wide asset-monthly' }),
       h('div', { class: 'actions no-print' }, csvButton('CSVで書き出す', csv, 'asset-monthly')),
     ];
+  }
+
+  /**
+   * 月次償却の仕訳の登録：選んだ月までの、まだ登録していない月を、月ごとに月末日の仕訳で登録する（決算整理にはしない）
+   * 期末に「決算・繰越」で残りの月の分を登録する。絞り込みにかかわらず、すべての資産で計算する
+   */
+  function postPanel(booked) {
+    if (booked.annual) return h('p', { class: 'muted small', text: 'この期間の減価償却は、決算・繰越で年1回の仕訳を登録済みです。月次で登録するときは、その仕訳を削除してから登録してください。' });
+    const all = monthlyTable(register, period);
+    const open = all.months.filter((mm, i) => !booked.months.has(mm) && all.totals[i]);
+    if (!open.length) return h('p', { class: 'muted small', text: booked.months.size ? 'すべての月の減価償却を登録済みです。' : 'この期間に償却費はありません。' });
+    const errorsEl = h('div');
+    const label = (mm) => `${mm.slice(0, 4)}年${Number(mm.slice(5))}月`;
+    const until = h('select', { id: 'dep-until', 'aria-label': '登録する月' }, open.map((mm) => h('option', { value: mm, text: `${label(mm)}まで` })));
+    const post = async () => {
+      const targets = open.filter((mm) => mm <= until.value);
+      const plans = targets.map((mm) => ({ month: mm, ...monthlyDepreciationLines({ assets, periods, period, accounts, entityType: settings.entityType, departments, months: [mm] }) }));
+      const errors = [...new Set(plans.flatMap((p) => p.errors))];
+      if (errors.length) return put(errorsEl, errorBox(errors));
+      const total = plans.reduce((t, p) => t + p.total, 0);
+      const ok = await confirmDialog({
+        title: '月次償却の仕訳を登録',
+        message: `${targets.map((mm) => `${Number(mm.slice(5))}月`).join('・')} の減価償却（合計 ${formatYen(total)}円）を、月ごとに月末日の仕訳で登録します。`,
+        buttons: [{ label: 'キャンセル', value: false }, { label: '登録する', value: true, variant: 'primary' }],
+      });
+      if (!ok) return;
+      try {
+        let last = null;
+        for (const p of plans) {
+          if (!p.total) continue;
+          // 月次の償却は決算整理ではない（月次推移で各月に入れる）。depMonths で計上済みの月を残し、期末は残りの月だけを登録する
+          const journal = createJournal({ periodId: period.id, date: monthEnd(p.month, period), lines: p.lines, source: 'depreciation', depMonths: [p.month], adjusting: false });
+          const v = validateJournal(journal, { accounts, subAccounts, period, departments });
+          if (v.length) return put(errorsEl, errorBox(v));
+          last = await app.db.saveJournal(journal);
+        }
+        showToast(last ? `月次償却の仕訳を${plans.filter((p) => p.total).length}件登録しました（最後は${journalLabel(last)}）` : '登録する償却費はありませんでした');
+        app.refresh();
+      } catch (e) {
+        put(errorsEl, errorBox([errorText(e, '保存')]));
+      }
+    };
+    return h(
+      'section',
+      { class: 'panel no-print' },
+      h('h2', { class: 'section-title', text: '月次償却の仕訳' }),
+      h('p', { class: 'small', text: '毎月の試算表に減価償却費を入れるときは、月ごとに月末日の仕訳で登録します。残りの月の分は、期末に「決算・繰越」でまとめて登録します。資産を直したら、登録した仕訳を削除して登録し直してください。' }),
+      h('div', { class: 'inline-inputs' }, until, h('button', { type: 'button', class: 'btn btn-primary', text: 'まだの月を登録する', onclick: post })),
+      errorsEl,
+    );
   }
 
   // ---- 取得・除売却：当期に取得した資産と、売却・除却した資産 ----

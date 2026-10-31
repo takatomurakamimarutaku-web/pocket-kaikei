@@ -562,9 +562,10 @@ export function smeUsage(assets, period) {
  * 減価償却の決算整理仕訳の明細
  *   減価償却費（事業分）・事業主貸（個人の私用分） / 資産の科目（直接法）または減価償却累計額（法人の有形固定資産で、累計額の科目があるとき）
  *   資産に部門を指定していれば、償却費の明細に部門を付ける（部門別損益）
+ *   pick：台帳の1行 → { amount, business }（月次償却で一部の月の分だけ登録するとき。省略すると期間の全額）、memoSuffix：摘要の後ろに付ける文字
  * @returns {{ lines: Array, total: number, errors: string[] }}
  */
-export function depreciationLines({ assets, periods, period, accounts, entityType, departments = [] }) {
+export function depreciationLines({ assets, periods, period, accounts, entityType, departments = [], pick = null, memoSuffix = '' }) {
   const errors = [];
   const expense = accounts.find((a) => a.hint === 'depreciation' && a.active);
   const drawings = accounts.find((a) => a.role === 'owner_drawings');
@@ -574,9 +575,13 @@ export function depreciationLines({ assets, periods, period, accounts, entityTyp
   const lines = [];
   let total = 0;
   const line = (side, accountId, amount, memo) => ({ side, accountId, subAccountId: null, amount, taxCategory: 'none', memo });
-  for (const { asset, row } of assetRegister(assets, periods, period)) {
-    if (!row || !row.amount) continue;
-    const memo = `減価償却 ${asset.name}`.slice(0, 100);
+  for (const entry of assetRegister(assets, periods, period)) {
+    const { asset } = entry;
+    if (!entry.row || !entry.row.amount) continue;
+    const part = pick ? pick(entry) : null;
+    const row = part ? { amount: part.amount, business: part.business, private: part.amount - part.business } : entry.row;
+    if (!row.amount) continue;
+    const memo = `減価償却 ${asset.name}${memoSuffix}`.slice(0, 100);
     const own = asset.expenseAccountId ? accounts.find((a) => a.id === asset.expenseAccountId && a.active) : null;
     if (asset.expenseAccountId && !own) errors.push(`「${asset.name}」の償却費の科目が見つかりません（無効にした場合は固定資産の画面で選び直してください）`);
     const debit = own || expense;
