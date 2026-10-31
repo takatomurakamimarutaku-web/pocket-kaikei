@@ -9,8 +9,9 @@
 import { fmt, wrapText } from './print-layout.js';
 import { formatRatio } from './family-company.js';
 import { formatHoldingRatio } from './withholding-credit.js';
+import { applicationRows } from './application-statement.js';
 import { DEPENDENT_KIND_LABELS } from './income-tax.js';
-import { formHeadBlock, corporateHead, localHead, consumptionHead, incomeHead } from './print-form-heads.js';
+import { formHeadBlock, corporateHead, applicationHead, localHead, consumptionHead, incomeHead } from './print-form-heads.js';
 
 const blank = (n) => (n ? fmt(n) : '');
 const num = (n) => (Number.isFinite(n) ? fmt(n) : '');
@@ -563,6 +564,30 @@ export function schedule61Blocks(w, withholding = 0) {
   ];
 }
 
+// ---- 適用額明細書 ----
+
+/**
+ * 適用額明細書：租税特別措置法の条項・区分番号・適用額（様式は1枚20行）
+ * @param {Array} rows application-statement.js の applicationRows の結果
+ */
+export function applicationBlocks(rows) {
+  const body = rows.map((x) => ({ cells: [x.article, { text: x.code, align: 'center' }, fmt(x.amount), x.name] }));
+  while (body.length < 20) body.push({ cells: ['', '', '', ''] });
+  return [
+    {
+      type: 'table',
+      columns: [{ label: '租税特別措置法の条項', w: 62 }, { label: '区分番号', w: 18, align: 'center' }, AMT('適用額'), { label: '（参考）措置の名前', grow: 1, min: 30 }],
+      rows: body,
+    },
+    {
+      type: 'text',
+      text: rows.length
+        ? '中小企業者等の法人税率の特例（別表一次葉二「74」欄、千円未満切捨て）と少額減価償却資産の特例（別表十六(七)「8」欄、年300万円が上限）は帳簿から書いています。ほかの租税特別措置（賃上げ促進税制・特別償却など）は「計算の条件」で足してください。区分番号は国税庁「適用額明細書の記載の手引」の区分番号一覧表で確かめてください。「（参考）措置の名前」は様式に無い欄です。'
+        : '法人税関係特別措置の適用がありません（所得金額が0以下のときは法人税率の特例を書きません）。適用を受けない場合、適用額明細書の提出は不要です。',
+    },
+  ];
+}
+
 // 地方法人税額（10.3%、100円未満切捨ての前）
 const applyLocal = (L) => (L.base > 0 ? Math.floor((L.base * L.rate) / 100000) : 0);
 
@@ -669,6 +694,7 @@ export const CORPORATE_SHEETS = [
   { value: 's61', label: '別表六(一)', title: '所得税額の控除に関する明細書' },
   { value: 's7', label: '別表七(一)', title: '欠損金の損金算入等に関する明細書' },
   { value: 's15', label: '別表十五', title: '交際費等の損金算入に関する明細書' },
+  { value: 'tekiyo', label: '適用額明細書', title: '適用額明細書' },
   { value: 'pref', label: '第六号様式', title: '事業税・特別法人事業税・道府県民税の確定申告書' },
   { value: 'city', label: '第二十号様式', title: '市町村民税の確定申告書' },
 ];
@@ -678,7 +704,7 @@ export const CORPORATE_SHEETS = [
  * @param {object} r corporateTaxReturn の結果
  * @param {{ head: object, sheets?: string[] }} p sheets：印刷する別表（CORPORATE_SHEETS の value）
  */
-export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEETS.map((s) => s.value) }) {
+export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEETS.map((s) => s.value), smeAssets = null }) {
   const blocks = [];
   const local = localFormRows(r);
   const p = { startDate: r.period.startDate, endDate: r.period.endDate, capital: r.capital.stock, capitalTotal: r.capital.total, employees: r.employees, months: r.resident.months, sme: r.input.sme };
@@ -693,6 +719,7 @@ export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEE
     s52: () => schedule52Blocks(r.schedule52, { startDate: r.period.startDate }),
     s7: () => schedule7Blocks(r),
     s15: () => schedule15Blocks(r.entertainment, { months: r.period.months, sme: r.input.sme }),
+    tekiyo: () => [...(filer ? [applicationHead(filer, { capital: r.capital.stock, income: r.schedule4.income.total })] : []), ...applicationBlocks(applicationRows({ corp: r.corp, sme: r.input.sme, smeAssets, rows: r.input.applicationRows }))],
   };
   for (const s of CORPORATE_SHEETS) {
     if (!sheets.includes(s.value)) continue;

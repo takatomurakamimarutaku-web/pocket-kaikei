@@ -1,5 +1,6 @@
 // 申告書の頭書き（純粋関数）：様式の上の欄（提出日・提出先・納税地・名称・番号・代表者・事業年度など）を、
 // 項目名を薄く塗った2組の欄の表にする。国税庁・都道府県・市町村の様式の頭書きの項目と並びにならう
+//   適用額明細書：提出先・納税地・法人名・法人番号・事業種目・業種番号・期末現在の資本金の額・所得金額又は欠損金額
 //   法人税申告書 別表一：納税地・フリガナ・法人名・法人番号・代表者・経理責任者・事業種目・期末現在の資本金の額・事業年度
 //   第六号様式・第二十号様式：所在地・法人名・法人番号・代表者・事業種目・資本金等の額・従業者数・事業年度・申告区分
 //   消費税の申告書 第一表：納税地・名称又は屋号・個人番号又は法人番号・代表者氏名又は氏名・課税期間
@@ -59,6 +60,24 @@ export function corporateHead(f, { startDate, endDate, capital, sme }) {
     ['申告区分', '確定申告（青色申告）'],
     { label: '事業年度', value: period(startDate, endDate), wide: true },
     { label: '関与税理士', value: f.taxAccountant, wide: true },
+  ]);
+}
+
+/** 適用額明細書の頭書き（別記様式：提出先・納税地・法人名・法人番号・事業種目・期末現在の資本金の額・所得金額又は欠損金額） */
+export function applicationHead(f, { capital, income }) {
+  return formHeadBlock([
+    ['提出日', BLANK_DATE],
+    ['提出先', office(f.taxOffice, '税務署長殿')],
+    { label: '納税地', value: addr(f), wide: true },
+    ['電話番号', f.phone],
+    ['法人番号', f.corporateNumber],
+    ['フリガナ', f.kana],
+    ['法人名', f.name],
+    ['事業種目', f.businessType],
+    ['業種番号', ''],
+    ['期末現在の資本金の額', yen(capital)],
+    ['所得金額又は欠損金額', Number.isFinite(income) ? (income < 0 ? `△${fmt(-income)}円` : yen(income)) : ''],
+    ['提出区分', '当初提出分'],
   ]);
 }
 

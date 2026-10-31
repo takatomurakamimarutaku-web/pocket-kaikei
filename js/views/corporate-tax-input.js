@@ -8,6 +8,7 @@ import { previousPeriod } from '../closing.js';
 import { formatPercent, parsePercent } from '../enterprise-tax.js';
 import { emptyShareholder, MAX_SHAREHOLDERS } from '../family-company.js';
 import { emptyWithholdingRow, MAX_WITHHOLDING_ROWS, WITHHOLDING_KINDS } from '../withholding-credit.js';
+import { emptyApplicationRow, MAX_APPLICATION_ROWS } from '../application-statement.js';
 import { corporateTaxReturn, carryOverInput, cleanCorporateTax, validateCorporateTax, TAX_KINDS, ADJUSTMENT_PRESETS, RESIDENT_DEFAULTS, TOKYO_DEFAULTS, standardPerCapita, MAX_ROWS, MAX_LOSS_ROWS, MAX_LABEL, DEFENSE_FROM } from '../corporate-tax.js';
 
 /** 金額の欄 */
@@ -217,6 +218,27 @@ export async function render({ app, outlet }) {
   }
   paintWithholding();
 
+  // 適用額明細書に足す措置（法人税率の特例・少額減価償却資産の特例は帳簿から自動で書く）
+  let appRows = v.applicationRows.map((x) => ({ ...x, amount: textOf(x.amount) }));
+  const appList = h('div', { class: 'ct-holders' });
+  function paintApplication() {
+    const box = (x, key, label, attrs = {}) => h('input', { type: 'text', value: x[key] ?? '', 'aria-label': label, placeholder: label, oninput: (e) => ((x[key] = e.target.value), markDirty()), ...attrs });
+    put(
+      appList,
+      ...appRows.map((x, i) =>
+        h(
+          'div',
+          { class: 'ct-holder' },
+          box(x, 'article', `措置${i + 1}の租税特別措置法の条項（例：第42条の12の５第２項）`, { maxlength: 60 }),
+          h('div', { class: 'ct-holder-row' }, box(x, 'code', '区分番号（5桁）', { inputmode: 'numeric', maxlength: 5 }), box(x, 'amount', '適用額', { inputmode: 'numeric', class: 'num' })),
+          h('div', { class: 'ct-holder-row' }, h('span', {}), h('button', { type: 'button', class: 'btn btn-small btn-danger-text', 'aria-label': `措置${i + 1}を削除`, text: '× 削除', onclick: () => (appRows.splice(i, 1), paintApplication(), markDirty()) })),
+        ),
+      ),
+      appRows.length < MAX_APPLICATION_ROWS ? h('button', { type: 'button', class: 'btn btn-small', text: '＋ 措置を足す', onclick: () => (appRows.push({ ...emptyApplicationRow(), amount: '' }), paintApplication()) }) : null,
+    );
+  }
+  paintApplication();
+
   // 住民税
   const tokyo = h('input', { id: 'ct-tokyo', type: 'checkbox', checked: v.tokyo });
   const rateBox = (id, r) => h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', class: 'num', value: formatPercent(r) });
@@ -283,6 +305,7 @@ export async function render({ app, outlet }) {
       prefPerCapita: readYen(prefPerCapita, '道府県民税の均等割', errors),
       cityPerCapita: readYen(cityPerCapita, '市町村民税の均等割', errors),
       residentMonths: m === '' ? null : /^\d+$/.test(m) ? Number(m) : NaN,
+      applicationRows: appRows.map((x, i) => ({ article: x.article, code: x.code, amount: countOf(x.amount, `措置${i + 1}の適用額`, { empty: 0 }) })),
       withholdingRows: whRows.map((x, i) => ({ kind: Number(x.kind), payer: x.payer, address: x.address, date: x.date, income: countOf(x.income, `明細${i + 1}の収入金額`, { empty: 0 }), tax: countOf(x.tax, `明細${i + 1}の所得税額`, { empty: 0 }), periodMonths: countOf(x.periodMonths, `明細${i + 1}の計算期間`), heldMonths: countOf(x.heldMonths, `明細${i + 1}の所有期間`) })),
       shareholders: holderRows.filter((x) => x.name.trim() || String(x.shares).trim()).map((x, i) => ({ name: x.name, address: x.address, relation: x.relation, group: x.group, shares: countOf(x.shares, `株主${i + 1}の株式数`, { empty: 0 }), votes: countOf(x.votes, `株主${i + 1}の議決権の数`), corporate: Boolean(x.corporate) })),
       sharesTotal: countOf(sharesTotal.value, '発行済株式の総数'),
@@ -381,6 +404,9 @@ export async function render({ app, outlet }) {
       h('h2', { class: 'section-title', text: '税額控除' }),
       field('法人税額の特別控除額', credits, { hint: '賃上げ促進税制・中小企業投資促進税制などで法人税額から引く額の合計（別表六の各明細書）' }),
       field('住民税の法人税割で足し戻す控除額', addBack, { hint: '中小企業者等の賃上げ促進税制・試験研究費の税額控除などは、法人税割の課税標準からは引きません' }),
+      h('h3', { class: 'tf-title', text: '適用額明細書に足す措置' }),
+      h('p', { class: 'field-hint', text: '中小企業者等の法人税率の特例と少額減価償却資産の特例は、帳簿から自動で書きます。賃上げ促進税制・特別償却など、ほかに適用を受けた措置の条項・区分番号・適用額を入れます（区分番号は国税庁「適用額明細書の記載の手引」の一覧で確かめてください）。' }),
+      appList,
       h('h2', { class: 'section-title', text: '繰越欠損金（別表七(一)）' }),
       h('p', { class: 'field-hint', text: '前期以前の青色申告の事業年度の欠損金で、まだ控除していない額。事業年度の終了日と金額を入れます。' }),
       lossList,
