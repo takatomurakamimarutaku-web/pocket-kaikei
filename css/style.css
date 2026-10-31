@@ -1462,3 +1462,14 @@ html.pp-open, html.pp-open body { overflow: hidden; }
 .tc-code-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border, #e5e5e5); }
 .tc-code-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.9rem; }
 input.tc-code-input[type="text"] { width: 7.5rem; flex: none; min-height: 40px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+
+/* 固定資産台帳：帳票のタブ・絞り込み */
+.asset-tabs { overflow-x: auto; margin: 8px 0; -webkit-overflow-scrolling: touch; }
+.asset-tabs .segmented { min-width: max-content; }
+.asset-filters { display: grid; gap: 8px; margin-bottom: 12px; }
+.asset-filter-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
+.asset-filter { display: grid; gap: 2px; min-width: 0; }
+.asset-filter select { width: 100%; }
+@media (min-width: 900px) { .asset-table.asset-wide { min-width: 100%; } }
+.asset-more > summary { cursor: pointer; font-size: var(--fs-footnote); font-weight: 700; color: var(--primary); padding: 4px 0; }
+.asset-more[open] > summary { margin-bottom: 6px; }
