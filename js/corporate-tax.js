@@ -54,6 +54,31 @@ export const ENTERTAINMENT_ANNUAL = 8000000;
 
 /** 住民税の標準税率（1/1000 %）と均等割の年額（資本金等の額1,000万円以下・従業者50人以下の標準税率） */
 export const RESIDENT_DEFAULTS = { prefRate: 1000, cityRate: 6000, prefPerCapita: 20000, cityPerCapita: 50000 };
+/**
+ * 均等割の標準税率（年額）：資本金等の額の区分ごと。市町村民税は従業者数が50人を超えるかで変わる
+ * 総務省「法人住民税」の均等割の表（出典の URL は docs/spec-phase3-tax-forms.md）
+ * （地方税法52条・312条。自治体が超過税率を定めていることがあるので、入力で直せる）
+ */
+export const PER_CAPITA_TABLE = [
+  { upTo: 10000000, pref: 20000, cityOver50: 120000, city: 50000 },
+  { upTo: 100000000, pref: 50000, cityOver50: 150000, city: 130000 },
+  { upTo: 1000000000, pref: 130000, cityOver50: 400000, city: 160000 },
+  { upTo: 5000000000, pref: 540000, cityOver50: 1750000, city: 410000 },
+  { upTo: Infinity, pref: 800000, cityOver50: 3000000, city: 410000 },
+];
+
+/**
+ * 均等割の標準税率の年額
+ * @param {number} capital 資本金等の額（資本金＋資本準備金と比べて大きいほう）
+ * @param {number} employees 従業者数（その市町村の事務所等の従業者）
+ * @param {boolean} tokyo 東京都の特別区：都が道府県分と市町村分をあわせて課税する
+ */
+export function standardPerCapita(capital, employees, tokyo = false) {
+  const row = PER_CAPITA_TABLE.find((r) => capital <= r.upTo);
+  const city = employees > 50 ? row.cityOver50 : row.city;
+  return tokyo ? { pref: row.pref + city, city: 0 } : { pref: row.pref, city };
+}
+
 /** 東京都の特別区（23区）：都が道府県分と市町村分をあわせて課税する */
 export const TOKYO_DEFAULTS = { prefRate: 7000, cityRate: 0, prefPerCapita: 70000, cityPerCapita: 0 };
 
@@ -103,6 +128,8 @@ export const DEFAULT_CORPORATE_TAX = {
   tokyo: false, // 東京都の特別区（23区）
   ...RESIDENT_DEFAULTS,
   residentMonths: null, // 均等割の月数（null なら事業年度の月数）
+  employees: null, // 期末の従業者数（第六号様式・第二十号様式の欄。均等割の区分に使う）
+  interimPerCapita: { pref: 0, city: 0 }, // 中間納付額のうち均等割（残りは法人税割）
   openingAdjustments: [], // 別表五(一)の期首現在の調整項目 [{ label, amount }]
 };
 
@@ -116,6 +143,12 @@ export function validateCorporateTax(v) {
   for (const k of ['dividends', 'dining', 'withholding', 'credits', 'residentAddBack', 'prefPerCapita', 'cityPerCapita']) if (!isNonNeg(v[k])) errors.push('金額は0以上の整数の円で入力してください');
   if (v.entertainment !== null && !isNonNeg(v.entertainment)) errors.push('支出交際費等の額は0以上の整数の円で入力してください');
   for (const k of ['prefRate', 'cityRate']) if (!okRate(v[k])) errors.push('法人税割の税率は0〜20%の範囲で、小数第3位まで入力してください');
+  if (v.employees !== null && !(Number.isInteger(v.employees) && v.employees >= 0 && v.employees <= 1000000)) errors.push('従業者数は0以上の整数で入力してください');
+  for (const k of ['pref', 'city']) {
+    const n = v.interimPerCapita?.[k] ?? 0;
+    if (!isNonNeg(n)) errors.push('中間納付額のうち均等割は0以上の整数の円で入力してください');
+    else if (n > (v.interim?.[k] ?? 0)) errors.push('中間納付額のうち均等割は、その税の中間納付額以下にしてください');
+  }
   if (v.residentMonths !== null && !(Number.isInteger(v.residentMonths) && v.residentMonths >= 0 && v.residentMonths <= 12)) errors.push('均等割の月数は0〜12で入力してください');
   for (const g of ['prior', 'interim']) {
     if (!v[g] || typeof v[g] !== 'object') errors.push('前期分・中間納付の税額を入力してください');
@@ -152,6 +185,7 @@ export function cleanCorporateTax(input) {
     ...Object.fromEntries(Object.keys(DEFAULT_CORPORATE_TAX).map((k) => [k, v[k]])),
     prior: taxes(v.prior),
     interim: taxes(v.interim),
+    interimPerCapita: { pref: v.interimPerCapita?.pref ?? 0, city: v.interimPerCapita?.city ?? 0 },
     adjustments: (v.adjustments || []).map((a) => ({ label: String(a.label ?? '').trim(), side: a.side, kind: a.kind, amount: a.amount })),
     losses: (v.losses || []).map((l) => ({ endDate: l.endDate, amount: l.amount })).sort((a, b) => (a.endDate < b.endDate ? -1 : a.endDate > b.endDate ? 1 : 0)),
     openingAdjustments: (v.openingAdjustments || []).map((a) => ({ label: String(a.label ?? '').trim(), amount: a.amount })),
@@ -241,11 +275,14 @@ export function lossCarryforward({ losses, income, startDate, endDate, sme = tru
 }
 
 /** 法人住民税（法人税割・均等割）の1つの自治体の分 */
-function residentPart({ base, rate, perCapita, months, interim }) {
+function residentPart({ base, rate, perCapita, months, interim, interimPerCapita = 0 }) {
   const taxPart = floor100(applyRate(base, rate));
   const perCapitaPart = floor100(monthly(perCapita, months));
   const total = taxPart + perCapitaPart;
-  return { rate, taxPart, perCapita, perCapitaPart, total, interim, due: total - interim };
+  // 中間納付額を法人税割と均等割に分ける（第六号様式・第二十号様式の「既に納付の確定した当期分」の欄）
+  const interimPC = Math.min(interimPerCapita, interim);
+  const interimTaxPart = interim - interimPC;
+  return { rate, taxPart, perCapita, perCapitaPart, total, interim, interimTaxPart, interimPerCapita: interimPC, dueTaxPart: taxPart - interimTaxPart, duePerCapita: perCapitaPart - interimPC, due: total - interim };
 }
 
 const sumBy = (list, f) => list.reduce((s, x) => s + f(x), 0);
@@ -354,10 +391,12 @@ export function corporateTaxReturn({ accounts, period, journals, input = {}, ent
   const residentMonths = v.residentMonths ?? Math.min(12, months);
   const resident = {
     tokyo: v.tokyo,
+    taxAmount: afterCredits, // 法人税法の規定によって計算した法人税額（第六号様式・第二十号様式の①）
+    addBack: v.residentAddBack, // 試験研究費の額等に係る法人税額の特別控除額（②）
     base: residentBase,
     months: residentMonths,
-    pref: residentPart({ base: residentBase, rate: v.prefRate, perCapita: v.prefPerCapita, months: residentMonths, interim: interim.pref }),
-    city: residentPart({ base: residentBase, rate: v.cityRate, perCapita: v.cityPerCapita, months: residentMonths, interim: interim.city }),
+    pref: residentPart({ base: residentBase, rate: v.prefRate, perCapita: v.prefPerCapita, months: residentMonths, interim: interim.pref, interimPerCapita: v.interimPerCapita.pref }),
+    city: residentPart({ base: residentBase, rate: v.cityRate, perCapita: v.cityPerCapita, months: residentMonths, interim: interim.city, interimPerCapita: v.interimPerCapita.city }),
   };
   if (v.credits && !v.residentAddBack && v.sme) warnings.push('中小企業者等の賃上げ促進税制・試験研究費の税額控除などは、住民税の法人税割の計算では引かないことがあります。足し戻す額を確かめてください');
 
@@ -450,6 +489,8 @@ export function corporateTaxReturn({ accounts, period, journals, input = {}, ent
   if (!check.ok) warnings.push(`別表五(一)の検算が${Math.abs(check.diff).toLocaleString('ja-JP')}円合いません。配当の額、前期分の確定税額、期首の調整項目（前期の別表五(一)の期末）を確かめてください`);
   const capitalRows = equityRows.filter((r) => (r.account.role === 'capital_stock' || r.account.hint === 'capital_reserve') && (r.opening || r.debit || r.credit || r.account.role === 'capital_stock')).map((r) => ({ label: r.account.name, ...flow(r) }));
   const capitalTotal = Object.fromEntries(keys4.map((k) => [k, sumBy(capitalRows, (r) => r[k])]));
+  // 期末現在の資本金の額（申告書の頭書き）と、資本金等の額（均等割の区分。ここでは資本金＋資本準備金）
+  const capital = { stock: sumBy(equityRows.filter((r) => r.account.role === 'capital_stock'), (r) => flow(r).closing), total: capitalTotal.closing };
   const schedule51 = { rows: rows51, total: total51, check, capitalRows, capitalTotal, adjustRows };
 
   if (!supported) warnings.unshift(`${SUPPORTED_FROM.slice(0, 4)}年10月1日より前に開始した事業年度には対応していません（地方法人税の税率が違います）`);
@@ -470,6 +511,8 @@ export function corporateTaxReturn({ accounts, period, journals, input = {}, ent
     defense,
     resident,
     enterprise,
+    capital,
+    employees: v.employees,
     dues,
     dueTotal,
     payableTarget,

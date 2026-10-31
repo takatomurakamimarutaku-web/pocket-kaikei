@@ -1,4 +1,5 @@
 // IndexedDB 操作。データの読み書きは必ずこの Repository を通す（将来の同期処理を差し込む場所を1か所にするため）
+import { cleanFiler, validateFiler } from './filer.js';
 import { validateRule } from './bank-import.js';
 import { isCashAccount } from './quick.js';
 import { validateJournal } from './journal.js';
@@ -563,6 +564,14 @@ export class Repository {
     for (const kind of ['accounts', 'subs', 'departments']) clean[kind] = Object.fromEntries(Object.entries(codes[kind] || {}).filter(([, v]) => v !== ''));
     const cur = (await this.getSettings())?.convertCodes || {};
     return this.updateSettings({ convertCodes: { ...cur, [target]: clean } });
+  }
+
+  /** 申告書の提出者の欄（納税地・代表者・法人番号・提出先など）。設定に持つためバックアップに入る */
+  async saveFiler(filer) {
+    const clean = cleanFiler(filer);
+    const errors = validateFiler(clean);
+    if (Object.keys(errors).length) throw new ValidationError(errors);
+    return this.updateSettings({ filer: clean });
   }
 
   /** 勘定科目内訳明細書の⑫・⑮（権利金等・工業所有権等の使用料）の対象の科目。設定に持つためバックアップに入る */

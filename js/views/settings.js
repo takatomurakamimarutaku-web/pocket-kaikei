@@ -64,6 +64,8 @@ export async function render({ app, outlet }) {
 
   put(outlet, 
     form,
+    h('h2', { class: 'section-title', text: '申告書の提出者' }),
+    h('div', { class: 'panel small' }, h('p', { text: corp ? '納税地・法人名のフリガナ・法人番号・代表者・提出先の税務署と自治体。申告書を印刷するとき上の欄に書きます。' : '住所・氏名・フリガナ・職業・提出先の税務署。申告書・決算書を印刷するとき上の欄に書きます。' }), h('a', { class: 'btn', href: '#/settings/filer', text: '提出者の欄を入力する' })),
     h('h2', { class: 'section-title', text: 'データの保存場所' }),
     h(
       'div',

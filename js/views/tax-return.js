@@ -1,5 +1,6 @@
 // 消費税の申告計算：計算の方法を選び、申告書の主な欄（課税標準額〜納付税額）と方法ごとの比較を表示する
 // 「申告書」の表示では、第一表・第二表・付表を様式の欄番号どおりに並べる（弥生会計の消費税申告書の画面を参考にした）
+import { filerOf } from '../filer.js';
 import { h, put, field, segmented, showToast, errorBox, amountCell, saveFile } from '../ui.js';
 import { computeTaxReturn, TAX_METHODS, BUSINESS_TYPES, ALLOCATIONS, TAX_CALCS, ROUNDINGS, stackedDetail, consumptionTaxLines } from '../tax-return.js';
 import { taxReturnForms } from '../tax-forms.js';
@@ -304,6 +305,8 @@ export async function render({ app, outlet, query = {} }) {
     ];
     return [
       single(f.first, f.first.flags.map((t) => h('tr', {}, h('td', { class: 'tf-no' }), h('th', { scope: 'row', colspan: 2, text: t })))),
+      h('h3', { class: 'tf-title', text: '付記事項・参考事項（第一表）' }),
+      h('div', { class: 'table-wrap' }, h('table', { class: 'report taxform', 'aria-label': '付記事項・参考事項' }, h('tbody', {}, f.first.remarks.map(([k, val]) => h('tr', {}, h('th', { scope: 'row', text: k }), h('td', { text: val || '（空欄）' })))))),
       single(f.second),
       f.sheets.map(triple),
       h('ul', { class: 'plain-list muted small' }, f.notes.map((t) => h('li', { text: t }))),
@@ -441,7 +444,7 @@ export async function render({ app, outlet, query = {} }) {
     const head = docHead({ settings, period, printedAt });
     return {
       options: [{ key: 'sheet', label: '印刷する帳票', type: 'select', choices: [['all', '申告書（第一表・第二表・付表）'], ...list.map((x) => [x.value, x.label]), ...(calc ? [['calc', '計算の内容（画面の表）']] : [])], value: calc ? 'calc' : 'all' }],
-      build: (v) => (v.sheet === 'calc' ? { title: '消費税の申告計算', ...head, orientation: 'portrait', blocks: calc } : consumptionTaxDoc(forms, { head, sheets: v.sheet === 'all' ? list.map((x) => x.value) : [v.sheet] })),
+      build: (v) => (v.sheet === 'calc' ? { title: '消費税の申告計算', ...head, orientation: 'portrait', blocks: calc } : consumptionTaxDoc(forms, { head, filer: filerOf(settings), period, corporation: settings.entityType === 'corporation', sheets: v.sheet === 'all' ? list.map((x) => x.value) : [v.sheet] })),
     };
   };
   typeSelect.addEventListener('change', () => saveSettings().catch(() => {}));

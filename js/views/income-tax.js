@@ -1,6 +1,7 @@
 // 所得税の確定申告書（個人）：第一表・第二表の欄と、医療費控除の明細書・添付書類の確認
 // 弥生会計・freee の確定申告書作成と同じく、事業所得・不動産所得は青色申告決算書（白色は収支内訳書）から、それ以外の所得と控除は入力から作る
 // 損失申告（第四表）：本年の純損失と、前年以前から繰り越した純損失を差し引く計算
+import { filerOf } from '../filer.js';
 import { h, put, amountCell, field, showToast, errorBox } from '../ui.js';
 import { blueReturnSet, realEstateForFirstTable } from '../real-estate.js';
 import { computeIncomeTax, DEFAULT_INCOME_TAX, MEDICAL_KINDS, DEPENDENT_KIND_LABELS, SUPPORTED_YEARS, LOSS_YEARS, rulesFor } from '../income-tax.js';
@@ -216,7 +217,7 @@ export async function render({ app, outlet }) {
     const kindLabel = (id) => MEDICAL_KINDS.find((k) => k.id === id)?.label ?? '';
     return {
       options: [{ key: 'sheet', label: '印刷する帳票', type: 'select', choices: [['all', '申告書一式'], ...list.map((x) => [x.value, x.label])], value: 'all' }],
-      build: (v) => incomeTaxDoc(r, { head: docHead({ settings, period, printedAt }), input, year, white, realEstate: Boolean(re), kindLabel, sheets: v.sheet === 'all' ? list.map((x) => x.value) : [v.sheet] }),
+      build: (v) => incomeTaxDoc(r, { head: docHead({ settings, period, printedAt }), filer: filerOf(settings), input, year, white, realEstate: Boolean(re), kindLabel, sheets: v.sheet === 'all' ? list.map((x) => x.value) : [v.sheet] }),
     };
   };
 

@@ -11,6 +11,8 @@ import { isDesktopApp } from './install.js';
 import { renderSidebar } from './sidebar.js';
 import { formatPeriod, todayString, monthRange } from './period.js';
 import { docHead, formLayoutBlocks } from './print-forms.js';
+import { settlementHead } from './print-form-heads.js';
+import { filerOf } from './filer.js';
 import { captureBlocks, capturedRange } from './print-capture.js';
 import { openPrintPreview } from './views/print-preview.js';
 import * as setupView from './views/setup.js';
@@ -78,6 +80,7 @@ import * as invoicesView from './views/invoices.js';
 import * as invoiceFormView from './views/invoice-form.js';
 import * as invoiceView from './views/invoice-view.js';
 import * as invoiceSettingsView from './views/invoice-settings.js';
+import * as filerView from './views/filer.js';
 import * as payrollView from './views/payroll.js';
 import * as payrollFormView from './views/payroll-form.js';
 import * as payrollSlipView from './views/payroll-view.js';
@@ -166,6 +169,7 @@ const routes = [
   { path: '/reports/breakdown', view: breakdownView, title: '勘定科目内訳明細書', tab: 'reports', back: '#/reports', print: true },
   { path: '/more', view: moreView, title: 'その他', tab: 'more' },
   { path: '/settings', view: settingsView, title: '事業者の設定', tab: 'more', back: '#/more' },
+  { path: '/settings/filer', view: filerView, title: '申告書の提出者', tab: 'more', back: '#/settings' },
   { path: '/books', view: booksView, title: '事業所の切替', tab: 'more', back: '#/more' },
   { path: '/lock', view: lockSettingsView, title: '画面ロック', tab: 'more', back: '#/more' },
   { path: '/accounts', view: accountsView, title: '勘定科目', tab: 'more', back: '#/more' },
@@ -357,6 +361,13 @@ async function start() {
       const doc = { title: route.title, ...head, unit: unitCaption(getAmountUnit()), orientation: 'auto', ...(custom?.blocks ? {} : captureBlocks(outlet)), ...custom };
       // 申告書の様式（青色申告決算書・収支内訳書）：欄を3列のマス目に、貸借対照表を勘定式に組み替える
       if (route.form) doc.blocks = formLayoutBlocks(doc.blocks);
+      // 申告書の頭書き（提出者の欄）：最初のページの表題の下に置く。決算書の様式は住所・氏名・業種名などの欄
+      const headBlocks = custom?.headBlocks ?? (route.form ? [settlementHead(filerOf(settings))] : []);
+      if (headBlocks.length) {
+        const at = doc.blocks[0]?.type === 'heading' && doc.blocks[0].caption ? 1 : 0;
+        doc.blocks = [...doc.blocks.slice(0, at), ...headBlocks, ...doc.blocks.slice(at)];
+      }
+      delete doc.headBlocks;
       if (!doc.blocks.length) return showToast('印刷する内容がありません');
       openPrintPreview(
         { options: [{ key: 'orientation', label: '用紙の向き', type: 'select', choices: [['auto', '自動（表の幅で決める）'], ['portrait', 'A4縦'], ['landscape', 'A4横']], value: 'auto' }], build: (v) => ({ ...doc, orientation: v.orientation }) },

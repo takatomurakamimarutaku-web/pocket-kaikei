@@ -8,6 +8,7 @@
 
 import { fmt } from './print-layout.js';
 import { DEPENDENT_KIND_LABELS } from './income-tax.js';
+import { formHeadBlock, corporateHead, localHead, consumptionHead, incomeHead } from './print-form-heads.js';
 
 const blank = (n) => (n ? fmt(n) : '');
 const num = (n) => (Number.isFinite(n) ? fmt(n) : '');
@@ -417,6 +418,98 @@ export function schedule1Blocks(r) {
 // 地方法人税額（10.3%、100円未満切捨ての前）
 const applyLocal = (L) => (L.base > 0 ? Math.floor((L.base * L.rate) / 100000) : 0);
 
+// ---- 地方税の申告書：第六号様式（事業税・特別法人事業税・道府県民税）・第二十号様式（市町村民税） ----
+// 欄の番号は、令和7年4月1日以後開始事業年度分の第六号様式（山梨県の様式の計算式「⑦−⑧＋⑨−⑩−⑪−⑫」など）と、
+// 第二十号様式の記載の手引（名古屋市）から読み取ったもの。推定を含むので、出典の URL と一緒に docs/spec-phase3-tax-forms.md に分けて書く
+// 事業税の欄は、番号を確かめられた所得割の区分（㉙〜㉛）のほかは番号を書かない
+
+const pct = (rate) => (rate == null ? '' : `${Number((rate / 1000).toFixed(3))}`);
+
+/**
+ * 第六号様式・第二十号様式の行（画面と印刷で使う）
+ * 行：{ group } か { no, label, base?, rate?, tax?, strong?, sub? }。base：課税標準の列（金額か「12月」などの文字）、tax：税額の列
+ * @param {object} r corporateTaxReturn の結果
+ * @returns {{ pref: object[], city: object[] | null }} city：東京23区で市町村民税が無ければ null
+ */
+export function localFormRows(r) {
+  const res = r.resident;
+  const ent = r.enterprise;
+  const prefName = res.tokyo ? '都民税' : '道府県民税';
+  const pref = [
+    { group: '事業税（所得割）' },
+    { label: '所得金額総額', base: ent.base, sub: ent.fromSchedule4 ? '別表四の所得金額（1,000円未満切捨て）' : '事業税の画面で入力した所得金額' },
+    ...ent.rows.map((x, i) => ({ no: ent.reduced ? ['㉙', '㉚', '㉛'][i] : null, label: x.label, base: x.amount, rate: x.rate, tax: x.tax })),
+    { label: '計', base: ent.rows.reduce((t, x) => t + x.amount, 0), tax: ent.incomeTax, sub: '100円未満切捨て' },
+    { label: '合計事業税額', tax: ent.incomeTax, strong: true },
+    { label: '既に納付の確定した当期分の事業税額', tax: ent.interimTax },
+    { label: 'この申告により納付すべき事業税額', tax: ent.dueTax, strong: true },
+    { group: '特別法人事業税' },
+    { label: '所得割に係る特別法人事業税額', base: ent.standardTax, rate: 37000, tax: ent.special, sub: '課税標準は基準法人所得割額（標準税率で計算した所得割額）' },
+    { label: '合計特別法人事業税額', tax: ent.special, strong: true },
+    { label: '既に納付の確定した当期分の特別法人事業税額', tax: ent.interimSpecial },
+    { label: 'この申告により納付すべき特別法人事業税額', tax: ent.dueSpecial, strong: true },
+    ...residentRows(res, res.pref, { name: prefName, kind: 'pref' }),
+  ];
+  const city = res.tokyo && !res.city.total && !res.city.interim ? null : residentRows(res, res.city, { name: '市町村民税', kind: 'city' });
+  return { pref, city };
+}
+
+/** 道府県民税（第六号様式の①〜㉓）・市町村民税（第二十号様式の①〜㉑）の行 */
+function residentRows(res, x, { name, kind }) {
+  const P = kind === 'pref';
+  // 第二十号様式は⑤が「課税標準となる法人税額及びその法人税割額」の1行。第六号様式は⑤課税標準・⑦法人税割額に分かれる
+  const n = (pref, city) => (P ? pref : city);
+  const short = P ? '道府県民税' : '市町村民税';
+  return [
+    { group: `${name}（法人税割）` },
+    { no: '①', label: '法人税法の規定によって計算した法人税額', base: res.taxAmount, sub: '別表一の法人税額計（土地譲渡・留保金の税額を除く）' },
+    { no: '②', label: '試験研究費の額等に係る法人税額の特別控除額', base: res.addBack },
+    { no: '③', label: '還付法人税額等の控除額', base: null },
+    { no: '④', label: '退職年金等積立金に係る法人税額', base: null },
+    P
+      ? { no: '⑤', label: '課税標準となる法人税額　①＋②−③＋④', base: res.base, sub: '1,000円未満切捨て' }
+      : { no: '⑤', label: '課税標準となる法人税額及びその法人税割額', base: res.base, rate: x.rate, tax: x.taxPart, sub: '①＋②−③＋④（1,000円未満切捨て）' },
+    { no: '⑥', label: `2以上の${P ? '道府県' : '市町村'}に事務所等を有する法人の課税標準となる法人税額`, base: null },
+    ...(P ? [{ no: '⑦', label: '法人税割額', base: res.base, rate: x.rate, tax: x.taxPart }] : []),
+    { no: n('⑧', '⑦'), label: `${short}の特定寄附金税額控除額`, tax: null },
+    { no: n('⑨', '⑧'), label: '税額控除超過額相当額の加算額', tax: null },
+    { no: n('⑩', '⑨'), label: '外国関係会社等に係る控除対象所得税額等相当額の控除額', tax: null },
+    { no: n('⑪', '⑩'), label: '外国の法人税等の額の控除額', tax: null },
+    { no: n('⑫', '⑪'), label: '仮装経理に基づく法人税割額の控除額', tax: null },
+    { no: n('⑬', '⑫'), label: '差引法人税割額', tax: x.taxPart },
+    { no: n('⑭', '⑬'), label: '既に納付の確定した当期分の法人税割額', tax: x.interimTaxPart },
+    { no: n('⑮', '⑭'), label: '租税条約の実施に係る法人税割額の控除額', tax: null },
+    { no: n('⑯', '⑮'), label: 'この申告により納付すべき法人税割額', tax: x.dueTaxPart, strong: true },
+    { group: `${name}（均等割）` },
+    { no: n('⑰', '⑯'), label: '算定期間中において事務所等を有していた月数', base: `${res.months}月` },
+    { no: n('⑱', '⑰'), label: '均等割額', base: `年${fmt(x.perCapita)}円×${res.months}/12`, tax: x.perCapitaPart },
+    { no: n('⑲', '⑱'), label: '既に納付の確定した当期分の均等割額', tax: x.interimPerCapita },
+    { no: n('⑳', '⑲'), label: 'この申告により納付すべき均等割額', tax: x.duePerCapita, strong: true },
+    { group: '合計' },
+    { no: n('㉑', '⑳'), label: `この申告により納付すべき${short}額`, tax: x.due, strong: true },
+    { no: n('㉒', '㉑'), label: `${n('㉑', '⑳')}のうち見込納付額`, tax: null },
+    { no: P ? '㉓' : null, label: '差引', tax: x.due, strong: true },
+  ];
+}
+
+/** 第六号様式・第二十号様式の表（区分・番号・課税標準・税率・税額） */
+export function localFormBlock(rows) {
+  const amount = (v) => (v === null || v === undefined ? '' : typeof v === 'string' ? v : num(v));
+  return {
+    type: 'table',
+    columns: [{ label: '区　　分', grow: 1, min: 70 }, { ...NO, w: 8 }, { label: '課 税 標 準', align: 'right', w: 34 }, { label: '税率（%）', align: 'right', w: 15 }, { label: '税　額', align: 'right', w: 27 }],
+    font: 7.5,
+    rowH: 4.15,
+    rows: rows.map((x) =>
+      x.group
+        ? groupRow(x.group, 5)
+        : { kind: x.strong ? 'subtotal' : undefined, cells: [{ text: x.label, bold: x.strong }, noCell(x.no), amount(x.base), x.rate == null ? '' : pct(x.rate), { text: amount(x.tax), bold: x.strong }] },
+    ),
+  };
+}
+
+const LOCAL_NOTE = '欄の番号は、令和7年4月1日以後開始事業年度分の様式と記載の手引から読み取ったものです（推定を含みます）。法人税割の税率・均等割の年額は事務所のある自治体の条例で確かめてください。2以上の自治体に事務所がある場合の分割、事業税の付加価値割・資本割（外形標準課税）には対応していません。';
+
 // ---- 申告書一式 ----
 
 export const CORPORATE_SHEETS = [
@@ -426,6 +519,8 @@ export const CORPORATE_SHEETS = [
   { value: 's52', label: '別表五(二)', title: '租税公課の納付状況等に関する明細書' },
   { value: 's7', label: '別表七(一)', title: '欠損金の損金算入等に関する明細書' },
   { value: 's15', label: '別表十五', title: '交際費等の損金算入に関する明細書' },
+  { value: 'pref', label: '第六号様式', title: '事業税・特別法人事業税・道府県民税の確定申告書' },
+  { value: 'city', label: '第二十号様式', title: '市町村民税の確定申告書' },
 ];
 
 /**
@@ -433,10 +528,14 @@ export const CORPORATE_SHEETS = [
  * @param {object} r corporateTaxReturn の結果
  * @param {{ head: object, sheets?: string[] }} p sheets：印刷する別表（CORPORATE_SHEETS の value）
  */
-export function corporateTaxDoc(r, { head, sheets = CORPORATE_SHEETS.map((s) => s.value) }) {
+export function corporateTaxDoc(r, { head, filer = null, sheets = CORPORATE_SHEETS.map((s) => s.value) }) {
   const blocks = [];
+  const local = localFormRows(r);
+  const p = { startDate: r.period.startDate, endDate: r.period.endDate, capital: r.capital.stock, capitalTotal: r.capital.total, employees: r.employees, months: r.resident.months, sme: r.input.sme };
   const build = {
-    s1: () => schedule1Blocks(r),
+    s1: () => [...(filer ? [corporateHead(filer, p)] : []), ...schedule1Blocks(r)],
+    pref: () => [...(filer ? [localHead(filer, { ...p, kind: 'pref' })] : []), localFormBlock(local.pref), { type: 'text', text: LOCAL_NOTE }],
+    city: () => [...(filer ? [localHead(filer, { ...p, kind: 'city' })] : []), localFormBlock(local.city), { type: 'text', text: LOCAL_NOTE }],
     s4: () => schedule4Blocks(r.schedule4),
     s51: () => schedule51Blocks(r.schedule51, { defense: r.defense.applies }),
     s52: () => schedule52Blocks(r.schedule52, { startDate: r.period.startDate }),
@@ -445,7 +544,9 @@ export function corporateTaxDoc(r, { head, sheets = CORPORATE_SHEETS.map((s) => 
   };
   for (const s of CORPORATE_SHEETS) {
     if (!sheets.includes(s.value)) continue;
-    blocks.push({ type: 'heading', caption: true, text: s.label, title: s.title });
+    if (s.value === 'city' && !local.city) continue;
+    const title = s.value === 'pref' && r.resident.tokyo ? '事業税・特別法人事業税・都民税の確定申告書' : s.title;
+    blocks.push({ type: 'heading', caption: true, text: s.label, title });
     blocks.push(...build[s.value]());
   }
   return { title: '法人税申告書', ...head, orientation: 'portrait', blocks };
@@ -467,7 +568,8 @@ export function consumptionFirstBlocks(first) {
   const pick = (nos) => nos.map(item).filter(Boolean);
   const left = [{ head: 'この申告書による消費税の税額の計算' }, ...pick(['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫']), { head: '課税売上割合など' }, ...pick(['⑮', '⑯'])];
   const right = [{ head: 'この申告書による地方消費税の税額の計算' }, ...pick(['⑰', '⑱', '⑲', '⑳', '㉑', '㉒', '㉓']), { head: '消費税及び地方消費税の合計税額' }, ...pick(['㉖'])];
-  return [...first.flags.map((t) => ({ type: 'text', text: t })), twoSide(left, right)];
+  const remarks = first.remarks?.length ? [{ type: 'heading', text: '付記事項・参考事項' }, formHeadBlock(first.remarks)] : [];
+  return [...first.flags.map((t) => ({ type: 'text', text: t })), twoSide(left, right), ...remarks];
 }
 
 /** 第二表：課税標準額の内訳（左）と消費税額・返還等対価・地方消費税の課税標準（右） */
@@ -510,9 +612,10 @@ export function consumptionSheets(forms) {
  * @param {ReturnType<import('./tax-forms.js').taxReturnForms>} forms
  * @param {{ head: object, sheets?: string[] }} p
  */
-export function consumptionTaxDoc(forms, { head, sheets = consumptionSheets(forms).map((s) => s.value) }) {
+export function consumptionTaxDoc(forms, { head, filer = null, period = null, corporation = false, sheets = consumptionSheets(forms).map((s) => s.value) }) {
   const blocks = [];
-  if (sheets.includes('first')) blocks.push({ type: 'heading', caption: true, text: forms.first.title, title: '消費税及び地方消費税の申告書' }, ...consumptionFirstBlocks(forms.first));
+  const top = filer && period ? [consumptionHead(filer, { startDate: period.startDate, endDate: period.endDate, corporation })] : [];
+  if (sheets.includes('first')) blocks.push({ type: 'heading', caption: true, text: forms.first.title, title: '消費税及び地方消費税の申告書' }, ...top, ...consumptionFirstBlocks(forms.first));
   if (sheets.includes('second')) blocks.push({ type: 'heading', caption: true, text: '第二表', title: '課税標準額等の内訳書' }, ...consumptionSecondBlocks(forms.second));
   for (const s of forms.sheets) {
     if (!sheets.includes(s.id)) continue;
@@ -685,11 +788,11 @@ export function incomeSheets(r, input) {
  * @param {object} r computeIncomeTax の結果
  * @param {{ head, input, year, white?, realEstate?, kindLabel?, sheets?: string[] }} p
  */
-export function incomeTaxDoc(r, { head, input, year, white = false, realEstate = false, kindLabel, sheets = incomeSheets(r, input).map((s) => s.value) }) {
+export function incomeTaxDoc(r, { head, filer = null, input, year, white = false, realEstate = false, kindLabel, sheets = incomeSheets(r, input).map((s) => s.value) }) {
   const reiwa = `令和${year - 2018}年分`;
   const blocks = [];
   const add = (key, caption, title, list) => sheets.includes(key) && blocks.push({ type: 'heading', caption: true, text: caption, title }, ...list());
-  add('first', `第一表（${reiwa}）`, '所得税及び復興特別所得税の申告書', () => incomeFirstBlocks(r, { white, realEstate }));
+  add('first', `第一表（${reiwa}）`, '所得税及び復興特別所得税の申告書', () => [...(filer ? [incomeHead(filer, { year, white })] : []), ...incomeFirstBlocks(r, { white, realEstate })]);
   add('second', `第二表（${reiwa}）`, '所得税及び復興特別所得税の申告書', () => incomeSecondBlocks(r, input));
   if (r.loss.needed) add('loss', `第四表（${reiwa}）`, '所得税及び復興特別所得税の申告書（損失申告用）', () => incomeLossBlocks(r, { white, year }));
   if (input.medical.length) add('medical', `医療費控除の明細書（${reiwa}）`, '医療費控除の明細書', () => medicalBlocks(r, input, kindLabel));
