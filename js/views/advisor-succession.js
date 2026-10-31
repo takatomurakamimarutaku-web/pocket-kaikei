@@ -3,10 +3,11 @@ import { h, put, showToast, errorBox, confirmDialog } from '../ui.js';
 import { formatYen, parseYen } from '../money.js';
 import { buildStatements } from '../statements.js';
 import { corporateTaxReturn } from '../corporate-tax.js';
-import { formatPeriod } from '../period.js';
+import { formatPeriod, todayString } from '../period.js';
 import { errorText } from '../errors.js';
 import { ValidationError } from '../db.js';
 import { shareValuation, figuresFrom, DEFAULT_SUCCESSION, INDUSTRIES, SIZE_LABELS } from '../advisor/share-value.js';
+import { successionOptions, SUCCESSORS, DEFAULT_PLAN } from '../advisor/succession-tax.js';
 import { loadAdvisor, estimateNote } from './advisor-common.js';
 
 const yen = (n) => (n === null || n === undefined ? '—' : `${formatYen(n)}円`);
@@ -21,13 +22,14 @@ export async function render({ app, outlet, isStale }) {
     put(outlet, h('p', { class: 'notice', text: '自社株の評価は法人のための機能です。個人事業の事業承継（事業用資産の引継ぎなど）は、税理士に相談してください。' }));
     return;
   }
-  const input = clone({ ...DEFAULT_SUCCESSION, ...(period.succession || {}), peer: { ...DEFAULT_SUCCESSION.peer, ...(period.succession?.peer || {}) } });
+  const input = clone({ ...DEFAULT_SUCCESSION, ...(period.succession || {}), peer: { ...DEFAULT_SUCCESSION.peer, ...(period.succession?.peer || {}) }, plan: { ...DEFAULT_PLAN, ...(period.succession?.plan || {}) } });
   if (!previous && input.basis === 'previous') input.basis = 'landing';
   let dirty = false;
   const body = h('div');
   const errorsEl = h('div');
   const cutEl = h('div');
   const tipsEl = h('div');
+  const planEl = h('div');
 
   // 評価の元にする決算の数字
   const landingFigures = (() => {
@@ -80,6 +82,21 @@ export async function render({ app, outlet, isStale }) {
       h('span', { class: 'sim-input' }, h('input', { type: 'text', inputmode: 'numeric', 'aria-label': label, value: String(get() || ''), onchange: (e) => { const t = e.target.value.replace(/[,，\s]/g, ''); if (t && !/^\d+$/.test(t)) return put(errorsEl, errorBox([`${label}：0以上の整数で入れてください`])); put(errorsEl); putValue(Number(t || 0)); } })),
       hint ? h('span', { class: 'muted small', text: hint }) : null,
     );
+  const setPlan = (key, value) => {
+    input.plan[key] = value;
+    dirty = true;
+    paint();
+  };
+  // 売る値段・取得費は、親族外・第三者のときだけ出す
+  const saleFields = h(
+    'div',
+    { class: 'sim-inputs-sub' },
+    yenField('売る値段', 'salePrice', { placeholder: '空欄なら評価額', blankNull: true, get: () => input.plan.salePrice, put: (v) => setPlan('salePrice', v), hint: '買い取ってもらう・M&Aで売る値段の想定' }),
+    yenField('株式の取得費', 'acquisitionCost', { placeholder: '空欄なら資本金等の額で按分', blankNull: true, get: () => input.plan.acquisitionCost, put: (v) => setPlan('acquisitionCost', v), hint: '設立時の出資額や、株式を買ったときの値段' }),
+  );
+  const showSale = () => (saleFields.hidden = !['relative', 'employee', 'third'].includes(input.plan.successor));
+  showSale();
+
   // 類似業種の配当 B は「4.4」のように10銭単位
   const bField = h(
     'label',
@@ -151,7 +168,48 @@ export async function render({ app, outlet, isStale }) {
         h('li', { text: '時期：評価は課税時期の直前期末の決算の数字で行います。対策をした期の翌期に贈与・相続があると効果が出ます。' }),
       ),
     );
+    paintPlan(r);
   }
+
+  function paintPlan(r) {
+    if (r.price === null) {
+      put(planEl, h('p', { class: 'muted small', text: '株価の概算が出ると、税金の目安を計算します。' }));
+      return;
+    }
+    const capital = input.capital ?? (input.basis === 'previous' && previousFigures ? previousFigures : landingFigures).capital;
+    const res = successionOptions({ plan: input.plan, price: r.price, shares: input.shares, capital, today: todayString() });
+    const max = Math.max(1, ...res.options.map((o) => Math.max(o.tax, o.deferred || 0, o.cash)));
+    const bar = (n, cls) => h('span', { class: `st-bar ${cls}`, style: `width:${Math.max(n ? 2 : 0, Math.round((n * 100) / max))}%` });
+    put(
+      planEl,
+      h('p', { class: 'small', text: `引き継ぐ株式 ${formatYen(res.shares)}株 × 1株 ${yen(r.price)} ＝ ${yen(res.value)}（評価額の概算）` }),
+      h(
+        'div',
+        { class: 'st-options' },
+        res.options.map((o) =>
+          h(
+            'div',
+            { class: `panel st-option${o.disabled ? ' is-disabled' : ''}` },
+            h('div', { class: 'st-head' }, h('strong', { text: o.label }), h('span', { class: 'num strong', text: o.deferred !== undefined ? `納付 ${yen(o.tax)}` : yen(o.tax) })),
+            h('div', { class: 'st-bars', 'aria-hidden': 'true' }, bar(o.tax, 'st-bar-tax'), o.deferred ? bar(o.deferred, 'st-bar-deferred') : null, o.cash > o.tax ? bar(o.cash, 'st-bar-cash') : null),
+            h(
+              'p',
+              { class: 'muted small' },
+              `税金を払う人：${o.payer}`,
+              o.deferred ? `　猶予される税金：${yen(o.deferred)}` : '',
+              o.cash > o.tax ? `　後継者が用意する資金：${yen(o.cash)}` : '',
+            ),
+            h('p', { class: 'small', text: o.note }),
+            o.warn ? h('p', { class: 'muted small', text: o.warn }) : null,
+          ),
+        ),
+      ),
+      h('div', { class: 'ch-legend' }, h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw st-sw-tax' }), '納める税金'), h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw st-sw-deferred' }), '猶予される税金'), h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw st-sw-cash' }), '買い取る資金')),
+      h('h3', { class: 'section-title', text: '使えそうな税制・対策' }),
+      h('ul', { class: 'plain-list small advisor-tips' }, res.ideas.map((i) => h('li', {}, h('strong', { text: i.title }), '：', i.text, i.url ? [' ', h('a', { class: 'link', href: i.url, target: '_blank', rel: 'noopener noreferrer', text: '出典' })] : null))),
+    );
+  }
+
   function row(label, value, note = '') {
     return h('tr', {}, h('th', { scope: 'row', text: label }), h('td', { class: 'num', text: value }), h('td', { class: 'muted small', text: note }));
   }
@@ -208,6 +266,20 @@ export async function render({ app, outlet, isStale }) {
     h('h2', { class: 'section-title', text: '株価対策の目安' }),
     h('div', { class: 'panel' }, yenField('利益を下げる額（役員退職金など）', 'profitCut', { hint: '利益と純資産が同じ額だけ減ったとして計算し直します（税金の減る分は見ていません）' }), cutEl),
     tipsEl,
+    h('h2', { class: 'section-title', text: '引き継ぐときの税金の概算' }),
+    h(
+      'div',
+      { class: 'panel sim-inputs' },
+      h('label', { class: 'sim-field' }, h('span', { class: 'field-label', text: '誰に引き継ぐか' }), h('select', { 'aria-label': '誰に引き継ぐか', onchange: (e) => { input.plan.successor = e.target.value; showSale(); dirty = true; paint(); } }, SUCCESSORS.map((x) => h('option', { value: x.id, text: x.label, selected: x.id === input.plan.successor })))),
+      intField('引き継ぐ株式数', () => input.plan.transferShares ?? input.shares, (v) => setPlan('transferShares', v), '今の経営者が持っている株式のうち、引き継ぐ数'),
+      intField('暦年贈与を分ける年数', () => input.plan.giftYears, (v) => setPlan('giftYears', Math.min(10, Math.max(1, v || 1))), '1〜10年。毎年同じ額ずつ贈与したとして計算します'),
+      yenField('株式以外の財産（相続税の計算用）', 'otherEstate', { get: () => input.plan.otherEstate, put: (v) => setPlan('otherEstate', v), hint: '自宅・預金などから借入金を引いた額。相続税は財産全体で税率が決まります' }),
+      h('label', { class: 'sim-field sim-check' }, h('input', { type: 'checkbox', checked: input.plan.spouse, onchange: (e) => setPlan('spouse', e.target.checked) }), h('span', { text: '配偶者がいる' })),
+      intField('子の人数', () => input.plan.children, (v) => setPlan('children', v), '法定相続人の数に使います（子がいないときの父母・兄弟姉妹は扱いません）'),
+      saleFields,
+    ),
+    planEl,
+    h('p', { class: 'muted small', text: '税額は国税庁の速算表で計算した目安です。相続税は財産を法定相続分どおりに分けたとして総額を出し、株式の割合で按分しています（配偶者の税額軽減・小規模宅地等の特例・生命保険の非課税枠などは見ていません）。実際に引き継ぐ前に、必ず税理士に相談してください。' }),
     h('button', { type: 'button', class: 'btn btn-primary btn-block', text: '入力を保存する', onclick: save }),
     h('p', { class: 'muted small', text: '計算は財産評価基本通達178〜180・185の原則的評価方式（同族株主が取得する場合）に沿った簡便な試算です。特定の評価会社（株式等保有・土地保有・比準要素数1・開業後3年未満など）、配当還元方式、議決権割合50%以下の同族株主グループの純資産価額の80%評価、直前々期の数字との平均などは扱っていません。' }),
     estimateNote(),

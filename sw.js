@@ -24,6 +24,7 @@ const PRECACHE_URLS = [
   'js/advisor/forecast.js',
   'js/advisor/seasonality.js',
   'js/advisor/share-value.js',
+  'js/advisor/succession-tax.js',
   'js/advisor/simulation.js',
   'js/advisor/tax-forecast.js',
   'js/advisor/tax-saving.js',

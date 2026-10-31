@@ -8,6 +8,7 @@
 // 端数は評価明細書の扱い（比準割合は小数点以下2位未満切捨て、50円当たりの比準価額は10銭未満切捨て など）に合わせる。
 // あくまで試算：相続税評価額での資産の評価（土地・有価証券など）は「含み益」の入力だけ、特定の評価会社（株式等保有・土地保有・比準要素数1など）、
 // 同族株主以外の配当還元方式、直前々期との平均の選択などは扱わない。正式な評価は税理士に依頼する前提（たかとの方針）
+import { DEFAULT_PLAN, validatePlan } from './succession-tax.js';
 import { isYen } from '../money.js';
 
 /** 業種の区分 */
@@ -155,6 +156,7 @@ export const DEFAULT_SUCCESSION = {
   gain: 0, // 含み益（相続税評価額−帳簿価額）
   peer: { A: 0, B10: 0, C: 0, D: 0 },
   profitCut: 0, // 対策の試算：利益を下げる額（役員退職金など）
+  plan: DEFAULT_PLAN, // 承継先と引継ぎ方（succession-tax.js）
 };
 
 const isInt = (n, min = 0) => Number.isInteger(n) && n >= min;
@@ -173,6 +175,7 @@ export function validateSuccession(v) {
   if (!(isYen(v.profitCut) && v.profitCut >= 0)) e.push('利益を下げる額は0以上の整数の円で入れてください');
   const p = v.peer || {};
   for (const k of ['A', 'B10', 'C', 'D']) if (!isInt(p[k]) || p[k] > 1e9) e.push('類似業種の数字は0以上で入れてください');
+  if (v.plan !== undefined) e.push(...validatePlan(v.plan));
   return [...new Set(e)];
 }
 

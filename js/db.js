@@ -788,7 +788,7 @@ export class Repository {
       const store = tx.objectStore('periods');
       const period = await req(store.get(periodId));
       if (!period) throw new Error('会計期間が見つかりません');
-      const value = { ...DEFAULT_SUCCESSION, ...input, peer: { ...DEFAULT_SUCCESSION.peer, ...(input?.peer || {}) } };
+      const value = { ...DEFAULT_SUCCESSION, ...input, peer: { ...DEFAULT_SUCCESSION.peer, ...(input?.peer || {}) }, plan: { ...DEFAULT_SUCCESSION.plan, ...(input?.plan || {}) } };
       const errors = validateSuccession(value);
       if (errors.length) throw new ValidationError(errors);
       const next = { ...period, succession: value, updatedAt: now() };
