@@ -8,7 +8,7 @@
 import { breakEven, plFigures } from '../analysis.js';
 import { forecastTaxes } from './tax-forecast.js';
 import { amountsByMonth } from './forecast.js';
-import { GROUP_BY_ID } from '../accounts.js';
+import { GROUP_BY_ID, compareAccounts } from '../accounts.js';
 import { monthsInPeriod } from '../period.js';
 
 /** 入力の初期値。salesPermille：売上の増減（‰）、variableRateDelta：変動費率の変化（‰ポイント）、fixedDelta：固定費の増減（円）、targetProfit：目標の利益（円。null なら出さない） */
@@ -95,52 +95,62 @@ export function taxesAtDelta({ settings, accounts, period, journals, actualJourn
  * @param {Array} p.accounts
  * @param {object} p.landing forecastLanding の結果（当期の月別。見込みの月を含む）
  * @param {{ period, journals }|null} p.prev 前期の帳簿
- * @returns {{ months, sales: Array<number|null>, profit: Array<number|null>, monthlySales, monthlyProfit, planFrom, change: { sales, profit }|null }}
+ * @returns {{ months, sales: Array<number|null>, profit: Array<number|null>, monthlySales, monthlyProfit, planFrom, change: { sales, profit }|null, rows }}
  *   sales・profit：その月までの12か月の合計（そろわなければ null）。change：最初にそろった月から最後の月までの増減（‰）
+ *   rows：科目ごとの { account, monthly（当期の各月の金額）, annual（各月の年計。そろわなければ null）, change }（前期・当期に金額のある科目だけ、科目の並び順）
  */
 export function movingAnnual({ accounts, landing, prev }) {
   const side = (a) => GROUP_BY_ID[a.group]?.side;
   const isSales = (a) => a.group === 'sales';
-  const series = []; // { month, sales, profit, plan }
+  const prevMonths = prev ? monthsInPeriod(prev.period) : [];
+  const allMonths = [...prevMonths, ...landing.months];
+  const offset = prevMonths.length;
+  // 科目ごとに、前期＋当期の月の並びの金額
+  const series = new Map(); // accountId -> number[]
+  const byId = new Map(accounts.map((a) => [a.id, a]));
   if (prev) {
     const by = amountsByMonth({ accounts, period: prev.period, journals: prev.journals });
-    const byId = new Map(accounts.map((a) => [a.id, a]));
-    for (const m of monthsInPeriod(prev.period)) {
-      let sales = 0;
-      let profit = 0;
-      for (const [id, row] of by) {
-        const a = byId.get(id);
-        const x = row.get(m) || 0;
-        if (isSales(a)) sales += x;
-        profit += side(a) === 'credit' ? x : -x;
-      }
-      series.push({ month: m, sales, profit, plan: false });
+    for (const [id, row] of by) {
+      if (!byId.has(id)) continue;
+      series.set(id, allMonths.map((m, i) => (i < offset ? row.get(m) || 0 : 0)));
     }
   }
-  const actual = new Set(landing.actualMonths);
-  landing.months.forEach((m, i) => {
-    let sales = 0;
-    let profit = 0;
-    for (const r of landing.rows) {
-      const x = r.monthly[i];
-      if (isSales(r.account)) sales += x;
-      profit += side(r.account) === 'credit' ? x : -x;
+  for (const r of landing.rows) {
+    if (!series.has(r.account.id)) {
+      series.set(r.account.id, allMonths.map(() => 0));
+      byId.set(r.account.id, r.account);
     }
-    series.push({ month: m, sales, profit, plan: !actual.has(m) });
-  });
-  const roll = (key, i) => (i < 11 ? null : series.slice(i - 11, i + 1).reduce((s, x) => s + x[key], 0));
-  const idx = series.map((_, i) => i).filter((i) => series[i].month >= landing.months[0]);
-  const sales = idx.map((i) => roll('sales', i));
-  const profit = idx.map((i) => roll('profit', i));
-  const first = sales.findIndex((x) => x !== null);
+    const xs = series.get(r.account.id);
+    landing.months.forEach((_, i) => (xs[offset + i] = r.monthly[i]));
+  }
+  const roll = (xs, i) => (i < 11 ? null : xs.slice(i - 11, i + 1).reduce((s, x) => s + x, 0));
+  const idx = landing.months.map((_, i) => offset + i);
   const pct = (a, b) => (a === null || b === null || b === 0 ? null : Math.round(((a - b) * 1000) / Math.abs(b)));
+  const changeOf = (xs) => {
+    const first = xs.findIndex((x) => x !== null);
+    return first >= 0 && first < xs.length - 1 ? pct(xs.at(-1), xs[first]) : null;
+  };
+  const total = (pick) => allMonths.map((_, i) => [...series].reduce((t, [id, xs]) => t + pick(byId.get(id), xs[i]), 0));
+  const salesAll = total((a, x) => (isSales(a) ? x : 0));
+  const profitAll = total((a, x) => (side(a) === 'credit' ? x : -x));
+  const sales = idx.map((i) => roll(salesAll, i));
+  const profit = idx.map((i) => roll(profitAll, i));
+  const first = sales.findIndex((x) => x !== null);
+  const rows = [...series]
+    .filter(([, xs]) => xs.some((x) => x))
+    .sort(([a], [b]) => compareAccounts(byId.get(a), byId.get(b)))
+    .map(([id, xs]) => {
+      const annual = idx.map((i) => roll(xs, i));
+      return { account: byId.get(id), monthly: idx.map((i) => xs[i]), annual, change: changeOf(annual) };
+    });
   return {
-    months: idx.map((i) => series[i].month),
+    months: [...landing.months],
     sales,
     profit,
-    monthlySales: idx.map((i) => series[i].sales),
-    monthlyProfit: idx.map((i) => series[i].profit),
+    monthlySales: idx.map((i) => salesAll[i]),
+    monthlyProfit: idx.map((i) => profitAll[i]),
     planFrom: landing.actualMonths.length,
     change: first >= 0 && first < sales.length - 1 ? { sales: pct(sales.at(-1), sales[first]), profit: pct(profit.at(-1), profit[first]) } : null,
+    rows,
   };
 }

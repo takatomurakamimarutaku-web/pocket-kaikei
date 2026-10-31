@@ -1,4 +1,4 @@
-// 季節変動・特別な支出の注意の確認：法人のサンプルを読み込み、前期（当期の仕訳を1年前にずらし、12月の賞与・3月の保険料を足す）を作って撮る
+// 季節変動・特別な支出の注意と年計の確認：法人のサンプルを読み込み、前期（当期の仕訳を1年前にずらして88%にし、12月の賞与・3月の保険料を足す）を作って撮る
 // 使い方：python3 -m http.server 8123 & node scripts/advisor-seasonal-shots.cjs
 const { chromium } = require('playwright');
 (async () => {
@@ -17,7 +17,7 @@ const { chromium } = require('playwright');
     const tx = db.transaction(['periods', 'journals'], 'readwrite');
     tx.objectStore('periods').put(prev);
     let n = 0;
-    for (const j of journals.filter((x) => x.periodId === cur.id)) tx.objectStore('journals').put({ ...j, id: `prevj-${n++}`, periodId: prev.id, date: back(j.date) });
+    for (const j of journals.filter((x) => x.periodId === cur.id)) tx.objectStore('journals').put({ ...j, id: `prevj-${n++}`, periodId: prev.id, date: back(j.date), lines: j.lines.map((l) => ({ ...l, amount: Math.round(l.amount * 0.88) })) }); // 前期は今期の88%（年計が伸びる形にする）
     // 前期の12月に賞与、3月に保険料の年払い
     const by = (name) => accs.find((a) => a.name === name);
     const mk = (date, dr, amt) => ({ ...journals[0], id: `prevx-${n++}`, periodId: prev.id, date, lines: [{ side: 'debit', accountId: by(dr).id, subAccountId: null, amount: amt, taxCategory: 'none', memo: '' }, { side: 'credit', accountId: by('普通預金').id, subAccountId: null, amount: amt, taxCategory: 'none', memo: '' }] });
@@ -38,5 +38,12 @@ const { chromium } = require('playwright');
   await p.screenshot({ path: 'shots/advisor/corporation-11-grid-prev.png', fullPage: true });
   await p.evaluate(() => (location.hash = '#/advisor/annual')); await p.waitForTimeout(1200);
   await p.screenshot({ path: 'shots/advisor/corporation-10-annual-with-prev.png', fullPage: true });
+  await p.getByLabel('グラフにする項目').selectOption({ label: '賞与' });
+  await p.waitForTimeout(300);
+  await p.getByRole('radio', { name: '各月の金額' }).click(); await p.waitForTimeout(300);
+  await p.screenshot({ path: 'shots/advisor/corporation-12-annual-account.png', fullPage: true });
+  await p.setViewportSize({ width: 1280, height: 900 }); await p.waitForTimeout(400);
+  await p.getByRole('radio', { name: '年計' }).click(); await p.waitForTimeout(300);
+  await p.screenshot({ path: 'shots/advisor/corporation-pc-12-annual.png', fullPage: true });
   await b.close();
 })();

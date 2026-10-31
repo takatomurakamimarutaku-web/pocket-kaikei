@@ -126,3 +126,67 @@ export function barLineChart({ labels, bar, line, title, planFrom = labels.lengt
   );
   return h('figure', { class: 'chart panel' }, h('figcaption', { class: 'chart-title', text: title }), legend, h('div', { class: 'chart-area' }, svgEl), tip);
 }
+
+/**
+ * 月別の折れ線グラフ（1〜2本。値が null の月は線を切る）
+ * @param {{ labels: string[], series: Array<{label, values: Array<number|null>}>, title: string, planFrom?: number }} opts
+ *   1本目は --chart-1、2本目は --chart-2 の色。planFrom から後は破線
+ * @returns {HTMLElement}
+ */
+export function lineChart({ labels, series, title, planFrom = labels.length }) {
+  const W = 360;
+  const H = 210;
+  const pad = { l: 40, r: 8, t: 10, b: 22 };
+  const all = series.flatMap((x) => x.values).filter((v) => v !== null && v !== undefined);
+  const ticks = axisTicks(all.length ? all : [0]);
+  const lo = ticks[0];
+  const hi = ticks.at(-1);
+  const y = (v) => pad.t + ((hi - v) / (hi - lo)) * (H - pad.t - pad.b);
+  const band = (W - pad.l - pad.r) / labels.length;
+  const cx = (i) => pad.l + band * (i + 0.5);
+  const has = (v) => v !== null && v !== undefined;
+  const grid = ticks.map((t) =>
+    s('g', {}, s('line', { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), class: t === 0 ? 'ch-zero' : 'ch-grid' }), s('text', { x: pad.l - 4, y: y(t) + 3, class: 'ch-tick', 'text-anchor': 'end' }, compactYen(t))),
+  );
+  // 続いている月どうしを線で結ぶ。実績どうしは実線、見込みにかかる区間は破線
+  const lines = series.map((sr, k) => {
+    const cls = k === 0 ? 'ch-line ch-line-1' : 'ch-line';
+    const segs = [];
+    for (let i = 1; i < labels.length; i += 1) {
+      if (!has(sr.values[i - 1]) || !has(sr.values[i])) continue;
+      segs.push(s('line', { x1: cx(i - 1), y1: y(sr.values[i - 1]), x2: cx(i), y2: y(sr.values[i]), class: i >= planFrom ? `${cls} ch-plan` : cls }));
+    }
+    const dots = sr.values.map((v, i) => (has(v) ? s('circle', { cx: cx(i), cy: y(v), r: 3.5, class: `${k === 0 ? 'ch-dot ch-dot-1' : 'ch-dot'}${i >= planFrom ? ' ch-plan' : ''}` }) : null));
+    return s('g', {}, segs, dots);
+  });
+  const hasPlan = planFrom < labels.length;
+  const xLabels = labels.map((l, i) => s('text', { x: cx(i), y: H - 6, class: 'ch-tick', 'text-anchor': 'middle' }, l));
+  const hilite = s('rect', { x: 0, y: pad.t, width: band, height: H - pad.t - pad.b, class: 'ch-hilite', visibility: 'hidden' });
+  const tip = h('div', { class: 'ch-readout', 'aria-live': 'polite' });
+  const yen = (v) => (has(v) ? `${formatYen(v)}円` : '—');
+  const show = (i) => {
+    hilite.setAttribute('x', pad.l + band * i);
+    hilite.setAttribute('visibility', 'visible');
+    tip.replaceChildren(
+      h('div', { class: 'ch-tip-head', text: i >= planFrom ? `${labels[i]}（見込みを含む）` : labels[i] }),
+      ...series.map((sr, k) => h('div', { class: 'ch-tip-row' }, h('span', { class: `ch-sw ${k === 0 ? 'ch-sw-line1' : 'ch-sw-line'}` }), h('span', { text: sr.label }), h('span', { class: `num ${sr.values[i] < 0 ? 'neg' : ''}`, text: yen(sr.values[i]) }))),
+    );
+  };
+  const hits = labels.map((l, i) => s('rect', { x: pad.l + band * i, y: 0, width: band, height: H, class: 'ch-hit', tabindex: 0, 'aria-label': `${l} ${series.map((sr) => `${sr.label}${yen(sr.values[i])}`).join(' ')}` }));
+  hits.forEach((el, i) => {
+    el.addEventListener('pointerenter', () => show(i));
+    el.addEventListener('click', () => show(i));
+    el.addEventListener('focus', () => show(i));
+  });
+  const svgEl = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img', 'aria-label': title }, grid, hilite, lines, xLabels, hits);
+  let last = 0;
+  labels.forEach((_, i) => series.some((sr) => has(sr.values[i])) && (last = i));
+  show(last);
+  const legend = h(
+    'div',
+    { class: 'ch-legend' },
+    series.map((sr, k) => h('span', { class: 'ch-key' }, h('span', { class: `ch-sw ${k === 0 ? 'ch-sw-line1' : 'ch-sw-line'}` }), sr.label)),
+    hasPlan ? h('span', { class: 'ch-key' }, h('span', { class: 'ch-sw ch-sw-dash' }), '見込みを含む（破線）') : null,
+  );
+  return h('figure', { class: 'chart panel' }, h('figcaption', { class: 'chart-title', text: title }), legend, h('div', { class: 'chart-area' }, svgEl), tip);
+}
